@@ -75,22 +75,21 @@ export async function getHealth(): Promise<{ status: string; timestamp: string; 
   }
 }
 
-export async function transcribeAudio(audioFile: File): Promise<{ transcript: string; confidence: number }> {
-  try {
-    const formData = new FormData();
-    formData.append('file', audioFile);
-    const res = await fetch(`${API_BASE_URL}/transcribe`, {
-      method: 'POST',
-      body: formData,
-    });
-    if (!res.ok) throw new Error();
-    return res.json();
-  } catch (e) {
-    return {
-      transcript: "Kal subah 5 litre doodh aur 2 paneer Sector 15 bhej dena.",
-      confidence: 0.99
-    };
+export async function transcribeAudio(audioFile: File): Promise<{ transcript: string; confidence: number | null }> {
+  const formData = new FormData();
+  formData.append('file', audioFile);
+
+  const res = await fetch(`${API_BASE_URL}/transcribe`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Audio transcription failed');
   }
+
+  return res.json();
 }
 
 export async function extractActionCard(transcript: string, source: 'audio' | 'text' = 'text'): Promise<ActionCard> {
