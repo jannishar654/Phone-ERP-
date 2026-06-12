@@ -63,47 +63,28 @@ async def transcribe_audio(file: UploadFile = File(...)) -> Dict[str, Any]:
         "confidence": None,
         "message": "Audio transcribed successfully.",
     }
-# Mock entity extraction endpoint
+# Entity extraction endpoint
 @router.post("/extract-action-card", response_model=ActionCard, status_code=status.HTTP_201_CREATED)
 async def extract_action_card(payload: ExtractRequest) -> ActionCard:
-    transcript = payload.transcript.lower()
-    customer_name = "Jane Doe (AI Extracted)"
-    customer_phone = "+1 555-0100"
-    delivery_address = "Standard Workspace Delivery"
-    delivery_time = "ASAP"
-    items = [Item(name="Generic AI Item", quantity=1, price=100.00)]
-
-    # Rule-based simulation matching typical call examples
-    if "janeway" in transcript or "voyager" in transcript:
-        customer_name = "Kathryn Janeway"
-        customer_phone = "+1 800-VOY-0176"
-        delivery_address = "Voyager Cargo Bay 1"
-        delivery_time = "ASAP"
-        items = [Item(name="Dilithium Crystals (Grade A)", quantity=5, price=1500.00)]
-    elif "rector" in transcript or "tony" in transcript or "stark" in transcript:
-        customer_name = "Tony Stark"
-        customer_phone = "+1 310-555-0182"
-        delivery_address = "10880 Malibu Point, CA"
-        delivery_time = "Immediate"
-        items = [Item(name="Palladium Core Reactor", quantity=1, price=10000.00)]
-    elif "ripley" in transcript or "sulaco" in transcript:
-        customer_name = "Ellen Ripley"
-        customer_phone = "+1 800-555-8299"
-        delivery_address = "USS Sulaco Cargo Bay 2"
-        delivery_time = "ASAP before launch"
-        items = [Item(name="M41A Pulse Rifle", quantity=4, price=899.99)]
+    try:
+        extracted = await GeminiService.extract_order_details(payload.transcript)
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(error),
+        ) from error
 
     card_data = {
-        "customer_name": customer_name,
-        "customer_phone": customer_phone,
-        "items": items,
-        "delivery_address": delivery_address,
-        "delivery_time": delivery_time,
+        "customer_name": extracted.get("customer_name", "Unknown"),
+        "customer_phone": extracted.get("customer_phone", ""),
+        "items": [Item(**item) for item in extracted.get("items", [])],
+        "delivery_address": extracted.get("delivery_address", ""),
+        "delivery_time": extracted.get("delivery_time", ""),
         "status": "pending",
         "source": payload.source,
-        "transcript": payload.transcript
+        "transcript": payload.transcript,
     }
-    
+
     return ActionCardController.create_card(card_data)
 
 # Get all orders/cards
