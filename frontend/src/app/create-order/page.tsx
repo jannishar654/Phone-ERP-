@@ -41,7 +41,15 @@ export default function CreateOrder() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
+      const preferredMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+          ? 'audio/mp4'
+          : '';
+
+      const recorder = preferredMimeType
+        ? new MediaRecorder(stream, { mimeType: preferredMimeType })
+        : new MediaRecorder(stream);
       const chunks: Blob[] = [];
 
       recorder.ondataavailable = (e) => {
@@ -51,7 +59,8 @@ export default function CreateOrder() {
       };
 
       recorder.onstop = () => {
-        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        const actualMimeType = recorder.mimeType || chunks[0]?.type || 'audio/mp4';
+        const audioBlob = new Blob(chunks, { type: actualMimeType });
         const url = URL.createObjectURL(audioBlob);
         setAudioUrl(url);
         setAudioChunks(chunks);
