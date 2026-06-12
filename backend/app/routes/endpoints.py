@@ -23,11 +23,11 @@ def health_check():
 # Mock audio transcription endpoint
 @router.post("/transcribe", status_code=status.HTTP_200_OK)
 async def transcribe_audio(file: UploadFile = File(...)) -> Dict[str, Any]:
-    if not file.filename.endswith(('.wav', '.mp3', '.m4a', '.ogg')):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported audio format. Supported: .wav, .mp3, .m4a, .ogg"
-        )
+    if not file.filename.lower().endswith(('.wav', '.mp3', '.m4a', '.ogg', '.webm')):
+     raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Unsupported audio format. Supported: .wav, .mp3, .m4a, .ogg, .webm"
+    )
     
     return {
         "filename": file.filename,
