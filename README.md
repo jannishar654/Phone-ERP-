@@ -1,72 +1,184 @@
-# PhoneERP - AI-Powered Phone-Order ERP System
+# PhoneERP
 
-An intelligent Phone ERP system that automates phone-based sales orders using AI transcription and information extraction.
+AI-powered Phone ERP system that transforms phone calls, voice notes, and WhatsApp orders into structured business workflows.
+
+---
+
+## Overview
+
+Many small businesses manage customer orders through phone calls and messaging platforms. This often leads to manual errors, missed details, and inefficient operations.
+
+PhoneERP aims to automate this process by converting unstructured communication into structured **Action Cards** that can be reviewed, managed, and tracked through a centralized dashboard.
+
+---
+
+## Core Workflow
+
+```text
+Voice Call / Voice Note / WhatsApp Message
+                ↓
+        AI Processing
+                ↓
+      Action Card Generation
+                ↓
+      Human Verification
+                ↓
+        Order Management
+                ↓
+      Delivery & Operations
+```
+
+---
+
+## Features
+
+* Voice-based order capture
+* AI-powered information extraction
+* Editable Action Cards
+* Order management dashboard
+* Customer and delivery tracking
+* Business workflow automation
+* Audit-ready order records
+
+---
 
 ## Technology Stack
 
-- **Frontend**: Next.js (App Router, TypeScript, Tailwind CSS)
-- **Backend**: FastAPI (Python 3.10+, Pydantic v2)
-- **Database**: Supabase (PostgreSQL)
-- **AI Engine**: Google Gemini API (transcription, structured data extraction)
+### Frontend
+
+* Next.js
+* TypeScript
+* Tailwind CSS
+
+### Backend
+
+* FastAPI
+* Python
+* Pydantic
+
+### Database
+
+* Supabase (PostgreSQL)
+
+### AI Engine
+
+* Google Gemini
+
+---
 
 ## Project Structure
 
 ```text
 PhoneERP/
-├── frontend/             # Next.js frontend application
-├── backend/              # FastAPI backend application
+├── frontend/
+├── backend/
 │   ├── app/
-│   │   ├── config/       # App settings and env loading
-│   │   ├── routes/       # API endpoints (transcribe, action-cards, health)
-│   │   ├── schemas/      # Pydantic validation schemas
-│   │   ├── services/     # Gemini and Supabase services
-│   │   └── main.py       # FastAPI application entry point
+│   │   ├── config/
+│   │   ├── controllers/
+│   │   ├── routes/
+│   │   ├── schemas/
+│   │   ├── services/
+│   │   └── main.py
 │   ├── requirements.txt
 │   └── .env.example
-├── docs/                 # Documentation files
+├── docs/
 ├── README.md
 └── .gitignore
 ```
 
-## Setup Instructions
+---
 
-### Backend Setup
+## Local Setup
 
-1. Navigate to the backend directory:
-   ```bash
-   cd backend
-   ```
-2. Create and activate a Python virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: .\venv\Scripts\activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Configure environment variables:
-   ```bash
-   cp .env.example .env
-   # Update .env with your Google Gemini and Supabase keys
-   ```
-5. Run the development server:
-   ```bash
-   uvicorn app.main:app --reload
-   ```
+### Backend
 
-### Frontend Setup
+```bash
+cd backend
 
-1. Navigate to the frontend directory:
-   ```bash
-   cd frontend
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Run the development server:
-   ```bash
-   npm run dev
-   ```
-4. Access the dashboard at `http://localhost:3000`.
+python -m venv venv
+
+# Windows
+.\venv\Scripts\activate
+
+# Linux / macOS
+source venv/bin/activate
+
+pip install -r requirements.txt
+
+uvicorn app.main:app --reload
+```
+
+Backend Server:
+
+```text
+http://localhost:8000
+```
+
+API Documentation:
+
+```text
+http://localhost:8000/docs
+```
+
+---
+
+### Frontend
+
+```bash
+cd frontend
+
+npm install
+
+npm run dev
+```
+
+Frontend Application:
+
+```text
+http://localhost:3000
+```
+
+---
+
+## Development Roadmap
+
+### Current Phase
+
+* Project Setup
+* Authentication
+* Dashboard UI
+* Action Card Workflow (MVP)
+
+### Upcoming Features
+
+* Voice Recording Pipeline
+* Speech-to-Text Processing
+* Gemini Integration
+* Automated Action Card Extraction
+* Order Persistence with Supabase
+* Delivery Workflow Management
+* Notifications and Tracking
+
+---
+
+## Team
+
+Managed and developed by:
+
+* Mohammad Jannishar
+* Mohd Danish
+* Mohd Nasir
+
+---
+
+## Project Goal
+
+PhoneERP explores how AI can enable traditional phone-based businesses to operate through structured digital workflows without requiring complex ERP software.
+
+The objective is to transform informal communication into actionable business operations using modern AI technologies.
+
+---
+
+## License
+
+This project is developed for educational, internship, and research purposes.
