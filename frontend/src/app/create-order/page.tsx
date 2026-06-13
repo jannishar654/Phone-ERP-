@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { createActionCard } from '@/lib/api';
+import { createActionCard, extractActionCard, transcribeAudio } from '@/lib/api';
 import { Item } from '@/types';
 
 export default function CreateOrder() {
@@ -41,7 +41,15 @@ export default function CreateOrder() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
+      const preferredMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+          ? 'audio/mp4'
+          : '';
+
+      const recorder = preferredMimeType
+        ? new MediaRecorder(stream, { mimeType: preferredMimeType })
+        : new MediaRecorder(stream);
       const chunks: Blob[] = [];
 
       recorder.ondataavailable = (e) => {
@@ -51,7 +59,8 @@ export default function CreateOrder() {
       };
 
       recorder.onstop = () => {
-        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        const actualMimeType = recorder.mimeType || chunks[0]?.type || 'audio/mp4';
+        const audioBlob = new Blob(chunks, { type: actualMimeType });
         const url = URL.createObjectURL(audioBlob);
         setAudioUrl(url);
         setAudioChunks(chunks);
@@ -85,31 +94,42 @@ export default function CreateOrder() {
     }
   };
 
-  // 1-2 Seconds Simulated Processing Loader
-  const handleGenerateActionCard = () => {
+  const handleGenerateActionCard = async () => {
+    if (audioChunks.length === 0) {
+      alert('Please record an order before generating an Action Card.');
+      return;
+    }
+
     setIsProcessing(true);
     setProcessingStatus('Transcribing speech logs...');
-    
-    setTimeout(() => {
+
+    try {
+      const mimeType = mediaRecorder?.mimeType || audioChunks[0]?.type || 'audio/mp4';
+      const extension = mimeType.includes('webm') ? 'webm' : 'm4a';
+      const audioBlob = new Blob(audioChunks, { type: mimeType });
+      const audioFile = new File([audioBlob], `grocery-order.${extension}`, {
+        type: mimeType,
+      });
+
+      const transcription = await transcribeAudio(audioFile);
+      setTranscript(transcription.transcript);
+
       setProcessingStatus('Running Gemini AI structured entity extraction...');
-      
-      setTimeout(() => {
-        // Auto-populate Rahul Sharma dummy details
-        setCustomerName('Rahul Sharma');
-        setCustomerPhone('9876543210');
-        setDeliveryAddress('Sector 15, Noida');
-        setDeliveryTime('Tomorrow Morning');
-        setTranscript('Kal subah 5 litre doodh aur 2 paneer Sector 15 bhej dena.');
-        setItems([
-          { name: 'Milk (litres)', quantity: 5, price: 60.00 },
-          { name: 'Paneer', quantity: 2, price: 150.00 }
-        ]);
-        
-        setIsProcessing(false);
-        setIsGenerated(true);
-        setIsEditing(false); // Default to review mode
-      }, 1000);
-    }, 1000);
+      const card = await extractActionCard(transcription.transcript, 'audio');
+
+      setCustomerName(card.customer_name || '');
+      setCustomerPhone(card.customer_phone || '');
+      setDeliveryAddress(card.delivery_address || '');
+      setDeliveryTime(card.delivery_time || '');
+      setItems(card.items || []);
+      setIsGenerated(true);
+      setIsEditing(false);
+    } catch (error) {
+      console.error(error);
+      alert('Could not generate the Action Card. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Inline Item Changes

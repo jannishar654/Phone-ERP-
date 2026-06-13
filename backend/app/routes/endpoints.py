@@ -4,6 +4,7 @@ from app.schemas.action_card import ActionCard, Item, ActionCardCreate, ActionCa
 from app.controllers.action_card import ActionCardController
 from pydantic import BaseModel
 from datetime import datetime
+from app.services.gemini import GeminiService
 
 router = APIRouter()
 
@@ -23,20 +24,45 @@ def health_check():
 # Mock audio transcription endpoint
 @router.post("/transcribe", status_code=status.HTTP_200_OK)
 async def transcribe_audio(file: UploadFile = File(...)) -> Dict[str, Any]:
-    if not file.filename.endswith(('.wav', '.mp3', '.m4a', '.ogg')):
+    if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported audio format. Supported: .wav, .mp3, .m4a, .ogg"
+            detail="Audio filename is required.",
         )
-    
+
+    supported_formats = (".wav", ".mp3", ".m4a", ".mp4", ".ogg", ".webm")
+
+    if not file.filename.lower().endswith(supported_formats):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported audio format. Supported: WAV, MP3, M4A, MP4, OGG, WEBM.",
+        )
+
+    file_content = await file.read()
+
+    if not file_content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded audio file is empty.",
+        )
+
+    try:
+        transcript = await GeminiService.transcribe_audio_file(
+            file_content=file_content,
+            filename=file.filename,
+        )
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(error),
+        ) from error
+
     return {
         "filename": file.filename,
-        "transcript": "Order five dilithium crystals for Captain Janeway, deliver to Voyager Cargo Bay 1 ASAP.",
-        "confidence": 0.98,
-        "duration_seconds": 8.4,
-        "message": "Audio file uploaded successfully. Transcription is a placeholder."
+        "transcript": transcript,
+        "confidence": None,
+        "message": "Audio transcribed successfully.",
     }
-
 # Mock entity extraction endpoint
 @router.post("/extract-action-card", response_model=ActionCard, status_code=status.HTTP_201_CREATED)
 async def extract_action_card(payload: ExtractRequest) -> ActionCard:
