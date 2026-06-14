@@ -7,19 +7,19 @@ import { Item } from '@/types';
 
 export default function CreateOrder() {
   const router = useRouter();
-  
+
   // Audio Recorder States
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'captured'>('idle');
   const [recordingSeconds, setRecordingSeconds] = useState(0);
-  
+
   // Workflow States
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState('');
   const [isGenerated, setIsGenerated] = useState(false);
-  
+
   // Generated Card Editing States
   const [isEditing, setIsEditing] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -217,7 +217,7 @@ export default function CreateOrder() {
                 <span className="text-xs font-bold uppercase tracking-wider">RECORDING ({formatTime(recordingSeconds)})</span>
               </div>
             )}
-            
+
             {recordingState === 'captured' && audioUrl && (
               <div className="space-y-3">
                 <div className="bg-indigo-50 text-indigo-805 px-4 py-2 rounded-lg border border-indigo-100 text-xs font-semibold">
@@ -367,6 +367,13 @@ export default function CreateOrder() {
                             className="w-20 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-900 text-center"
                           />
                           <input
+                            type="text"
+                            placeholder="Unit"
+                            value={item.unit || ""}
+                            onChange={(e) => handleItemChange(idx, "unit", e.target.value)}
+                            className="w-24 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-900"
+                          />
+                          <input
                             type="number"
                             step="0.01"
                             min="0"
@@ -420,7 +427,11 @@ export default function CreateOrder() {
                       {items.map((item, idx) => (
                         <div key={idx} className="flex justify-between items-center text-xs p-2 rounded bg-slate-50 border border-slate-100">
                           <div className="text-slate-800 font-medium">
-                            <span className="font-bold text-slate-900">{item.quantity}x</span> {item.name}
+                            <span className="font-bold text-slate-900">
+                              {item.quantity}
+                              {item.unit ? ` ${item.unit}` : ""}
+                            </span>{" "}
+                            {item.name}
                           </div>
                           {item.price && (
                             <div className="text-right font-mono text-slate-550 font-bold">
@@ -462,7 +473,7 @@ export default function CreateOrder() {
               >
                 Cancel
               </button>
-              
+
               {!isEditing && (
                 <button
                   type="button"

@@ -331,7 +331,7 @@ Return only the transcript text.
         prompt = (
             "Extract the order details from the customer transcript and return only valid JSON with the following keys:\n"
             "customer_name, customer_phone, delivery_address, delivery_time, items.\n"
-            "items must be an array of objects with name, quantity, price.\n"
+            "items must be an array of objects with name, quantity, unit, price.\n"
             "If a value is not present, use an empty string or 0.\n"
             "Do not include any additional keys.\n\n"
             f"Transcript:\n{transcript}\n"
@@ -406,6 +406,17 @@ Return only the transcript text.
                     "unit": unit,
                     "price": float(item.get("price", 0.0) or 0.0),
                 })
+
+        for item in normalized_items:
+            unit_lower = item["unit"].lower().strip()
+
+            if (
+                "rupee" in unit_lower
+                or "rs" in unit_lower
+                or "inr" in unit_lower):
+                item["price"] = max(item["price"], float(item["quantity"]))
+                item["quantity"] = 1
+                item["unit"] = ""
 
         if not normalized_items:
             normalized_items = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
