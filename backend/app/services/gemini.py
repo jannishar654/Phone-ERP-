@@ -289,7 +289,7 @@ Return only the transcript text.
                     "name": name,
                     "quantity": qty,
                     "unit": unit,
-                    "price": 0.0,
+                    "price": None,
                 })
 
         if not foods:
@@ -300,10 +300,10 @@ Return only the transcript text.
             )
             if single_item_match:
                 item_text = single_item_match.group(1).strip(' ,.')
-                foods.append({"name": item_text, "quantity": 1, "unit": "", "price": 0.0})
+                foods.append({"name": item_text, "quantity": 1, "unit": "", "price": None})
 
         if not foods:
-            foods = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
+            foods = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": None}]
 
         return {
             "customer_name": customer_name,
@@ -391,6 +391,7 @@ Return only the transcript text.
         normalized_items = []
         for item in items:
             if isinstance(item, dict):
+                # --- quantity + unit (nasir: richer parsing) ---
                 raw_qty = item.get("quantity", 0)
                 unit_hint = (item.get("unit") or "").strip()
                 if isinstance(raw_qty, (int, float)):
@@ -400,11 +401,19 @@ Return only the transcript text.
                     qty, parsed_unit = GeminiService._parse_quantity(str(raw_qty))
                     unit = parsed_unit or unit_hint
 
+                # --- price (dev: robust None / invalid-value handling,
+                #     but default to 0.0 so the rupee-unit loop below is safe) ---
+                raw_price = item.get("price")
+                try:
+                    price = float(raw_price) if raw_price not in (None, "", "null", "None") else 0.0
+                except (ValueError, TypeError):
+                    price = 0.0
+
                 normalized_items.append({
                     "name": item.get("name", "").strip(),
                     "quantity": qty,
                     "unit": unit,
-                    "price": float(item.get("price", 0.0) or 0.0),
+                    "price": price,
                 })
 
         for item in normalized_items:

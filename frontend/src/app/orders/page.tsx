@@ -164,7 +164,11 @@ export default function OrdersList() {
                         {order.items.map((i) => `${i.quantity}x ${i.name}`).join(', ')}
                       </div>
                       <div className="text-[10px] text-slate-500 mt-0.5 font-medium">
-                        Total Value: ₹{order.items.reduce((sum, item) => sum + (item.quantity * (item.price || 0)), 0).toFixed(2)}
+                        Total Value: {order.items.some(item => item.price === undefined || item.price === null || item.price <= 0) ? (
+                          <span className="text-amber-600 font-semibold italic">Pending Price</span>
+                        ) : (
+                          `₹${order.items.reduce((sum, item) => sum + (item.quantity * (item.price || 0)), 0).toFixed(2)}`
+                        )}
                       </div>
                     </td>
                     <td className="py-4 px-4 max-w-xs">

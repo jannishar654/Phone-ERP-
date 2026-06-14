@@ -75,8 +75,41 @@ function ActionCardContent() {
     router.replace(`/action-card?id=${card.id}`);
   };
 
+  const getCardValidationWarning = (card: ActionCard) => {
+    const name = (card.customer_name || '').trim();
+    if (!name || name.toLowerCase() === 'unknown') {
+      return "Customer Name is required and cannot be 'Unknown'.";
+    }
+    const address = (card.delivery_address || '').trim();
+    if (!address) {
+      return "Delivery Address is required.";
+    }
+    const validItems = card.items.filter(i => (i.name || '').trim() !== '');
+    if (validItems.length === 0) {
+      return "At least one valid item name is required.";
+    }
+    for (const item of validItems) {
+      if (!item.quantity || item.quantity <= 0) {
+        return `Item "${item.name}" must have a quantity of 1 or more.`;
+      }
+      if (item.price !== undefined && item.price !== null && item.price < 0) {
+        return `Item "${item.name}" cannot have a negative price.`;
+      }
+    }
+    return null;
+  };
+
   const handleStatusUpdate = async (status: string) => {
     if (!selectedCard) return;
+
+    if (status === 'approved') {
+      const warning = getCardValidationWarning(selectedCard);
+      if (warning) {
+        alert(`Cannot approve card: ${warning}`);
+        return;
+      }
+    }
+
     try {
       const updated = await updateActionCardStatus(selectedCard.id, status);
       setSelectedCard(updated);
@@ -231,7 +264,11 @@ function ActionCardContent() {
                     {card.items.map((item, idx) => (
                       <li key={idx} className="text-sm text-slate-600 flex justify-between font-semibold">
                         <span>{item.quantity}x {item.name}</span>
-                        {item.price && <span className="text-slate-500 font-mono">₹{(item.price * item.quantity).toFixed(2)}</span>}
+                        {item.price !== undefined && item.price !== null && item.price > 0 ? (
+                          <span className="text-slate-500 font-mono">₹{(item.price * item.quantity).toFixed(2)}</span>
+                        ) : (
+                          <span className="text-slate-400 font-medium italic text-[11px]">Price not available</span>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -420,9 +457,13 @@ function ActionCardContent() {
                           <div className="text-slate-800 font-medium">
                             <span className="font-bold text-slate-900">{item.quantity}x</span> {item.name}
                           </div>
-                          {item.price && (
+                          {item.price !== undefined && item.price !== null && item.price > 0 ? (
                             <div className="text-right font-mono text-slate-500 font-bold">
                               ₹{(item.price * item.quantity).toFixed(2)}
+                            </div>
+                          ) : (
+                            <div className="text-right text-slate-400 font-medium italic text-[11px]">
+                              Price not available
                             </div>
                           )}
                         </div>
@@ -441,11 +482,23 @@ function ActionCardContent() {
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 space-y-2">
+                  {getCardValidationWarning(selectedCard) && (
+                    <div className="bg-amber-50 border border-amber-250 p-3 rounded-lg text-[10px] text-amber-850 font-semibold leading-relaxed flex items-start gap-2 my-2">
+                      <svg className="h-4 w-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      <div>
+                        <span className="font-extrabold uppercase mr-1">[Warning]</span>
+                        {getCardValidationWarning(selectedCard)} Please edit order card to resolve.
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleStatusUpdate('approved')}
-                      disabled={selectedCard.status === 'approved'}
-                      className="flex-1 px-3 py-2 bg-emerald-650 hover:bg-emerald-600 disabled:opacity-40 disabled:hover:bg-emerald-650 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
+                      disabled={selectedCard.status === 'approved' || !!getCardValidationWarning(selectedCard)}
+                      className="flex-1 px-3 py-2 bg-emerald-650 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-650 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
                     >
                       Approve
                     </button>
