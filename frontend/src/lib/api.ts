@@ -93,38 +93,18 @@ export async function transcribeAudio(audioFile: File): Promise<{ transcript: st
 }
 
 export async function extractActionCard(transcript: string, source: 'audio' | 'text' = 'text'): Promise<ActionCard> {
-  try {
-    const res = await fetch(`${API_BASE_URL}/extract-action-card`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ transcript, source }),
-    });
-    if (!res.ok) throw new Error();
-    return res.json();
-  } catch (e) {
-    // Generate রাহুল শর্মা mock card locally
-    const dummyCard: ActionCard = {
-      id: `ac_${Math.random().toString(36).substr(2, 9)}`,
-      customer_name: "Rahul Sharma",
-      customer_phone: "9876543210",
-      items: [
-        { name: "Milk (litres)", quantity: 5, price: 60.00 },
-        { name: "Paneer", quantity: 2, price: 150.00 }
-      ],
-      delivery_address: "Sector 15, Noida",
-      delivery_time: "Tomorrow Morning",
-      status: "pending",
-      source: source,
-      transcript: transcript,
-      created_at: new Date().toISOString()
-    };
-    const db = getLocalDB();
-    db.unshift(dummyCard);
-    setLocalDB(db);
-    return dummyCard;
+  const res = await fetch(`${API_BASE_URL}/extract-action-card`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ transcript, source }),
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to extract order details.');
   }
+  return res.json();
 }
 
 export async function getActionCards(): Promise<ActionCard[]> {

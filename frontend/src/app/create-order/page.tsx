@@ -20,6 +20,7 @@ export default function CreateOrder() {
   const [processingStatus, setProcessingStatus] = useState('');
   const [isGenerated, setIsGenerated] = useState(false);
   const [cardId, setCardId] = useState<string | null>(null);
+  const [extractionError, setExtractionError] = useState<string | null>(null);
   
   // Generated Card Editing States
   const [isEditing, setIsEditing] = useState(false);
@@ -136,9 +137,11 @@ export default function CreateOrder() {
       setItems(card.items || []);
       setIsGenerated(true);
       setIsEditing(false);
+      setExtractionError(null);
     } catch (error) {
       console.error(error);
-      alert('Could not generate the Action Card. Please try again.');
+      setExtractionError('Could not extract order. Please retry recording.');
+      setIsGenerated(false);
     } finally {
       setIsProcessing(false);
     }
@@ -219,7 +222,7 @@ export default function CreateOrder() {
       </div>
 
       {/* Voice Recording Control Panel */}
-      {!isGenerated && !isProcessing && (
+      {!isGenerated && !isProcessing && !extractionError && (
         <div className="rounded-xl border border-slate-200 bg-white p-8 space-y-6 shadow-sm text-center">
           <h2 className="text-lg font-bold text-slate-900">Capture Phone Call Order</h2>
           <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
@@ -272,6 +275,38 @@ export default function CreateOrder() {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Explicit Error State Panel */}
+      {extractionError && !isProcessing && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center shadow-sm space-y-6">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-650">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-lg font-bold text-red-950">Could not extract order</h3>
+            <p className="text-xs text-red-700 font-medium">
+              We couldn't process the audio or extract order details. Please check if your audio is clear and try again.
+            </p>
+          </div>
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                setExtractionError(null);
+                setRecordingState('idle');
+                setAudioUrl(null);
+                setAudioChunks([]);
+                setRecordingSeconds(0);
+              }}
+              className="px-5 py-2.5 bg-red-650 hover:bg-red-750 text-white font-bold rounded-lg text-sm transition-colors shadow-sm cursor-pointer"
+            >
+              Retry Recording
+            </button>
           </div>
         </div>
       )}
