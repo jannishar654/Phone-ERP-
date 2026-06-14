@@ -173,9 +173,44 @@ export default function CreateOrder() {
   // Calculate order sum total
   const orderTotal = items.reduce((sum, item) => sum + (item.quantity * (item.price || 0)), 0);
 
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Dynamic validation check for rendering warnings
+  const getValidationWarning = () => {
+    const name = customerName.trim();
+    if (!name || name.toLowerCase() === 'unknown') {
+      return "Customer Name is required and cannot be 'Unknown'.";
+    }
+    const address = deliveryAddress.trim();
+    if (!address) {
+      return "Delivery Address is required.";
+    }
+    const validItems = items.filter(i => i.name.trim() !== '');
+    if (validItems.length === 0) {
+      return "At least one valid item name is required.";
+    }
+    for (const item of validItems) {
+      if (item.quantity <= 0) {
+        return `Item "${item.name}" must have a quantity of 1 or more.`;
+      }
+      if (item.price === undefined || item.price === null || item.price <= 0) {
+        return `Item "${item.name}" must have a valid price greater than ₹0.00.`;
+      }
+    }
+    return null;
+  };
+
   // Submit to Database/LocalStorage
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const warning = getValidationWarning();
+    if (warning) {
+      setValidationError(warning);
+      return;
+    }
+
+    setValidationError(null);
     setIsProcessing(true);
     setProcessingStatus('Saving order card...');
 
@@ -500,6 +535,18 @@ export default function CreateOrder() {
               </div>
             </div>
 
+            {getValidationWarning() && (
+              <div className="bg-amber-50 border border-amber-250 p-4 rounded-xl text-xs text-amber-805 font-semibold leading-relaxed flex items-start gap-2.5 my-4">
+                <svg className="h-5 w-5 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div>
+                  <span className="font-extrabold uppercase mr-1">[Validation Warning]</span>
+                  {getValidationWarning()} Please edit the card details to complete the order fields before submitting.
+                </div>
+              </div>
+            )}
+
             {/* Verification Footer Action Controls */}
             <div className="flex justify-end gap-3">
               <button
@@ -534,7 +581,8 @@ export default function CreateOrder() {
 
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-705 text-white font-bold rounded-lg text-sm transition-colors shadow-sm cursor-pointer"
+                disabled={!!getValidationWarning()}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-705 disabled:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-lg text-sm transition-colors shadow-sm cursor-pointer"
               >
                 Submit Order
               </button>
