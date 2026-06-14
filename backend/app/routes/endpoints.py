@@ -68,16 +68,56 @@ async def transcribe_audio(file: UploadFile = File(...)) -> Dict[str, Any]:
 async def extract_action_card(payload: ExtractRequest) -> ActionCard:
     try:
         extracted = await GeminiService.extract_order_details(payload.transcript)
+        print(f"Extracted data: {extracted}")
     except Exception as error:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(error),
         ) from error
 
+    # Sanitize items to ensure types/constraints (Pydantic will enforce quantity>=1)
+    raw_items = extracted.get("items", []) or []
+    safe_items = []
+    for it in raw_items:
+        try:
+            name = (it.get("name") or "").strip() if isinstance(it, dict) else str(it)
+            if not name:
+                name = "Unknown Item"
+
+            # Coerce quantity to int and ensure at least 1
+            qty = 1
+            if isinstance(it, dict) and it.get("quantity") is not None:
+                try:
+                    qty = int(float(it.get("quantity") or 0))
+                except Exception:
+                    qty = 1
+            if qty < 1:
+                qty = 1
+
+            unit = (it.get("unit") or "") if isinstance(it, dict) else ""
+            price = None
+            if isinstance(it, dict) and it.get("price") is not None:
+                try:
+                    price = float(it.get("price"))
+                except Exception:
+                    price = None
+
+            safe_items.append({"name": name, "quantity": qty, "unit": unit, "price": price})
+        except Exception:
+            # On any unexpected structure, fall back to a single unknown item
+            safe_items.append({"name": "Unknown Item", "quantity": 1, "unit": "", "price": None})
+
+    # Create Pydantic Item models (this will still validate and raise if something unexpected remains)
+    try:
+        items_models = [Item(**item) for item in safe_items]
+    except Exception:
+        # If validation still fails, fallback to a minimal item list
+        items_models = [Item(name="Unknown Item", quantity=1, price=None)]
+
     card_data = {
         "customer_name": extracted.get("customer_name", "Unknown"),
         "customer_phone": extracted.get("customer_phone", ""),
-        "items": [Item(**item) for item in extracted.get("items", [])],
+        "items": items_models,
         "delivery_address": extracted.get("delivery_address", ""),
         "delivery_time": extracted.get("delivery_time", ""),
         "status": "pending",

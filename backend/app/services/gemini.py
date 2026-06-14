@@ -194,6 +194,43 @@ Return only the transcript text.
         return quantity_map.get(quantity_str, 0)
 
     @staticmethod
+    def _parse_quantity(quantity_str: str) -> tuple[int, str]:
+        """Parse a quantity string into an integer quantity and a unit string."""
+        if quantity_str is None:
+            return 0, ""
+
+        if isinstance(quantity_str, (int, float)):
+            return int(quantity_str), ""
+
+        s = str(quantity_str).strip().lower()
+        if not s:
+            return 0, ""
+
+        # Match integers with optional unit like '2', '2kg', '2 kg', '2 kg.'
+        m = re.match(r"^(\d+)(?:\s*([a-zA-Z%]+))?\.?$", s)
+        if m:
+            return int(m.group(1)), (m.group(2) or "")
+
+        # Match decimals like '2.5 kg' -> convert to int
+        m2 = re.match(r"^(\d+(?:\.\d+))(?:\s*([a-zA-Z%]+))?\.?$", s)
+        if m2:
+            return int(float(m2.group(1))), (m2.group(2) or "")
+
+        # Word-number mapping
+        qty = GeminiService._normalize_quantity(s)
+        if qty > 0:
+            return qty, ""
+
+        # Fallback: find first number and treat remainder as unit
+        m3 = re.search(r"(\d+)", s)
+        if m3:
+            num = int(m3.group(1))
+            unit = s[m3.end():].strip()
+            return num, unit
+
+        return 0, ""
+
+    @staticmethod
     def _parse_order_fallback(transcript_text: str) -> dict:
         """Fallback parser for transcripts when Gemini is unavailable."""
         transcript = transcript_text.strip()
@@ -238,18 +275,20 @@ Return only the transcript text.
         # Item heuristics with Hindi/Hinglish quantity words
         quantity_tokens = r"(?:\d+|ek|one|do|two|teen|three|char|chaar|paanch|five|chhe|saat|aath|nau|das)"
         item_matches = re.findall(
-            rf"({quantity_tokens})\s+(?:of\s+)?([\w\-,\(\)\/ ]+?)(?=\s+(?:and|aur|with|ke liye|for|from|to|delivered|deliver|address|by|at|\.|,|$))",
+            rf"({quantity_tokens})(?:\s*([a-zA-Z%]+))?\s+(?:of\s+)?([\w\-,\(\)\/ ]+?)(?=\s+(?:and|aur|with|ke liye|for|from|to|delivered|deliver|address|by|at|\.|,|$))",
             transcript,
             re.I,
         )
         foods = []
-        for quantity, item_name in item_matches:
+        for quantity, unit_token, item_name in item_matches:
             name = item_name.strip(' ,.')
-            qty = GeminiService._normalize_quantity(quantity)
+            qty_str = quantity + (f" {unit_token}" if unit_token else "")
+            qty, unit = GeminiService._parse_quantity(qty_str)
             if name and qty > 0:
                 foods.append({
                     "name": name,
                     "quantity": qty,
+                    "unit": unit,
                     "price": 0.0,
                 })
 
@@ -261,10 +300,10 @@ Return only the transcript text.
             )
             if single_item_match:
                 item_text = single_item_match.group(1).strip(' ,.')
-                foods.append({"name": item_text, "quantity": 1, "price": 0.0})
+                foods.append({"name": item_text, "quantity": 1, "unit": "", "price": 0.0})
 
         if not foods:
-            foods = [{"name": "Unknown Item", "quantity": 1, "price": 0.0}]
+            foods = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
 
         return {
             "customer_name": customer_name,
@@ -352,14 +391,24 @@ Return only the transcript text.
         normalized_items = []
         for item in items:
             if isinstance(item, dict):
+                raw_qty = item.get("quantity", 0)
+                unit_hint = (item.get("unit") or "").strip()
+                if isinstance(raw_qty, (int, float)):
+                    qty = int(raw_qty)
+                    unit = unit_hint
+                else:
+                    qty, parsed_unit = GeminiService._parse_quantity(str(raw_qty))
+                    unit = parsed_unit or unit_hint
+
                 normalized_items.append({
                     "name": item.get("name", "").strip(),
-                    "quantity": int(item.get("quantity", 0) or 0),
+                    "quantity": qty,
+                    "unit": unit,
                     "price": float(item.get("price", 0.0) or 0.0),
                 })
 
         if not normalized_items:
-            normalized_items = [{"name": "Unknown Item", "quantity": 1, "price": 0.0}]
+            normalized_items = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
 
         return {
             "customer_name": parsed.get("customer_name", "").strip(),
