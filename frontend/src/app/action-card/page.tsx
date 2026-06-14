@@ -92,8 +92,8 @@ function ActionCardContent() {
       if (!item.quantity || item.quantity <= 0) {
         return `Item "${item.name}" must have a quantity of 1 or more.`;
       }
-      if (item.price === undefined || item.price === null || item.price <= 0) {
-        return `Item "${item.name}" must have a valid price greater than ₹0.00.`;
+      if (item.price !== undefined && item.price !== null && item.price < 0) {
+        return `Item "${item.name}" cannot have a negative price.`;
       }
     }
     return null;
@@ -264,7 +264,11 @@ function ActionCardContent() {
                     {card.items.map((item, idx) => (
                       <li key={idx} className="text-sm text-slate-600 flex justify-between font-semibold">
                         <span>{item.quantity}x {item.name}</span>
-                        {item.price && <span className="text-slate-500 font-mono">₹{(item.price * item.quantity).toFixed(2)}</span>}
+                        {item.price !== undefined && item.price !== null && item.price > 0 ? (
+                          <span className="text-slate-500 font-mono">₹{(item.price * item.quantity).toFixed(2)}</span>
+                        ) : (
+                          <span className="text-slate-400 font-medium italic text-[11px]">Price not available</span>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -453,9 +457,13 @@ function ActionCardContent() {
                           <div className="text-slate-800 font-medium">
                             <span className="font-bold text-slate-900">{item.quantity}x</span> {item.name}
                           </div>
-                          {item.price && (
+                          {item.price !== undefined && item.price !== null && item.price > 0 ? (
                             <div className="text-right font-mono text-slate-500 font-bold">
                               ₹{(item.price * item.quantity).toFixed(2)}
+                            </div>
+                          ) : (
+                            <div className="text-right text-slate-400 font-medium italic text-[11px]">
+                              Price not available
                             </div>
                           )}
                         </div>

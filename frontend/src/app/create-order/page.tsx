@@ -193,8 +193,8 @@ export default function CreateOrder() {
       if (item.quantity <= 0) {
         return `Item "${item.name}" must have a quantity of 1 or more.`;
       }
-      if (item.price === undefined || item.price === null || item.price <= 0) {
-        return `Item "${item.name}" must have a valid price greater than ₹0.00.`;
+      if (item.price !== undefined && item.price !== null && item.price < 0) {
+        return `Item "${item.name}" cannot have a negative price.`;
       }
     }
     return null;
@@ -508,9 +508,13 @@ export default function CreateOrder() {
                           <div className="text-slate-800 font-medium">
                             <span className="font-bold text-slate-900">{item.quantity}x</span> {item.name}
                           </div>
-                          {item.price && (
+                          {item.price !== undefined && item.price !== null && item.price > 0 ? (
                             <div className="text-right font-mono text-slate-550 font-bold">
                               ₹{(item.price * item.quantity).toFixed(2)}
+                            </div>
+                          ) : (
+                            <div className="text-right text-slate-400 font-medium italic text-[11px]">
+                              Price not available
                             </div>
                           )}
                         </div>
@@ -531,7 +535,11 @@ export default function CreateOrder() {
 
               <div className="pt-4 border-t border-slate-100 flex justify-between items-center text-sm font-semibold text-slate-500">
                 <span>Calculated Total:</span>
-                <span className="text-lg font-extrabold text-slate-900 font-mono">₹{orderTotal.toFixed(2)}</span>
+                {items.some(item => item.price === undefined || item.price === null || item.price <= 0) ? (
+                  <span className="text-amber-600 font-bold text-xs italic">Pending Price Verification</span>
+                ) : (
+                  <span className="text-lg font-extrabold text-slate-900 font-mono">₹{orderTotal.toFixed(2)}</span>
+                )}
               </div>
             </div>
 

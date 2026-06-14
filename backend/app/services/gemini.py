@@ -250,7 +250,7 @@ Return only the transcript text.
                 foods.append({
                     "name": name,
                     "quantity": qty,
-                    "price": 0.0,
+                    "price": None,
                 })
 
         if not foods:
@@ -261,10 +261,10 @@ Return only the transcript text.
             )
             if single_item_match:
                 item_text = single_item_match.group(1).strip(' ,.')
-                foods.append({"name": item_text, "quantity": 1, "price": 0.0})
+                foods.append({"name": item_text, "quantity": 1, "price": None})
 
         if not foods:
-            foods = [{"name": "Unknown Item", "quantity": 1, "price": 0.0}]
+            foods = [{"name": "Unknown Item", "quantity": 1, "price": None}]
 
         return {
             "customer_name": customer_name,
@@ -352,14 +352,22 @@ Return only the transcript text.
         normalized_items = []
         for item in items:
             if isinstance(item, dict):
+                raw_price = item.get("price")
+                try:
+                    price = float(raw_price) if raw_price not in (None, "", "null", "None") else None
+                    if price == 0.0:
+                        price = None
+                except (ValueError, TypeError):
+                    price = None
+
                 normalized_items.append({
                     "name": item.get("name", "").strip(),
                     "quantity": int(item.get("quantity", 0) or 0),
-                    "price": float(item.get("price", 0.0) or 0.0),
+                    "price": price,
                 })
 
         if not normalized_items:
-            normalized_items = [{"name": "Unknown Item", "quantity": 1, "price": 0.0}]
+            normalized_items = [{"name": "Unknown Item", "quantity": 1, "price": None}]
 
         return {
             "customer_name": parsed.get("customer_name", "").strip(),
