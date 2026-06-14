@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { createActionCard, extractActionCard, transcribeAudio } from '@/lib/api';
+import { createActionCard, extractActionCard, transcribeAudio, updateActionCard, deleteActionCard } from '@/lib/api';
 import { Item } from '@/types';
 
 export default function CreateOrder() {
@@ -19,6 +19,7 @@ export default function CreateOrder() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState('');
   const [isGenerated, setIsGenerated] = useState(false);
+  const [cardId, setCardId] = useState<string | null>(null);
   
   // Generated Card Editing States
   const [isEditing, setIsEditing] = useState(false);
@@ -115,7 +116,18 @@ export default function CreateOrder() {
       setTranscript(transcription.transcript);
 
       setProcessingStatus('Running Gemini AI structured entity extraction...');
+      
+      // Clean up previous generated card in this session if any, to avoid orphaned records
+      if (cardId) {
+        try {
+          await deleteActionCard(cardId);
+        } catch (err) {
+          console.error("Failed to delete previous action card:", err);
+        }
+      }
+
       const card = await extractActionCard(transcription.transcript, 'audio');
+      setCardId(card.id);
 
       setCustomerName(card.customer_name || '');
       setCustomerPhone(card.customer_phone || '');
@@ -178,7 +190,11 @@ export default function CreateOrder() {
     };
 
     try {
-      await createActionCard(payload);
+      if (cardId) {
+        await updateActionCard(cardId, payload);
+      } else {
+        await createActionCard(payload);
+      }
       router.push('/orders');
       router.refresh();
     } catch (err) {
@@ -453,7 +469,15 @@ export default function CreateOrder() {
             <div className="flex justify-end gap-3">
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
+                  if (cardId) {
+                    try {
+                      await deleteActionCard(cardId);
+                    } catch (err) {
+                      console.error("Failed to delete cancelled card:", err);
+                    }
+                    setCardId(null);
+                  }
                   setIsGenerated(false);
                   setRecordingState('idle');
                   setAudioUrl(null);
