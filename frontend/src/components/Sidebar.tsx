@@ -3,7 +3,12 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-export default function Sidebar() {
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
 
   const navigation = [
@@ -14,40 +19,65 @@ export default function Sidebar() {
   ];
 
   return (
-    <aside className="w-64 bg-slate-50 text-slate-800 flex flex-col h-screen sticky top-0 border-r border-slate-200">
-      <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-        <Link href="/dashboard" className="flex flex-col">
-          <span className="text-2xl font-extrabold text-slate-900">
-            Phone<span className="text-indigo-600">ERP</span>
-          </span>
-          <span className="text-[10px] w-fit uppercase tracking-wider bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 font-semibold mt-1">
-            AI Powered
-          </span>
-        </Link>
-      </div>
-      <nav className="flex-1 px-4 py-6 space-y-1">
-        {navigation.map((item) => {
-          const isActive = pathname.startsWith(item.href);
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all duration-150 ${isActive
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
-                }`}
-            >
-              <Icon className={`h-5 w-5 ${isActive ? 'text-white' : 'text-slate-500'}`} />
-              <span>{item.name}</span>
-            </Link>
-          );
-        })}
-      </nav>
-      <div className="p-4 border-t border-slate-200 text-xs text-slate-450 text-center font-medium">
-        PhoneERP System v1.0.0
-      </div>
-    </aside>
+    <>
+      {/* Mobile Backdrop Overlay */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden transition-opacity duration-300"
+          onClick={onClose}
+        />
+      )}
+
+      <aside 
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-50 text-slate-800 flex flex-col h-full border-r border-slate-200 transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:h-screen lg:top-0 ${
+          isOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+          <Link href="/dashboard" className="flex flex-col" onClick={onClose}>
+            <span className="text-2xl font-extrabold text-slate-900">
+              Phone<span className="text-indigo-600">ERP</span>
+            </span>
+            <span className="text-[10px] w-fit uppercase tracking-wider bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 font-semibold mt-1">
+              AI Powered
+            </span>
+          </Link>
+          {/* Close button on mobile */}
+          <button
+            onClick={onClose}
+            className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/60 hover:text-slate-800 cursor-pointer transition-colors"
+            aria-label="Close sidebar"
+          >
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <nav className="flex-1 px-4 py-6 space-y-1">
+          {navigation.map((item) => {
+            const isActive = pathname.startsWith(item.href);
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                onClick={onClose}
+                className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all duration-150 ${isActive
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
+                  }`}
+              >
+                <Icon className={`h-5 w-5 ${isActive ? 'text-white' : 'text-slate-500'}`} />
+                <span>{item.name}</span>
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="p-4 border-t border-slate-200 text-xs text-slate-450 text-center font-medium">
+          PhoneERP System v1.0.0
+        </div>
+      </aside>
+    </>
   );
 }
 

@@ -39,6 +39,20 @@ class GeminiService:
         return suffix, mime_type
 
     @staticmethod
+    def _clean_transcript(transcript: str) -> str:
+        """Remove timeline labels accidentally returned by transcription."""
+
+        timestamp_pattern = r"\b\d{1,2}:\d{2}(?::\d{2})?\b"
+        timestamps = re.findall(timestamp_pattern, transcript)
+
+        # A single time can be a real delivery time. Multiple labels, or output
+        # beginning at 00:xx, indicate that Gemini generated a timeline.
+        if transcript.strip().startswith("00:") or len(timestamps) >= 2:
+            transcript = re.sub(timestamp_pattern, " ", transcript)
+
+        return re.sub(r"\s+", " ", transcript).strip()
+
+    @staticmethod
     async def transcribe_audio_file(file_content: bytes, filename: str) -> str:
         """Upload audio to Gemini and return its transcript."""
 
@@ -103,6 +117,9 @@ Preserve Hindi / Hinglish words exactly as spoken. Do not translate Hindi words 
 Preserve brand names, quantities, pack sizes, units, and customer names.
 Do not summarize, correct, or invent extra details.
 If any word is not clear, write [unclear] in its place.
+Ignore silence and pauses.
+Do not include timestamps, duration labels, speaker labels, or numbering.
+Return only the words actually spoken by the user.
 Return only the transcript text.
 """
 
@@ -138,7 +155,8 @@ Return only the transcript text.
                     "Please try again shortly."
                 )
 
-            transcript = response.text.strip() if response.text else ""
+            raw_transcript = response.text.strip() if response.text else ""
+            transcript = GeminiService._clean_transcript(raw_transcript)
 
             if not transcript:
                 raise ValueError("Gemini returned an empty transcript.")
@@ -194,13 +212,13 @@ Return only the transcript text.
         return quantity_map.get(quantity_str, 0)
 
     @staticmethod
-    def _parse_quantity(quantity_str: str) -> tuple[int, str]:
-        """Parse a quantity string into an integer quantity and a unit string."""
+    def _parse_quantity(quantity_str: str) -> tuple[float, str]:
+        """Parse a quantity string into a numeric quantity and a unit string."""
         if quantity_str is None:
-            return 0, ""
+            return 0.0, ""
 
         if isinstance(quantity_str, (int, float)):
-            return int(quantity_str), ""
+            return float(quantity_str), ""
 
         s = str(quantity_str).strip().lower()
         if not s:
@@ -211,10 +229,10 @@ Return only the transcript text.
         if m:
             return int(m.group(1)), (m.group(2) or "")
 
-        # Match decimals like '2.5 kg' -> convert to int
+        # Match decimals like '2.5 kg'.
         m2 = re.match(r"^(\d+(?:\.\d+))(?:\s*([a-zA-Z%]+))?\.?$", s)
         if m2:
-            return int(float(m2.group(1))), (m2.group(2) or "")
+            return float(m2.group(1)), (m2.group(2) or "")
 
         # Word-number mapping
         qty = GeminiService._normalize_quantity(s)
@@ -233,7 +251,7 @@ Return only the transcript text.
     @staticmethod
     def _parse_order_fallback(transcript_text: str) -> dict:
         """Fallback parser for transcripts when Gemini is unavailable."""
-        transcript = transcript_text.strip()
+        transcript = GeminiService._clean_transcript(transcript_text).strip()
         if not transcript:
             return {
                 "customer_name": "Unknown",
@@ -255,6 +273,13 @@ Return only the transcript text.
         )
         if not name_match:
             name_match = re.search(r"(?:mera naam|naam)\s+([A-Za-z][A-Za-z ]+?)\s*(?:hai|hai\.|$)", transcript, re.I)
+        if not name_match:
+            name_match = re.search(
+                r"^(?:(?:kal|aaj|today|tomorrow|कल|आज)\s+)?"
+                r"([\w\u0900-\u097F][\w\u0900-\u097F .&'-]{1,60}?)\s+(?:ko|को)(?=\s|$)",
+                transcript,
+                re.I,
+            )
         customer_name = name_match.group(1).strip() if name_match else "Unknown"
 
         # Delivery address heuristics
@@ -265,18 +290,54 @@ Return only the transcript text.
         )
         delivery_address = address_match.group(1).strip() if address_match else ""
 
-        # Delivery time heuristics
+        # Delivery time heuristics. Only capture known time phrases; never put
+        # the remaining order sentence into this field.
         if re.search(r"\b(asap|immediately|right away|urgent|now|jaldi|turant|abhi)\b", transcript, re.I):
             delivery_time = "ASAP"
         else:
-            time_match = re.search(r"(?:by|for|on|at|se|tak|subah|shaam|kal|aaj|savera)\s+([^\.\n,]+)", transcript, re.I)
-            delivery_time = time_match.group(1).strip() if time_match else ""
+            time_parts = []
+            for pattern in (
+                r"\b(?:kal|aaj|today|tomorrow|कल|आज)\b",
+                r"\b(?:subah|shaam|savera|morning|evening|raat|सुबह|शाम|रात)\b",
+                r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm|baje)\b",
+            ):
+                time_match = re.search(pattern, transcript, re.I)
+                if time_match:
+                    time_parts.append(time_match.group(0))
+            delivery_time = " ".join(time_parts)
 
-        # Item heuristics with Hindi/Hinglish quantity words
-        quantity_tokens = r"(?:\d+|ek|one|do|two|teen|three|char|chaar|paanch|five|chhe|saat|aath|nau|das)"
-        item_matches = re.findall(
-            rf"({quantity_tokens})(?:\s*([a-zA-Z%]+))?\s+(?:of\s+)?([\w\-,\(\)\/ ]+?)(?=\s+(?:and|aur|with|ke liye|for|from|to|delivered|deliver|address|by|at|\.|,|$))",
+        # Item heuristics with Hindi/Hinglish quantity words. Stop item names
+        # at connectors or common order commands so multiple lines are kept.
+        quantity_tokens = (
+            r"(?:\d+(?:\.\d+)?|ek|one|do|two|teen|three|char|chaar|paanch|"
+            r"five|chhe|saat|aath|nau|das)"
+        )
+        unit_tokens = (
+            r"(?:kg|kgs|kilo|kilogram|g|gm|gram|packet|packets|pack|peti|"
+            r"carton|cartons|box|boxes|litre|litres|liter|liters|l|piece|"
+            r"pieces|pcs|bag|bags|tin|tins|bottle|bottles|केजी|किलो|पैकेट|पेटी)"
+        )
+
+        item_source = re.sub(
+            r"^(?:(?:kal|aaj|today|tomorrow|कल|आज)\s+)?"
+            r"[\w\u0900-\u097F][\w\u0900-\u097F .&'-]{1,60}?\s+(?:ko|को)(?=\s|$)",
+            " ",
             transcript,
+            flags=re.I,
+        )
+        item_source = re.sub(
+            r"\b(?:kal|aaj|today|tomorrow|subah|shaam|savera|morning|evening|raat|"
+            r"कल|आज|सुबह|शाम|रात)\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm|baje)\b",
+            " ",
+            item_source,
+            flags=re.I,
+        )
+        item_matches = re.findall(
+            rf"\b({quantity_tokens})\s*(?:({unit_tokens})\s+)?"
+            rf"([\w\u0900-\u097F₹%+&()./'-]+(?:\s+[\w\u0900-\u097F₹%+&()./'-]+)*?)"
+            rf"(?=\s+(?:and|aur|और|bhej|bhejo|bhejna|bhejdo|bhej dena|भेज|भेजो|भेजना|भेज देना|"
+            rf"send|deliver|delivery|de do|dijiye|chahiye|please)\b|[.,]|$)",
+            item_source,
             re.I,
         )
         foods = []
@@ -291,19 +352,6 @@ Return only the transcript text.
                     "unit": unit,
                     "price": None,
                 })
-
-        if not foods:
-            single_item_match = re.search(
-                r"(?:need|order|want|send me|give me|mujhe|chahiye|lijiye|de dijiye|de do)\s+([\w\-,\(\)\/ ]+?)(?:\s+to|\s+for|\s+at|\s+by|\s+ke liye|\s+k liye|\.|,|$)",
-                transcript,
-                re.I,
-            )
-            if single_item_match:
-                item_text = single_item_match.group(1).strip(' ,.')
-                foods.append({"name": item_text, "quantity": 1, "unit": "", "price": None})
-
-        if not foods:
-            foods = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": None}]
 
         return {
             "customer_name": customer_name,
@@ -338,50 +386,58 @@ Return only the transcript text.
             "Output only JSON."
         )
 
-        response = None
-        models = ("gemini-2.5-flash-lite", "gemini-2.5-flash")
+        try:
+            response = None
+            models = ("gemini-2.5-flash-lite", "gemini-2.5-flash")
 
-        for model_name in models:
-            for attempt in range(3):
-                try:
-                    response = await asyncio.to_thread(
-                        client.models.generate_content,
-                        model=model_name,
-                        contents=[prompt],
-                    )
-                    break
-                except errors.ServerError as error:
-                    if error.code != 503 or attempt == 2:
-                        logger.warning(
-                            "Gemini extraction model %s unavailable: %s",
-                            model_name,
-                            error,
+            for model_name in models:
+                for attempt in range(3):
+                    try:
+                        response = await asyncio.to_thread(
+                            client.models.generate_content,
+                            model=model_name,
+                            contents=[prompt],
                         )
                         break
-                    await asyncio.sleep(2 ** attempt)
-            if response:
-                break
+                    except errors.ServerError as error:
+                        if error.code != 503 or attempt == 2:
+                            logger.warning(
+                                "Gemini extraction model %s unavailable: %s",
+                                model_name,
+                                error,
+                            )
+                            break
+                        await asyncio.sleep(2 ** attempt)
+                if response:
+                    break
 
-        if not response or not getattr(response, "text", None):
-            logger.warning("Gemini extraction failed or returned empty response, using fallback parser.")
-            return GeminiService._parse_order_fallback(transcript)
+            if not response or not getattr(response, "text", None):
+                logger.warning("Gemini extraction failed or returned empty response, using fallback parser.")
+                return GeminiService._parse_order_fallback(transcript)
 
-        result_text = response.text.strip()
-        parsed = None
+            result_text = response.text.strip()
+            parsed = None
 
-        try:
-            parsed = json.loads(result_text)
-        except json.JSONDecodeError:
-            # Try to extract JSON-like substring if model emits extra text.
-            json_match = re.search(r"\{.*\}", result_text, re.S)
-            if json_match:
-                try:
-                    parsed = json.loads(json_match.group(0))
-                except json.JSONDecodeError:
-                    parsed = None
+            try:
+                parsed = json.loads(result_text)
+            except json.JSONDecodeError:
+                # Try to extract JSON-like substring if model emits extra text.
+                json_match = re.search(r"\{.*\}", result_text, re.S)
+                if json_match:
+                    try:
+                        parsed = json.loads(json_match.group(0))
+                    except json.JSONDecodeError:
+                        parsed = None
 
-        if not parsed or not isinstance(parsed, dict):
-            logger.warning("Could not parse Gemini extraction output, using fallback parser.")
+            if not parsed or not isinstance(parsed, dict):
+                logger.warning("Could not parse Gemini extraction output, using fallback parser.")
+                return GeminiService._parse_order_fallback(transcript)
+        except Exception as error:
+            err_msg = str(error).upper()
+            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "QUOTA" in err_msg:
+                logger.warning(f"Gemini extraction hit quota limit ({error}). Falling back to local parser.")
+            else:
+                logger.exception("Gemini extraction failed, using fallback parser.")
             return GeminiService._parse_order_fallback(transcript)
 
         items = parsed.get("items") or []
@@ -395,7 +451,7 @@ Return only the transcript text.
                 raw_qty = item.get("quantity", 0)
                 unit_hint = (item.get("unit") or "").strip()
                 if isinstance(raw_qty, (int, float)):
-                    qty = int(raw_qty)
+                    qty = float(raw_qty)
                     unit = unit_hint
                 else:
                     qty, parsed_unit = GeminiService._parse_quantity(str(raw_qty))

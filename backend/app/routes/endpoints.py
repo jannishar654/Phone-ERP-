@@ -5,6 +5,7 @@ from app.controllers.action_card import ActionCardController
 from pydantic import BaseModel
 from datetime import datetime
 from app.services.gemini import GeminiService
+from google.genai import errors
 
 router = APIRouter()
 
@@ -52,6 +53,19 @@ async def transcribe_audio(file: UploadFile = File(...)) -> Dict[str, Any]:
             filename=file.filename,
         )
     except Exception as error:
+        err_msg = str(error).upper()
+        is_quota = False
+        if isinstance(error, errors.APIError) and (error.code == 429 or "RESOURCE_EXHAUSTED" in err_msg or "QUOTA" in err_msg):
+            is_quota = True
+        elif "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "QUOTA" in err_msg:
+            is_quota = True
+
+        if is_quota:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Voice processing is temporarily unavailable due to API quota limits. Please enter the order manually.",
+            ) from error
+
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(error),
@@ -75,7 +89,7 @@ async def extract_action_card(payload: ExtractRequest) -> ActionCard:
             detail=str(error),
         ) from error
 
-    # Sanitize items to ensure types/constraints (Pydantic will enforce quantity>=1)
+    # Sanitize items to ensure types/constraints (Pydantic will enforce quantity > 0)
     raw_items = extracted.get("items", []) or []
     safe_items = []
     for it in raw_items:
@@ -84,15 +98,15 @@ async def extract_action_card(payload: ExtractRequest) -> ActionCard:
             if not name:
                 name = "Unknown Item"
 
-            # Coerce quantity to int and ensure at least 1
-            qty = 1
+            # Preserve decimal quantities such as 2.5 kg.
+            qty = 1.0
             if isinstance(it, dict) and it.get("quantity") is not None:
                 try:
-                    qty = int(float(it.get("quantity") or 0))
+                    qty = float(it.get("quantity") or 0)
                 except Exception:
-                    qty = 1
-            if qty < 1:
-                qty = 1
+                    qty = 1.0
+            if qty <= 0:
+                qty = 1.0
 
             unit = (it.get("unit") or "") if isinstance(it, dict) else ""
             price = None
