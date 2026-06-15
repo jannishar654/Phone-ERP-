@@ -251,7 +251,7 @@ Return only the transcript text.
     @staticmethod
     def _parse_order_fallback(transcript_text: str) -> dict:
         """Fallback parser for transcripts when Gemini is unavailable."""
-        transcript = transcript_text.strip()
+        transcript = GeminiService._clean_transcript(transcript_text).strip()
         if not transcript:
             return {
                 "customer_name": "Unknown",
@@ -273,6 +273,13 @@ Return only the transcript text.
         )
         if not name_match:
             name_match = re.search(r"(?:mera naam|naam)\s+([A-Za-z][A-Za-z ]+?)\s*(?:hai|hai\.|$)", transcript, re.I)
+        if not name_match:
+            name_match = re.search(
+                r"^(?:(?:kal|aaj|today|tomorrow|कल|आज)\s+)?"
+                r"([\w\u0900-\u097F][\w\u0900-\u097F .&'-]{1,60}?)\s+(?:ko|को)(?=\s|$)",
+                transcript,
+                re.I,
+            )
         customer_name = name_match.group(1).strip() if name_match else "Unknown"
 
         # Delivery address heuristics
@@ -283,18 +290,54 @@ Return only the transcript text.
         )
         delivery_address = address_match.group(1).strip() if address_match else ""
 
-        # Delivery time heuristics
+        # Delivery time heuristics. Only capture known time phrases; never put
+        # the remaining order sentence into this field.
         if re.search(r"\b(asap|immediately|right away|urgent|now|jaldi|turant|abhi)\b", transcript, re.I):
             delivery_time = "ASAP"
         else:
-            time_match = re.search(r"(?:by|for|on|at|se|tak|subah|shaam|kal|aaj|savera)\s+([^\.\n,]+)", transcript, re.I)
-            delivery_time = time_match.group(1).strip() if time_match else ""
+            time_parts = []
+            for pattern in (
+                r"\b(?:kal|aaj|today|tomorrow|कल|आज)\b",
+                r"\b(?:subah|shaam|savera|morning|evening|raat|सुबह|शाम|रात)\b",
+                r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm|baje)\b",
+            ):
+                time_match = re.search(pattern, transcript, re.I)
+                if time_match:
+                    time_parts.append(time_match.group(0))
+            delivery_time = " ".join(time_parts)
 
-        # Item heuristics with Hindi/Hinglish quantity words
-        quantity_tokens = r"(?:\d+|ek|one|do|two|teen|three|char|chaar|paanch|five|chhe|saat|aath|nau|das)"
-        item_matches = re.findall(
-            rf"({quantity_tokens})(?:\s*([a-zA-Z%]+))?\s+(?:of\s+)?([\w\-,\(\)\/ ]+?)(?=\s+(?:and|aur|with|ke liye|for|from|to|delivered|deliver|address|by|at|\.|,|$))",
+        # Item heuristics with Hindi/Hinglish quantity words. Stop item names
+        # at connectors or common order commands so multiple lines are kept.
+        quantity_tokens = (
+            r"(?:\d+(?:\.\d+)?|ek|one|do|two|teen|three|char|chaar|paanch|"
+            r"five|chhe|saat|aath|nau|das)"
+        )
+        unit_tokens = (
+            r"(?:kg|kgs|kilo|kilogram|g|gm|gram|packet|packets|pack|peti|"
+            r"carton|cartons|box|boxes|litre|litres|liter|liters|l|piece|"
+            r"pieces|pcs|bag|bags|tin|tins|bottle|bottles|केजी|किलो|पैकेट|पेटी)"
+        )
+
+        item_source = re.sub(
+            r"^(?:(?:kal|aaj|today|tomorrow|कल|आज)\s+)?"
+            r"[\w\u0900-\u097F][\w\u0900-\u097F .&'-]{1,60}?\s+(?:ko|को)(?=\s|$)",
+            " ",
             transcript,
+            flags=re.I,
+        )
+        item_source = re.sub(
+            r"\b(?:kal|aaj|today|tomorrow|subah|shaam|savera|morning|evening|raat|"
+            r"कल|आज|सुबह|शाम|रात)\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm|baje)\b",
+            " ",
+            item_source,
+            flags=re.I,
+        )
+        item_matches = re.findall(
+            rf"\b({quantity_tokens})\s*(?:({unit_tokens})\s+)?"
+            rf"([\w\u0900-\u097F₹%+&()./'-]+(?:\s+[\w\u0900-\u097F₹%+&()./'-]+)*?)"
+            rf"(?=\s+(?:and|aur|और|bhej|bhejo|bhejna|bhejdo|bhej dena|भेज|भेजो|भेजना|भेज देना|"
+            rf"send|deliver|delivery|de do|dijiye|chahiye|please)\b|[.,]|$)",
+            item_source,
             re.I,
         )
         foods = []
@@ -309,19 +352,6 @@ Return only the transcript text.
                     "unit": unit,
                     "price": None,
                 })
-
-        if not foods:
-            single_item_match = re.search(
-                r"(?:need|order|want|send me|give me|mujhe|chahiye|lijiye|de dijiye|de do)\s+([\w\-,\(\)\/ ]+?)(?:\s+to|\s+for|\s+at|\s+by|\s+ke liye|\s+k liye|\.|,|$)",
-                transcript,
-                re.I,
-            )
-            if single_item_match:
-                item_text = single_item_match.group(1).strip(' ,.')
-                foods.append({"name": item_text, "quantity": 1, "unit": "", "price": None})
-
-        if not foods:
-            foods = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": None}]
 
         return {
             "customer_name": customer_name,
