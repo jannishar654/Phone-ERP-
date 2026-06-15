@@ -89,7 +89,7 @@ async def extract_action_card(payload: ExtractRequest) -> ActionCard:
             detail=str(error),
         ) from error
 
-    # Sanitize items to ensure types/constraints (Pydantic will enforce quantity>=1)
+    # Sanitize items to ensure types/constraints (Pydantic will enforce quantity > 0)
     raw_items = extracted.get("items", []) or []
     safe_items = []
     for it in raw_items:
@@ -98,15 +98,15 @@ async def extract_action_card(payload: ExtractRequest) -> ActionCard:
             if not name:
                 name = "Unknown Item"
 
-            # Coerce quantity to int and ensure at least 1
-            qty = 1
+            # Preserve decimal quantities such as 2.5 kg.
+            qty = 1.0
             if isinstance(it, dict) and it.get("quantity") is not None:
                 try:
-                    qty = int(float(it.get("quantity") or 0))
+                    qty = float(it.get("quantity") or 0)
                 except Exception:
-                    qty = 1
-            if qty < 1:
-                qty = 1
+                    qty = 1.0
+            if qty <= 0:
+                qty = 1.0
 
             unit = (it.get("unit") or "") if isinstance(it, dict) else ""
             price = None
