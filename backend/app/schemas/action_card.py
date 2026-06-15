@@ -5,6 +5,7 @@ from datetime import datetime
 class Item(BaseModel):
     name: str
     quantity: int = Field(..., ge=1)
+    unit: Optional[str] = ""
     price: Optional[float] = Field(None, ge=0.0)
 
 
