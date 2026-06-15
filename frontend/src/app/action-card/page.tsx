@@ -132,7 +132,7 @@ function ActionCardContent() {
   const handleItemChange = (index: number, field: keyof Item, value: any) => {
     const updated = [...editItems];
     if (field === 'quantity') {
-      updated[index][field] = Math.max(1, parseInt(value) || 1);
+      updated[index][field] = Math.max(0.01, parseFloat(value) || 1);
     } else if (field === 'price') {
       updated[index][field] = Math.max(0, parseFloat(value) || 0);
     } else {
@@ -377,7 +377,8 @@ function ActionCardContent() {
                           />
                           <input
                             type="number"
-                            min="1"
+                            min="0.01"
+                            step="0.01"
                             placeholder="Qty"
                             value={item.quantity}
                             onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}

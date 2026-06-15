@@ -212,13 +212,13 @@ Return only the transcript text.
         return quantity_map.get(quantity_str, 0)
 
     @staticmethod
-    def _parse_quantity(quantity_str: str) -> tuple[int, str]:
-        """Parse a quantity string into an integer quantity and a unit string."""
+    def _parse_quantity(quantity_str: str) -> tuple[float, str]:
+        """Parse a quantity string into a numeric quantity and a unit string."""
         if quantity_str is None:
-            return 0, ""
+            return 0.0, ""
 
         if isinstance(quantity_str, (int, float)):
-            return int(quantity_str), ""
+            return float(quantity_str), ""
 
         s = str(quantity_str).strip().lower()
         if not s:
@@ -229,10 +229,10 @@ Return only the transcript text.
         if m:
             return int(m.group(1)), (m.group(2) or "")
 
-        # Match decimals like '2.5 kg' -> convert to int
+        # Match decimals like '2.5 kg'.
         m2 = re.match(r"^(\d+(?:\.\d+))(?:\s*([a-zA-Z%]+))?\.?$", s)
         if m2:
-            return int(float(m2.group(1))), (m2.group(2) or "")
+            return float(m2.group(1)), (m2.group(2) or "")
 
         # Word-number mapping
         qty = GeminiService._normalize_quantity(s)
@@ -451,7 +451,7 @@ Return only the transcript text.
                 raw_qty = item.get("quantity", 0)
                 unit_hint = (item.get("unit") or "").strip()
                 if isinstance(raw_qty, (int, float)):
-                    qty = int(raw_qty)
+                    qty = float(raw_qty)
                     unit = unit_hint
                 else:
                     qty, parsed_unit = GeminiService._parse_quantity(str(raw_qty))
