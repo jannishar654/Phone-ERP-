@@ -5,6 +5,7 @@ from app.controllers.action_card import ActionCardController
 from pydantic import BaseModel
 from datetime import datetime
 from app.services.gemini import GeminiService
+from google.genai import errors
 
 router = APIRouter()
 
@@ -52,6 +53,19 @@ async def transcribe_audio(file: UploadFile = File(...)) -> Dict[str, Any]:
             filename=file.filename,
         )
     except Exception as error:
+        err_msg = str(error).upper()
+        is_quota = False
+        if isinstance(error, errors.APIError) and (error.code == 429 or "RESOURCE_EXHAUSTED" in err_msg or "QUOTA" in err_msg):
+            is_quota = True
+        elif "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "QUOTA" in err_msg:
+            is_quota = True
+
+        if is_quota:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Voice processing is temporarily unavailable due to API quota limits. Please enter the order manually.",
+            ) from error
+
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(error),

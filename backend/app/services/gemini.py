@@ -338,50 +338,58 @@ Return only the transcript text.
             "Output only JSON."
         )
 
-        response = None
-        models = ("gemini-2.5-flash-lite", "gemini-2.5-flash")
+        try:
+            response = None
+            models = ("gemini-2.5-flash-lite", "gemini-2.5-flash")
 
-        for model_name in models:
-            for attempt in range(3):
-                try:
-                    response = await asyncio.to_thread(
-                        client.models.generate_content,
-                        model=model_name,
-                        contents=[prompt],
-                    )
-                    break
-                except errors.ServerError as error:
-                    if error.code != 503 or attempt == 2:
-                        logger.warning(
-                            "Gemini extraction model %s unavailable: %s",
-                            model_name,
-                            error,
+            for model_name in models:
+                for attempt in range(3):
+                    try:
+                        response = await asyncio.to_thread(
+                            client.models.generate_content,
+                            model=model_name,
+                            contents=[prompt],
                         )
                         break
-                    await asyncio.sleep(2 ** attempt)
-            if response:
-                break
+                    except errors.ServerError as error:
+                        if error.code != 503 or attempt == 2:
+                            logger.warning(
+                                "Gemini extraction model %s unavailable: %s",
+                                model_name,
+                                error,
+                            )
+                            break
+                        await asyncio.sleep(2 ** attempt)
+                if response:
+                    break
 
-        if not response or not getattr(response, "text", None):
-            logger.warning("Gemini extraction failed or returned empty response, using fallback parser.")
-            return GeminiService._parse_order_fallback(transcript)
+            if not response or not getattr(response, "text", None):
+                logger.warning("Gemini extraction failed or returned empty response, using fallback parser.")
+                return GeminiService._parse_order_fallback(transcript)
 
-        result_text = response.text.strip()
-        parsed = None
+            result_text = response.text.strip()
+            parsed = None
 
-        try:
-            parsed = json.loads(result_text)
-        except json.JSONDecodeError:
-            # Try to extract JSON-like substring if model emits extra text.
-            json_match = re.search(r"\{.*\}", result_text, re.S)
-            if json_match:
-                try:
-                    parsed = json.loads(json_match.group(0))
-                except json.JSONDecodeError:
-                    parsed = None
+            try:
+                parsed = json.loads(result_text)
+            except json.JSONDecodeError:
+                # Try to extract JSON-like substring if model emits extra text.
+                json_match = re.search(r"\{.*\}", result_text, re.S)
+                if json_match:
+                    try:
+                        parsed = json.loads(json_match.group(0))
+                    except json.JSONDecodeError:
+                        parsed = None
 
-        if not parsed or not isinstance(parsed, dict):
-            logger.warning("Could not parse Gemini extraction output, using fallback parser.")
+            if not parsed or not isinstance(parsed, dict):
+                logger.warning("Could not parse Gemini extraction output, using fallback parser.")
+                return GeminiService._parse_order_fallback(transcript)
+        except Exception as error:
+            err_msg = str(error).upper()
+            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "QUOTA" in err_msg:
+                logger.warning(f"Gemini extraction hit quota limit ({error}). Falling back to local parser.")
+            else:
+                logger.exception("Gemini extraction failed, using fallback parser.")
             return GeminiService._parse_order_fallback(transcript)
 
         items = parsed.get("items") or []

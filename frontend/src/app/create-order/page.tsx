@@ -21,6 +21,9 @@ export default function CreateOrder() {
   const [isGenerated, setIsGenerated] = useState(false);
   const [cardId, setCardId] = useState<string | null>(null);
   const [extractionError, setExtractionError] = useState<string | null>(null);
+  const [isQuotaError, setIsQuotaError] = useState(false);
+  const [manualTranscript, setManualTranscript] = useState('');
+  const [orderSource, setOrderSource] = useState<'audio' | 'text'>('audio');
   // Generated Card Editing States
   const [isEditing, setIsEditing] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -128,6 +131,7 @@ export default function CreateOrder() {
 
       const card = await extractActionCard(transcription.transcript, 'audio');
       setCardId(card.id);
+      setOrderSource('audio');
 
       setCustomerName(card.customer_name || '');
       setCustomerPhone(card.customer_phone || '');
@@ -137,9 +141,76 @@ export default function CreateOrder() {
       setIsGenerated(true);
       setIsEditing(false);
       setExtractionError(null);
+      setIsQuotaError(false);
     } catch (error) {
       console.error(error);
-      setExtractionError('Could not extract order. Please retry recording.');
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const isQuota = errMsg.includes('429') || 
+                      errMsg.toUpperCase().includes('RESOURCE_EXHAUSTED') || 
+                      errMsg.toUpperCase().includes('QUOTA') || 
+                      errMsg.toUpperCase().includes('RATE_LIMIT') || 
+                      errMsg.includes('temporarily unavailable');
+
+      if (isQuota) {
+        setIsQuotaError(true);
+        setExtractionError(null);
+      } else {
+        setExtractionError('Could not extract order. Please retry recording.');
+      }
+      setIsGenerated(false);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleGenerateActionCardFromText = async () => {
+    if (!manualTranscript.trim()) {
+      alert('Please enter the order details/transcript.');
+      return;
+    }
+
+    setIsProcessing(true);
+    setProcessingStatus('Running structured entity extraction...');
+
+    try {
+      // Clean up previous generated card in this session if any
+      if (cardId) {
+        try {
+          await deleteActionCard(cardId);
+        } catch (err) {
+          console.error("Failed to delete previous action card:", err);
+        }
+      }
+
+      const card = await extractActionCard(manualTranscript, 'text');
+      setCardId(card.id);
+      setOrderSource('text');
+
+      setCustomerName(card.customer_name || '');
+      setCustomerPhone(card.customer_phone || '');
+      setDeliveryAddress(card.delivery_address || '');
+      setDeliveryTime(card.delivery_time || '');
+      setItems(card.items || []);
+      setTranscript(manualTranscript);
+      setIsGenerated(true);
+      setIsEditing(false);
+      setExtractionError(null);
+      setIsQuotaError(false);
+    } catch (error) {
+      console.error(error);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const isQuota = errMsg.includes('429') || 
+                      errMsg.toUpperCase().includes('RESOURCE_EXHAUSTED') || 
+                      errMsg.toUpperCase().includes('QUOTA') || 
+                      errMsg.toUpperCase().includes('RATE_LIMIT') || 
+                      errMsg.includes('temporarily unavailable');
+      
+      if (isQuota) {
+        setExtractionError('Voice processing is temporarily unavailable due to API quota limits. Please enter the order manually.');
+        setIsQuotaError(true);
+      } else {
+        setExtractionError('Could not extract order details. Please verify your text and try again.');
+      }
       setIsGenerated(false);
     } finally {
       setIsProcessing(false);
@@ -222,7 +293,7 @@ export default function CreateOrder() {
       delivery_time: deliveryTime,
       items: validItems,
       status: 'pending',
-      source: 'audio',
+      source: orderSource,
       transcript: transcript
     };
 
@@ -256,7 +327,7 @@ export default function CreateOrder() {
       </div>
 
       {/* Voice Recording Control Panel */}
-      {!isGenerated && !isProcessing && !extractionError && (
+      {!isGenerated && !isProcessing && !extractionError && !isQuotaError && (
         <div className="rounded-xl border border-slate-200 bg-white p-8 space-y-6 shadow-sm text-center">
           <h2 className="text-lg font-bold text-slate-900">Capture Phone Call Order</h2>
           <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
@@ -309,12 +380,25 @@ export default function CreateOrder() {
                 </button>
               )}
             </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsQuotaError(true);
+                  setExtractionError(null);
+                }}
+                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer underline transition-colors"
+              >
+                Or, type order manually
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* Explicit Error State Panel */}
-      {extractionError && !isProcessing && (
+      {extractionError && !isProcessing && !isQuotaError && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center shadow-sm space-y-6">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-650">
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -341,6 +425,65 @@ export default function CreateOrder() {
             >
               Retry Recording
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Quota Error / Manual Fallback Panel */}
+      {isQuotaError && !isProcessing && (
+        <div className="rounded-xl border border-amber-250 bg-amber-50 p-8 shadow-sm space-y-6">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-705">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          
+          <div className="space-y-2 text-center">
+            <h3 className="text-lg font-bold text-amber-950">Voice Processing Unavailable</h3>
+            <p className="text-sm text-amber-805 font-semibold max-w-md mx-auto">
+              Voice processing is temporarily unavailable due to API quota limits. Please enter the order manually.
+            </p>
+          </div>
+
+          <div className="max-w-xl mx-auto space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
+                Order Transcript / Details
+              </label>
+              <textarea
+                value={manualTranscript}
+                onChange={(e) => setManualTranscript(e.target.value)}
+                placeholder="Example: Johnathan Archer, +1 310-555-2150. Deliver 2 units of Plasma Injector Model D to Starbase 1 ASAP."
+                rows={4}
+                className="w-full bg-white border border-slate-350 rounded-lg px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+              />
+            </div>
+
+            <div className="flex justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsQuotaError(false);
+                  setExtractionError(null);
+                  setRecordingState('idle');
+                  setAudioUrl(null);
+                  setAudioChunks([]);
+                  setRecordingSeconds(0);
+                }}
+                className="px-5 py-2.5 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-lg text-sm transition-colors cursor-pointer"
+              >
+                Back to Voice
+              </button>
+
+              <button
+                type="button"
+                onClick={handleGenerateActionCardFromText}
+                disabled={!manualTranscript.trim()}
+                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 disabled:cursor-not-allowed text-white font-bold rounded-lg text-sm transition-colors shadow-sm cursor-pointer"
+              >
+                Generate Action Card
+              </button>
+            </div>
           </div>
         </div>
       )}
