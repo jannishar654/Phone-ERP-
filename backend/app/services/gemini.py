@@ -39,6 +39,20 @@ class GeminiService:
         return suffix, mime_type
 
     @staticmethod
+    def _clean_transcript(transcript: str) -> str:
+        """Remove timeline labels accidentally returned by transcription."""
+
+        timestamp_pattern = r"\b\d{1,2}:\d{2}(?::\d{2})?\b"
+        timestamps = re.findall(timestamp_pattern, transcript)
+
+        # A single time can be a real delivery time. Multiple labels, or output
+        # beginning at 00:xx, indicate that Gemini generated a timeline.
+        if transcript.strip().startswith("00:") or len(timestamps) >= 2:
+            transcript = re.sub(timestamp_pattern, " ", transcript)
+
+        return re.sub(r"\s+", " ", transcript).strip()
+
+    @staticmethod
     async def transcribe_audio_file(file_content: bytes, filename: str) -> str:
         """Upload audio to Gemini and return its transcript."""
 
@@ -103,6 +117,9 @@ Preserve Hindi / Hinglish words exactly as spoken. Do not translate Hindi words 
 Preserve brand names, quantities, pack sizes, units, and customer names.
 Do not summarize, correct, or invent extra details.
 If any word is not clear, write [unclear] in its place.
+Ignore silence and pauses.
+Do not include timestamps, duration labels, speaker labels, or numbering.
+Return only the words actually spoken by the user.
 Return only the transcript text.
 """
 
@@ -138,7 +155,8 @@ Return only the transcript text.
                     "Please try again shortly."
                 )
 
-            transcript = response.text.strip() if response.text else ""
+            raw_transcript = response.text.strip() if response.text else ""
+            transcript = GeminiService._clean_transcript(raw_transcript)
 
             if not transcript:
                 raise ValueError("Gemini returned an empty transcript.")
