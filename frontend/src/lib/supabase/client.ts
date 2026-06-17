@@ -76,7 +76,9 @@ export const authClient = {
     if (supabase) {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return { user: null, error: error.message };
-      return { user: { email: data.user.email || '', name: data.user.user_metadata?.name || 'User' }, error: null };
+      const userObj = { email: data.user.email || '', name: data.user.user_metadata?.name || 'User' };
+      setCookie('phoneerp-session', JSON.stringify(userObj), 1);
+      return { user: userObj, error: null };
     }
     return mockSupabaseAuth.signIn(email, password);
   },
@@ -84,13 +86,16 @@ export const authClient = {
     if (supabase) {
       const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name } } });
       if (error) return { user: null, error: error.message };
-      return { user: { email: data.user?.email || '', name }, error: null };
+      const userObj = { email: data.user?.email || '', name };
+      setCookie('phoneerp-session', JSON.stringify(userObj), 1);
+      return { user: userObj, error: null };
     }
     return mockSupabaseAuth.signUp(email, password, name);
   },
   async signOut() {
     if (supabase) {
       const { error } = await supabase.auth.signOut();
+      eraseCookie('phoneerp-session');
       if (error) return { error: error.message };
       return { error: null };
     }
