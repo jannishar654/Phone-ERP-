@@ -1,11 +1,13 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, status
-from typing import List, Dict, Any
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Form, Depends
+from typing import List, Dict, Any, Optional
+from app.dependencies.auth import get_current_user_id
 from app.schemas.action_card import ActionCard, Item, ActionCardCreate, ActionCardUpdate, StatusUpdate
 from app.controllers.action_card import ActionCardController
 from pydantic import BaseModel
 from datetime import datetime
 from app.services.gemini import GeminiService
 from google.genai import errors
+from app.config.settings import settings
 
 router = APIRouter()
 
@@ -24,7 +26,7 @@ def health_check():
 
 # Mock audio transcription endpoint
 @router.post("/transcribe", status_code=status.HTTP_200_OK)
-async def transcribe_audio(file: UploadFile = File(...)) -> Dict[str, Any]:
+async def transcribe_audio(file: UploadFile = File(...), provider: str = Form(settings.STT_PROVIDER)) -> Dict[str, Any]:
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -46,18 +48,32 @@ async def transcribe_audio(file: UploadFile = File(...)) -> Dict[str, Any]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded audio file is empty.",
         )
+        
+    MAX_FILE_SIZE = 20 * 1024 * 1024 # 20 MB
+    if len(file_content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Audio file exceeds the maximum allowed size of 20MB.",
+        )
 
     try:
-        transcript = await GeminiService.transcribe_audio_file(
-            file_content=file_content,
-            filename=file.filename,
-        )
+        if provider == "sarvam":
+            from app.services.sarvam import SarvamService
+            transcript = await SarvamService.transcribe_audio_file(
+                file_content=file_content,
+                filename=file.filename,
+            )
+        else:
+            transcript = await GeminiService.transcribe_audio_file(
+                file_content=file_content,
+                filename=file.filename,
+            )
     except Exception as error:
         err_msg = str(error).upper()
         is_quota = False
         if isinstance(error, errors.APIError) and (error.code == 429 or "RESOURCE_EXHAUSTED" in err_msg or "QUOTA" in err_msg):
             is_quota = True
-        elif "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "QUOTA" in err_msg:
+        elif "429" in err_msg or "402" in err_msg or "PAYMENT REQUIRED" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "QUOTA" in err_msg:
             is_quota = True
 
         if is_quota:
@@ -143,13 +159,13 @@ async def extract_action_card(payload: ExtractRequest) -> ActionCard:
 
 # Get all orders/cards
 @router.get("/action-cards", response_model=List[ActionCard], status_code=status.HTTP_200_OK)
-async def get_action_cards() -> List[ActionCard]:
-    return ActionCardController.get_all_cards()
+async def get_action_cards(user_id: Optional[str] = Depends(get_current_user_id)) -> List[ActionCard]:
+    return ActionCardController.get_all_cards(user_id)
 
 # Get card by ID
 @router.get("/action-cards/{card_id}", response_model=ActionCard, status_code=status.HTTP_200_OK)
-async def get_action_card(card_id: str) -> ActionCard:
-    card = ActionCardController.get_card_by_id(card_id)
+async def get_action_card(card_id: str, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
+    card = ActionCardController.get_card_by_id(card_id, user_id)
     if not card:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -159,13 +175,13 @@ async def get_action_card(card_id: str) -> ActionCard:
 
 # Create manual card
 @router.post("/action-cards", response_model=ActionCard, status_code=status.HTTP_201_CREATED)
-async def create_action_card(payload: ActionCardCreate) -> ActionCard:
-    return ActionCardController.create_card(payload.model_dump())
+async def create_action_card(payload: ActionCardCreate, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
+    return ActionCardController.create_card(payload.model_dump(), user_id)
 
 # Edit card
 @router.put("/action-cards/{card_id}", response_model=ActionCard, status_code=status.HTTP_200_OK)
-async def update_action_card(card_id: str, payload: ActionCardUpdate) -> ActionCard:
-    updated_card = ActionCardController.update_card(card_id, payload.model_dump(exclude_unset=True))
+async def update_action_card(card_id: str, payload: ActionCardUpdate, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
+    updated_card = ActionCardController.update_card(card_id, payload.model_dump(exclude_unset=True), user_id)
     if not updated_card:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -175,8 +191,8 @@ async def update_action_card(card_id: str, payload: ActionCardUpdate) -> ActionC
 
 # Quick status update
 @router.patch("/action-cards/{card_id}/status", response_model=ActionCard, status_code=status.HTTP_200_OK)
-async def update_action_card_status(card_id: str, payload: StatusUpdate) -> ActionCard:
-    updated_card = ActionCardController.update_card_status(card_id, payload.status)
+async def update_action_card_status(card_id: str, payload: StatusUpdate, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
+    updated_card = ActionCardController.update_card_status(card_id, payload.status, user_id)
     if not updated_card:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -186,8 +202,8 @@ async def update_action_card_status(card_id: str, payload: StatusUpdate) -> Acti
 
 # Delete card
 @router.delete("/action-cards/{card_id}", status_code=status.HTTP_200_OK)
-async def delete_action_card(card_id: str):
-    success = ActionCardController.delete_card(card_id)
+async def delete_action_card(card_id: str, user_id: Optional[str] = Depends(get_current_user_id)):
+    success = ActionCardController.delete_card(card_id, user_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

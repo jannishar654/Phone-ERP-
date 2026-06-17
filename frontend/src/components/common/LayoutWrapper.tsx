@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
-import { mockSupabaseAuth, User } from '@/lib/supabase/client';
+import { authClient, User } from '@/lib/supabase/client';
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -14,11 +14,11 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   const isAuthOrLanding = pathname === '/' || pathname === '/login' || pathname === '/signup';
 
   useEffect(() => {
-    setUser(mockSupabaseAuth.getUser());
+    authClient.getUser().then(setUser);
   }, [pathname]);
 
   const handleSignOut = async () => {
-    await mockSupabaseAuth.signOut();
+    await authClient.signOut();
     router.push('/');
   };
 

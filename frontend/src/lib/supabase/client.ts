@@ -1,3 +1,12 @@
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+
+export const supabase = (supabaseUrl && supabaseAnonKey && supabaseUrl !== 'your-vercel-supabase-url') 
+  ? createClient(supabaseUrl, supabaseAnonKey) 
+  : null;
+
 // Simple cookie helpers
 function getCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
@@ -32,49 +41,26 @@ export interface User {
   name: string;
 }
 
-export const mockSupabaseAuth = {
+const mockSupabaseAuth = {
   async signIn(email: string, password: string): Promise<{ user: User | null; error: string | null }> {
-    // Simple placeholder validator: any password >= 6 chars is fine
-    if (password.length < 6) {
-      return { user: null, error: 'Password must be at least 6 characters.' };
-    }
-    
-    // Seed a mock name
+    if (password.length < 6) return { user: null, error: 'Password must be at least 6 characters.' };
     const name = email.split('@')[0];
-    const capitalizedName = name.charAt(0).toUpperCase() + name.slice(1);
-    
-    const userSession = {
-      email,
-      name: capitalizedName
-    };
-    
+    const userSession = { email, name: name.charAt(0).toUpperCase() + name.slice(1) };
     setCookie('phoneerp-session', JSON.stringify(userSession), 1);
     return { user: userSession, error: null };
   },
-
   async signUp(email: string, password: string, name: string): Promise<{ user: User | null; error: string | null }> {
-    if (password.length < 6) {
-      return { user: null, error: 'Password must be at least 6 characters.' };
-    }
-    if (!name.trim()) {
-      return { user: null, error: 'Name cannot be empty.' };
-    }
-
-    const userSession = {
-      email,
-      name: name.trim()
-    };
-
+    if (password.length < 6) return { user: null, error: 'Password must be at least 6 characters.' };
+    if (!name.trim()) return { user: null, error: 'Name cannot be empty.' };
+    const userSession = { email, name: name.trim() };
     setCookie('phoneerp-session', JSON.stringify(userSession), 1);
     return { user: userSession, error: null };
   },
-
   async signOut(): Promise<{ error: string | null }> {
     eraseCookie('phoneerp-session');
     return { error: null };
   },
-
-  getUser(): User | null {
+  async getUser(): Promise<User | null> {
     const sessionCookie = getCookie('phoneerp-session');
     if (!sessionCookie) return null;
     try {
@@ -82,5 +68,42 @@ export const mockSupabaseAuth = {
     } catch {
       return null;
     }
+  }
+};
+
+export const authClient = {
+  async signIn(email: string, password: string) {
+    if (supabase) {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return { user: null, error: error.message };
+      return { user: { email: data.user.email || '', name: data.user.user_metadata?.name || 'User' }, error: null };
+    }
+    return mockSupabaseAuth.signIn(email, password);
+  },
+  async signUp(email: string, password: string, name: string) {
+    if (supabase) {
+      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name } } });
+      if (error) return { user: null, error: error.message };
+      return { user: { email: data.user?.email || '', name }, error: null };
+    }
+    return mockSupabaseAuth.signUp(email, password, name);
+  },
+  async signOut() {
+    if (supabase) {
+      const { error } = await supabase.auth.signOut();
+      if (error) return { error: error.message };
+      return { error: null };
+    }
+    return mockSupabaseAuth.signOut();
+  },
+  async getUser() {
+    if (supabase) {
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        return { email: data.user.email || '', name: data.user.user_metadata?.name || 'User' };
+      }
+      return null;
+    }
+    return mockSupabaseAuth.getUser();
   }
 };

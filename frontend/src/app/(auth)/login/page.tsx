@@ -3,7 +3,7 @@
 import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { mockSupabaseAuth } from '@/lib/supabase/client';
+import { authClient } from '@/lib/supabase/client';
 
 function LoginContent() {
   const router = useRouter();
@@ -19,7 +19,7 @@ function LoginContent() {
     setIsLoading(true);
 
     try {
-      const { user, error: authError } = await mockSupabaseAuth.signIn(email, password);
+      const { user, error: authError } = await authClient.signIn(email, password);
       if (authError) {
         setError(authError);
       } else if (user) {

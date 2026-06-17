@@ -1,6 +1,16 @@
 import { ActionCard, Item } from '../types';
+import { supabase } from './supabase/client';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  if (!supabase) return {};
+  const { data } = await supabase.auth.getSession();
+  if (data?.session?.access_token) {
+    return { 'Authorization': `Bearer ${data.session.access_token}` };
+  }
+  return {};
+}
 
 const INITIAL_LOCAL_DB: ActionCard[] = [
   {
@@ -75,12 +85,14 @@ export async function getHealth(): Promise<{ status: string; timestamp: string; 
   }
 }
 
-export async function transcribeAudio(audioFile: File): Promise<{ transcript: string; confidence: number | null }> {
+export async function transcribeAudio(audioFile: File, provider: string = "gemini"): Promise<{ transcript: string; confidence: number | null }> {
   const formData = new FormData();
   formData.append('file', audioFile);
 
-  const res = await fetch(`${API_BASE_URL}/transcribe`, {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/transcribe?provider=${provider}`, {
     method: 'POST',
+    headers,
     body: formData,
   });
 
@@ -92,13 +104,21 @@ export async function transcribeAudio(audioFile: File): Promise<{ transcript: st
   return res.json();
 }
 
-export async function extractActionCard(transcript: string, source: 'audio' | 'text' = 'text'): Promise<ActionCard> {
+export async function extractActionCard(
+  transcript: string, 
+  source: 'audio' | 'text' = 'text',
+  provider: string = "gemini",
+  stt_provider: string | null = null,
+  save_evaluation: boolean = false
+): Promise<ActionCard> {
+  const headers = await getAuthHeaders();
   const res = await fetch(`${API_BASE_URL}/extract-action-card`, {
     method: 'POST',
     headers: {
+      ...headers,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ transcript, source }),
+    body: JSON.stringify({ transcript, source, provider, stt_provider, save_evaluation }),
   });
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
@@ -109,7 +129,8 @@ export async function extractActionCard(transcript: string, source: 'audio' | 't
 
 export async function getActionCards(): Promise<ActionCard[]> {
   try {
-    const res = await fetch(`${API_BASE_URL}/action-cards`);
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_BASE_URL}/action-cards`, { headers });
     if (!res.ok) throw new Error();
     const data = await res.json();
     setLocalDB(data);
@@ -121,7 +142,8 @@ export async function getActionCards(): Promise<ActionCard[]> {
 
 export async function getActionCard(cardId: string): Promise<ActionCard> {
   try {
-    const res = await fetch(`${API_BASE_URL}/action-cards/${cardId}`);
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_BASE_URL}/action-cards/${cardId}`, { headers });
     if (!res.ok) throw new Error();
     return res.json();
   } catch (err) {
@@ -134,9 +156,11 @@ export async function getActionCard(cardId: string): Promise<ActionCard> {
 
 export async function createActionCard(cardData: Partial<ActionCard>): Promise<ActionCard> {
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch(`${API_BASE_URL}/action-cards`, {
       method: 'POST',
       headers: {
+        ...headers,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(cardData),
@@ -165,9 +189,11 @@ export async function createActionCard(cardData: Partial<ActionCard>): Promise<A
 
 export async function updateActionCard(cardId: string, cardData: Partial<ActionCard>): Promise<ActionCard> {
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch(`${API_BASE_URL}/action-cards/${cardId}`, {
       method: 'PUT',
       headers: {
+        ...headers,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(cardData),
@@ -188,9 +214,11 @@ export async function updateActionCard(cardId: string, cardData: Partial<ActionC
 
 export async function updateActionCardStatus(cardId: string, status: string): Promise<ActionCard> {
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch(`${API_BASE_URL}/action-cards/${cardId}/status`, {
       method: 'PATCH',
       headers: {
+        ...headers,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ status }),
@@ -211,8 +239,10 @@ export async function updateActionCardStatus(cardId: string, status: string): Pr
 
 export async function deleteActionCard(cardId: string): Promise<void> {
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch(`${API_BASE_URL}/action-cards/${cardId}`, {
       method: 'DELETE',
+      headers,
     });
     if (!res.ok) throw new Error();
   } catch (err) {

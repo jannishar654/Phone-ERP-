@@ -15,6 +15,17 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = "your-supabase-anon-key-here"
     
     GEMINI_API_KEY: str = "your-gemini-api-key-here"
+    SARVAM_API_KEY: str = ""
+    
+    # Providers
+    STT_PROVIDER: str = "sarvam"
+    EXTRACTION_PROVIDER: str = "gemini"
+    ENABLE_OLLAMA: bool = False
+    # Enable fallback Layer 2 LLM Normalizer for messy hinglish
+    ENABLE_LLM_FALLBACK: bool = True
+
+    # Security: Require JWT Auth for backend routes
+    REQUIRE_AUTH: bool = False
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

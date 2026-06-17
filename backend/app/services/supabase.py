@@ -18,19 +18,67 @@ else:
 
 class SupabaseService:
     @staticmethod
-    async def save_action_card(card_data: dict) -> dict:
-        """
-        Save an action card to the Supabase action_cards table.
-        TODO: Implement real insertion: supabase_client.table("action_cards").insert(card_data).execute()
-        """
-        # Placeholder
-        return card_data
+    def is_available() -> bool:
+        return supabase_client is not None
 
     @staticmethod
-    async def fetch_action_cards() -> list:
-        """
-        Fetch all action cards from Supabase.
-        TODO: Implement real fetching: supabase_client.table("action_cards").select("*").execute()
-        """
-        # Placeholder
-        return []
+    def create(card_data: dict) -> dict:
+        if not supabase_client: return None
+        try:
+            res = supabase_client.table("action_cards").insert(card_data).execute()
+            return res.data[0] if res.data else None
+        except Exception as e:
+            logger.error(f"Supabase create error: {e}")
+            return None
+
+    @staticmethod
+    def get_all(user_id: str = None) -> list:
+        if not supabase_client: return []
+        try:
+            query = supabase_client.table("action_cards").select("*")
+            if user_id:
+                query = query.eq("user_id", user_id)
+            res = query.order("created_at", desc=True).execute()
+            return res.data
+        except Exception as e:
+            logger.error(f"Supabase get_all error: {e}")
+            return []
+
+    @staticmethod
+    def get_by_id(card_id: str, user_id: str = None) -> dict:
+        if not supabase_client: return None
+        try:
+            query = supabase_client.table("action_cards").select("*").eq("id", card_id)
+            if user_id:
+                query = query.eq("user_id", user_id)
+            res = query.execute()
+            return res.data[0] if res.data else None
+        except Exception as e:
+            logger.error(f"Supabase get_by_id error: {e}")
+            return None
+
+    @staticmethod
+    def update(card_id: str, card_data: dict, user_id: str = None) -> dict:
+        if not supabase_client: return None
+        try:
+            query = supabase_client.table("action_cards").update(card_data).eq("id", card_id)
+            if user_id:
+                query = query.eq("user_id", user_id)
+            res = query.execute()
+            return res.data[0] if res.data else None
+        except Exception as e:
+            logger.error(f"Supabase update error: {e}")
+            return None
+
+    @staticmethod
+    def delete(card_id: str, user_id: str = None) -> bool:
+        if not supabase_client: return False
+        try:
+            query = supabase_client.table("action_cards").delete().eq("id", card_id)
+            if user_id:
+                query = query.eq("user_id", user_id)
+            query.execute()
+            return True
+        except Exception as e:
+            logger.error(f"Supabase delete error: {e}")
+            return False
