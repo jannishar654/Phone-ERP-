@@ -27,6 +27,7 @@ function ActionCardContent() {
   // Speech upload demo state
   const [demoTranscript, setDemoTranscript] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
+  const [extractProvider, setExtractProvider] = useState('gemini');
 
   async function loadCards() {
     try {
@@ -142,7 +143,7 @@ function ActionCardContent() {
   };
 
   const addEditItemRow = () => {
-    setEditItems([...editItems, { name: '', quantity: 1, price: 0 }]);
+    setEditItems([...editItems, { name: '', quantity: 1, unit: '', price: 0 }]);
   };
 
   const removeEditItemRow = (index: number) => {
@@ -181,7 +182,12 @@ function ActionCardContent() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ transcript: demoTranscript, source: 'audio' }),
+        body: JSON.stringify({ 
+          transcript: demoTranscript, 
+          source: 'text', 
+          provider: extractProvider,
+          save_evaluation: true
+        }),
       });
       if (!res.ok) throw new Error();
       const newCard = await res.json();
@@ -263,7 +269,7 @@ function ActionCardContent() {
                   <ul className="mt-2 space-y-1">
                     {card.items.map((item, idx) => (
                       <li key={idx} className="text-sm text-slate-600 flex justify-between font-semibold">
-                        <span>{item.quantity}x {item.name}</span>
+                        <span>{item.quantity}{item.unit ? ` ${item.unit}` : 'x'} {item.name}</span>
                         {item.price !== undefined && item.price !== null && item.price > 0 ? (
                           <span className="text-slate-500 font-mono">₹{(item.price * item.quantity).toFixed(2)}</span>
                         ) : (
@@ -288,6 +294,18 @@ function ActionCardContent() {
             <p className="text-xs text-slate-500 leading-relaxed font-medium">
               Type or paste sample customer speech transcriptions. Our mock endpoint will simulate AI entity extraction and add a card to the database.
             </p>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Extraction Engine</label>
+              <select 
+                value={extractProvider}
+                onChange={(e) => setExtractProvider(e.target.value)}
+                disabled={isExtracting}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 font-medium focus:outline-none focus:border-indigo-500 mb-2"
+              >
+                <option value="gemini">Gemini Extraction</option>
+                <option value="gliner">GLiNER Extraction</option>
+              </select>
+            </div>
             <textarea
               rows={3}
               value={demoTranscript}
@@ -384,6 +402,13 @@ function ActionCardContent() {
                             className="w-10 bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-900 text-center font-medium focus:outline-none focus:border-indigo-500"
                           />
                           <input
+                            type="text"
+                            placeholder="Unit"
+                            value={item.unit || ''}
+                            onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
+                            className="w-14 bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
+                          />
+                          <input
                             type="number"
                             step="0.01"
                             placeholder="Price"
@@ -446,7 +471,31 @@ function ActionCardContent() {
                   <div>
                     <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Delivery Instructions</h4>
                     <p className="text-sm text-slate-800 mt-1 font-bold">{selectedCard.delivery_address || 'Not specified'}</p>
-                    <p className="text-xs text-slate-500 mt-0.5 font-semibold">Time: {selectedCard.delivery_time || 'Immediate'}</p>
+                    <div className="mt-0.5">
+                      <p className="text-xs text-slate-500 font-semibold">Time: {selectedCard.delivery_time || 'Immediate'}</p>
+                      {selectedCard.delivery_time_raw && (
+                        <p className="text-[10px] text-slate-400 font-medium italic mt-0.5">Original delivery time: "{selectedCard.delivery_time_raw}"</p>
+                      )}
+                      {selectedCard.delivery_time_warning && (
+                        <p className="text-[10px] text-amber-600 font-semibold mt-0.5 flex items-center gap-1">
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          {selectedCard.delivery_time_warning}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100">
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Payment Details</h4>
+                    <p className={`text-xs mt-1 font-bold ${
+                      selectedCard.payment_method === 'Credit (Udhaar)' ? 'text-red-650' : 
+                      selectedCard.payment_method === 'Cash' || selectedCard.payment_method === 'Online' ? 'text-emerald-650' : 
+                      'text-slate-600'
+                    }`}>
+                      {selectedCard.payment_method || 'Not Specified'}
+                    </p>
                   </div>
 
                   <div className="pt-2 border-t border-slate-100">
@@ -455,7 +504,7 @@ function ActionCardContent() {
                       {selectedCard.items.map((item, idx) => (
                         <div key={idx} className="flex justify-between items-center text-xs p-2 rounded bg-slate-50 border border-slate-100 shadow-3xs">
                           <div className="text-slate-800 font-medium">
-                            <span className="font-bold text-slate-900">{item.quantity}x</span> {item.name}
+                            <span className="font-bold text-slate-900">{item.quantity}{item.unit ? ` ${item.unit}` : 'x'}</span> {item.name}
                           </div>
                           {item.price !== undefined && item.price !== null && item.price > 0 ? (
                             <div className="text-right font-mono text-slate-500 font-bold">
@@ -482,6 +531,41 @@ function ActionCardContent() {
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 space-y-2">
+                  {selectedCard.risk_flags && selectedCard.risk_flags.length > 0 && (
+                    <div className="bg-red-50 border border-red-200 p-3 rounded-lg text-[10px] text-red-800 font-semibold leading-relaxed flex items-start gap-2 my-2">
+                      <svg className="h-4 w-4 text-red-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      <div>
+                        <span className="font-extrabold uppercase mr-1">Risk Detected:</span>
+                        {selectedCard.risk_flags.join(", ")}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedCard.missing_fields && selectedCard.missing_fields.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-250 p-3 rounded-lg text-[10px] text-amber-850 font-semibold leading-relaxed flex items-start gap-2 my-2">
+                      <svg className="h-4 w-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      <div>
+                        <span className="font-extrabold uppercase mr-1">Missing details:</span>
+                        {selectedCard.missing_fields.join(", ")}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedCard.validation_warnings && selectedCard.validation_warnings.length > 0 && (
+                    <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg text-[10px] text-slate-700 font-semibold leading-relaxed flex items-start gap-2 my-2">
+                      <svg className="h-4 w-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <div>
+                        <span className="font-extrabold uppercase mr-1">Validation Warnings:</span>
+                        {selectedCard.validation_warnings.join(" ")}
+                      </div>
+                    </div>
+                  )}
                   {getCardValidationWarning(selectedCard) && (
                     <div className="bg-amber-50 border border-amber-250 p-3 rounded-lg text-[10px] text-amber-850 font-semibold leading-relaxed flex items-start gap-2 my-2">
                       <svg className="h-4 w-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

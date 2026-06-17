@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { mockSupabaseAuth } from '@/lib/supabase/client';
+import { authClient } from '@/lib/supabase/client';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -26,7 +26,7 @@ export default function SignupPage() {
     setIsLoading(true);
 
     try {
-      const { user, error: authError } = await mockSupabaseAuth.signUp(email, password, name);
+      const { user, error: authError } = await authClient.signUp(email, password, name);
       if (authError) {
         setError(authError);
       } else if (user) {

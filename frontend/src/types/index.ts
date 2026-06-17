@@ -14,6 +14,15 @@ export interface ActionCard {
   items: Item[];
   delivery_address?: string;
   delivery_time?: string;
+  delivery_time_raw?: string;
+  delivery_time_normalized?: string;
+  delivery_time_confidence?: number;
+  delivery_time_warning?: string;
+  delivery_address_raw?: string;
+  risk_flags?: string[];
+  missing_fields?: string[];
+  validation_warnings?: string[];
+  payment_method?: string;
   status: ActionCardStatus | string;
   source: 'audio' | 'text' | string;
   transcript: string;

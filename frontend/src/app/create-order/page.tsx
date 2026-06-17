@@ -24,6 +24,7 @@ export default function CreateOrder() {
   const [isQuotaError, setIsQuotaError] = useState(false);
   const [manualTranscript, setManualTranscript] = useState('');
   const [orderSource, setOrderSource] = useState<'audio' | 'text'>('audio');
+  const [pipeline, setPipeline] = useState('sarvam_gemini');
   // Generated Card Editing States
   const [isEditing, setIsEditing] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -32,6 +33,11 @@ export default function CreateOrder() {
   const [deliveryTime, setDeliveryTime] = useState('');
   const [items, setItems] = useState<Item[]>([]);
   const [transcript, setTranscript] = useState('');
+  
+  // Risk and Validation States
+  const [riskFlags, setRiskFlags] = useState<string[]>([]);
+  const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<string>('Not Specified');
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -115,10 +121,13 @@ export default function CreateOrder() {
         type: mimeType,
       });
 
-      const transcription = await transcribeAudio(audioFile);
+      const sttProvider = pipeline.startsWith('sarvam') ? 'sarvam' : 'gemini';
+      const extractProvider = pipeline.endsWith('ollama') ? 'ollama' : 'gemini';
+
+      const transcription = await transcribeAudio(audioFile, sttProvider);
       setTranscript(transcription.transcript);
 
-      setProcessingStatus('Running Gemini AI structured entity extraction...');
+      setProcessingStatus(`Running ${extractProvider === 'ollama' ? 'Ollama' : 'Gemini AI'} structured entity extraction...`);
       
       // Clean up previous generated card in this session if any, to avoid orphaned records
       if (cardId) {
@@ -129,7 +138,7 @@ export default function CreateOrder() {
         }
       }
 
-      const card = await extractActionCard(transcription.transcript, 'audio');
+      const card = await extractActionCard(transcription.transcript, 'audio', extractProvider, sttProvider, true);
       setCardId(card.id);
       setOrderSource('audio');
 
@@ -138,6 +147,9 @@ export default function CreateOrder() {
       setDeliveryAddress(card.delivery_address || '');
       setDeliveryTime(card.delivery_time || '');
       setItems(card.items || []);
+      setRiskFlags(card.risk_flags || []);
+      setValidationWarnings(card.validation_warnings || []);
+      setPaymentMethod(card.payment_method || 'Not Specified');
       setIsGenerated(true);
       setIsEditing(false);
       setExtractionError(null);
@@ -182,7 +194,8 @@ export default function CreateOrder() {
         }
       }
 
-      const card = await extractActionCard(manualTranscript, 'text');
+      const extractProvider = pipeline.endsWith('ollama') ? 'ollama' : 'gemini';
+      const card = await extractActionCard(manualTranscript, 'text', extractProvider, null, true);
       setCardId(card.id);
       setOrderSource('text');
 
@@ -191,6 +204,9 @@ export default function CreateOrder() {
       setDeliveryAddress(card.delivery_address || '');
       setDeliveryTime(card.delivery_time || '');
       setItems(card.items || []);
+      setRiskFlags(card.risk_flags || []);
+      setValidationWarnings(card.validation_warnings || []);
+      setPaymentMethod(card.payment_method || 'Not Specified');
       setTranscript(manualTranscript);
       setIsGenerated(true);
       setIsEditing(false);
@@ -335,6 +351,20 @@ export default function CreateOrder() {
           </p>
 
           <div className="flex flex-col items-center justify-center space-y-4">
+            <div className="w-full max-w-xs text-left mb-2">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">AI Pipeline</label>
+              <select 
+                value={pipeline}
+                onChange={(e) => setPipeline(e.target.value)}
+                disabled={recordingState === 'recording' || isProcessing}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
+              >
+                <option value="gemini_gemini">Gemini STT + Gemini Extraction</option>
+                <option value="sarvam_gemini">Sarvam STT + Gemini Extraction</option>
+                <option value="sarvam_ollama">Sarvam STT + Ollama Extraction (Qwen 2.5)</option>
+              </select>
+            </div>
+
             {recordingState === 'recording' && (
               <div className="flex items-center space-x-2 bg-red-50 text-red-700 px-4 py-2 rounded-lg border border-red-200">
                 <span className="h-2 w-2 rounded-full bg-red-600 animate-pulse"></span>
@@ -650,6 +680,17 @@ export default function CreateOrder() {
                   </div>
 
                   <div className="pt-4 border-t border-slate-100">
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Payment Details</h4>
+                    <p className={`text-xs mt-1 font-bold ${
+                      paymentMethod === 'Credit (Udhaar)' ? 'text-red-650' : 
+                      paymentMethod === 'Cash' || paymentMethod === 'Online' ? 'text-emerald-650' : 
+                      'text-slate-600'
+                    }`}>
+                      {paymentMethod}
+                    </p>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100">
                     <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Extracted Order Line Items</h4>
                     <div className="space-y-1.5">
                       {items.map((item, idx) => (
@@ -673,6 +714,32 @@ export default function CreateOrder() {
                         </div>
                       ))}
                     </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100 space-y-2">
+                    {riskFlags.length > 0 && (
+                      <div className="bg-red-50 border border-red-200 p-3 rounded-lg text-[10px] text-red-800 font-semibold leading-relaxed flex items-start gap-2 my-2">
+                        <svg className="h-4 w-4 text-red-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div>
+                          <span className="font-extrabold uppercase mr-1">Risk Detected:</span>
+                          {riskFlags.join(", ")}
+                        </div>
+                      </div>
+                    )}
+
+                    {validationWarnings.length > 0 && (
+                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg text-[10px] text-slate-700 font-semibold leading-relaxed flex items-start gap-2 my-2">
+                        <svg className="h-4 w-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div>
+                          <span className="font-extrabold uppercase mr-1">Validation Warnings:</span>
+                          {validationWarnings.join(" ")}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {transcript && (

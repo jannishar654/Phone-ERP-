@@ -1,0 +1,54 @@
+{
+  "local_aliases": {
+    "bada doodh": "Amul Gold Milk",
+    "bade doodh ka packet": "Amul Gold Milk",
+    "lal surf": "Surf Excel Easy Wash",
+    "lal wala surf": "Surf Excel Easy Wash",
+    "aata": "Aashirvaad Atta",
+    "atta": "Aashirvaad Atta",
+    "chawal": "India Gate Basmati Rice",
+    "rice": "India Gate Basmati Rice",
+    "chini": "Sugar",
+    "cheeni": "Sugar",
+    "tail": "Fortune Sunflower Oil",
+    "tel": "Fortune Sunflower Oil",
+    "lal surf": "Surf Excel Easy Wash",
+    "laal surf": "Surf Excel Easy Wash",
+    "lal wala surf": "Surf Excel Easy Wash",
+    "surf excel": "Surf Excel Easy Wash",
+    "chhota surf": "Surf Excel Rs 10 Pack",
+    "chotu surf": "Surf Excel Rs 10 Pack",
+    "bada doodh": "Amul Gold Milk 1L",
+    "bade doodh ka packet": "Amul Gold Milk 1L",
+    "dudh": "Amul Gold Milk",
+    "doodh": "Amul Gold Milk",
+    "dus wala parle": "Parle-G Rs 10 Pack",
+    "parle 10 wala": "Parle-G Rs 10 Pack",
+    "parle g": "Parle-G",
+    "regular maggi": "Maggi 2-Minute Noodles",
+    "maggi": "Maggi 2-Minute Noodles"
+  },
+  "customer_aliases": {
+    "jaaneeshaar": "Jannishar",
+    "janishar": "Jannishar",
+    "जानिशार": "Jannishar",
+    "gupta ji": "Gupta Store",
+    "gupta store": "Gupta Store",
+    "gupta kirana": "Gupta Store",
+    "sharma ji": "Sharma Store",
+    "sharma store": "Sharma Store",
+    "शर्मा जी": "Sharma Store",
+    "Danish": {
+      "mera regular": "Parle-G Rs 10 Pack",
+      "bada doodh": "Amul Gold Milk 1L"
+    },
+    "Jannishar": {
+      "chotu surf": "Surf Excel Rs 10 Pack",
+      "lal wala": "Surf Excel Easy Wash"
+    },
+    "Nasir": {
+      "regular maggi": "Maggi 2-Minute Noodles",
+      "nila packet": "Lays India's Magic Masala"
+    }
+  }
+}
