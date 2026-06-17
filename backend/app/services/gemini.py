@@ -214,41 +214,42 @@ Return only the transcript text.
         return quantity_map.get(quantity_str, 0)
 
     @staticmethod
-    def _parse_quantity(quantity_str: str) -> tuple[int, str]:
-        """Parse a quantity string into an integer quantity and a unit string."""
+    def _parse_quantity(quantity_str: str) -> tuple[int | float | None, str]:
+        """Parse a quantity string into an integer or float quantity and a unit string."""
         if quantity_str is None:
-            return 0, ""
+            return None, ""
 
         if isinstance(quantity_str, (int, float)):
-            return int(quantity_str), ""
+            return quantity_str, ""
 
         s = str(quantity_str).strip().lower()
-        if not s:
-            return 0, ""
+        if not s or s == "none" or s == "null":
+            return None, ""
 
         # Match integers with optional unit like '2', '2kg', '2 kg', '2 kg.'
         m = re.match(r"^(\d+)(?:\s*([a-zA-Z%]+))?\.?$", s)
         if m:
             return int(m.group(1)), (m.group(2) or "")
 
-        # Match decimals like '2.5 kg' -> convert to int
+        # Match decimals like '2.5 kg' -> preserve float
         m2 = re.match(r"^(\d+(?:\.\d+))(?:\s*([a-zA-Z%]+))?\.?$", s)
         if m2:
-            return int(float(m2.group(1))), (m2.group(2) or "")
+            return float(m2.group(1)), (m2.group(2) or "")
 
         # Word-number mapping
         qty = GeminiService._normalize_quantity(s)
         if qty > 0:
             return qty, ""
 
-        # Fallback: find first number and treat remainder as unit
-        m3 = re.search(r"(\d+)", s)
+        # Fallback: find first decimal or integer and treat remainder as unit
+        m3 = re.search(r"(\d+(?:\.\d+)?)", s)
         if m3:
-            num = int(m3.group(1))
+            num_str = m3.group(1)
+            num = float(num_str) if '.' in num_str else int(num_str)
             unit = s[m3.end():].strip()
             return num, unit
 
-        return 0, ""
+        return None, ""
 
     @staticmethod
     def _parse_order_fallback(transcript_text: str) -> dict:
@@ -349,7 +350,8 @@ Return only the transcript text.
             qty = GeminiService._normalize_quantity(quantity)
             if qty == 0:
                 # If word parsing failed, try parse_quantity (for digits)
-                qty, _ = GeminiService._parse_quantity(quantity)
+                parsed_qty, _ = GeminiService._parse_quantity(quantity)
+                qty = parsed_qty if parsed_qty is not None else 0
             
             unit = unit_token.strip()
             if name and qty > 0:
@@ -474,7 +476,7 @@ Return only the transcript text.
         for item in items:
             if isinstance(item, dict):
                 # --- quantity + unit (new pipeline) ---
-                raw_qty = item.get("quantity", "")
+                raw_qty = item.get("quantity")
                 raw_unit = item.get("unit", "")
                 
                 # If LLM passed a string containing quantity and unit, pipe it to quantity_parser
@@ -485,7 +487,17 @@ Return only the transcript text.
                 parsed_qty_data = parse_quantity(combined_raw)
                 
                 qty = parsed_qty_data["quantity"]
-                unit = normalize_unit(parsed_qty_data["unit"] or raw_unit)
+                unit_str = parsed_qty_data["unit"] or str(raw_unit)
+                
+                # Fallback to Nasir/dev logic
+                if qty is None:
+                    fallback_qty, fallback_unit = GeminiService._parse_quantity(str(raw_qty))
+                    if fallback_qty is not None:
+                        qty = fallback_qty
+                    if fallback_unit and not parsed_qty_data["unit"]:
+                        unit_str = fallback_unit
+                
+                unit = normalize_unit(unit_str)
 
                 # --- price (dev: robust None / invalid-value handling,
                 #     but default to 0.0 so the rupee-unit loop below is safe) ---
