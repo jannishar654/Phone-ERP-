@@ -4,7 +4,7 @@ from datetime import datetime
 
 class Item(BaseModel):
     name: str
-    quantity: int = Field(..., ge=1)
+    quantity: float = Field(..., gt=0)
     unit: Optional[str] = ""
     price: Optional[float] = Field(None, ge=0.0)
     pack_size: Optional[str] = None
