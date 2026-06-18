@@ -167,6 +167,35 @@ def run_tests():
         else:
             print(f"  [FAIL] Expected missing {expected_missing}, got {missing} for {card_data}")
             
+    # 8. NAME CLEANUP PARSING
+    print("\n8. Name Cleanup Parsing:")
+    import re
+    def mock_extract_name(transcript):
+        cust_name = "Unknown"
+        t_lower = transcript.lower()
+        if not cust_name or cust_name.lower() == "unknown":
+            name_match = re.search(r'(?:unka naam|naam|customer ka naam|party ka naam)\s+(.*?)(?:\s+hai|\s+tha|\s+aur|$)', t_lower)
+            if name_match:
+                cust_name = name_match.group(1).strip().title()
+        if cust_name and cust_name != "Unknown":
+            cust_name = re.sub(r'(?:\s+(?:likhna|likh\s*dena|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
+        return cust_name
+
+    name_cleanup_tests = [
+        ("unka naam Danish Likhna", "Danish"),
+        ("naam danish likhna", "Danish"),
+        ("party ka naam Ram hai theek hai", "Ram")
+    ]
+    for transcript, expected in name_cleanup_tests:
+        cleaned = mock_extract_name(transcript)
+        if cleaned == expected:
+            print(f"  [PASS] '{transcript}' -> '{cleaned}'")
+            passed += 1
+        else:
+            print(f"  [FAIL] '{transcript}' -> '{cleaned}' (Expected '{expected}')")
+        total += 1
+            
     print(f"\nFinal -> Total: {total}, Passed: {passed}, Failed: {total - passed}")
+
 if __name__ == "__main__":
     run_tests()

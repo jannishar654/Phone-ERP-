@@ -599,6 +599,9 @@ Return only the transcript text.
                 raw_delivery_time = time_matches[-1].group(0)
                 safe_delivery_time = raw_delivery_time
                 
+        if cust_name:
+            cust_name = re.sub(r'(?:\s+(?:likhna|likh\s*dena|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
+                
         normalized_cust = normalize_alias(cust_name, BUSINESS_ALIASES["customer_aliases"])
         time_data = parse_delivery_time(safe_delivery_time)
 
