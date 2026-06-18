@@ -580,11 +580,27 @@ Return only the transcript text.
 
         raw_cust_name = parsed.get("customer_name", "")
         cust_name = raw_cust_name.strip() if raw_cust_name else ""
-        normalized_cust = normalize_alias(cust_name, BUSINESS_ALIASES["customer_aliases"])
         
         # Apply deterministic time parsing
         raw_delivery_time = parsed.get("delivery_time_raw", parsed.get("delivery_time", ""))
         safe_delivery_time = raw_delivery_time.strip() if raw_delivery_time else ""
+
+        # --- Deterministic Fallbacks for Missing Fields ---
+        import re
+        t_lower = transcript.lower()
+        
+        if not cust_name or cust_name.lower() == "unknown":
+            name_match = re.search(r'(?:unka naam|naam|customer ka naam|party ka naam)\s+(.*?)(?:\s+hai|\s+tha|\s+aur|$)', t_lower)
+            if name_match:
+                cust_name = name_match.group(1).strip().title()
+                
+        if not safe_delivery_time:
+            time_match = re.search(r'\b(kal|aaj|parso|subah|shaam|raat)\b', t_lower)
+            if time_match:
+                raw_delivery_time = time_match.group(1)
+                safe_delivery_time = raw_delivery_time
+                
+        normalized_cust = normalize_alias(cust_name, BUSINESS_ALIASES["customer_aliases"])
         time_data = parse_delivery_time(safe_delivery_time)
 
         # --- Layer 2: LLM Fallback Assist ---

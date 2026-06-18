@@ -120,6 +120,7 @@ def run_tests():
         ("nahi hai toh substitute kar dena", [], ["substitution"]),
         ("scheme laga dena", [], ["discount"]),
         ("bhai jaldi bhejna", [], ["urgent"]),
+        ("suno kal aisa karna gupta store shahin bag mein 15 kilo aalu 15 kilo tamatar 10.5 kilo pyaj 2.5 kilo chawal 0.5 kilo rasgulla aur chips ka packet 15 namak ka packet aur 15 badi doodh ki thaili aur 15 surf excel ka packet bhej dena unka naam Ram hai aur yeh udhar rahega aur haan kal wala chips cancel kar dena", [], ["credit_request", "cancellation"]),
         ("aaj", [{"name": "A", "quantity": 100, "unit": "packet", "price": 0}], ["large_quantity"]),
         ("50 kilo aalu bhej dena", [{"name": "aalu", "quantity": 50, "unit": "kg", "price": 0}], ["large_quantity"]),
         ("aaj", [{"name": "A", "quantity": 10, "unit": "packet", "price": 1000}], ["high_value"])
