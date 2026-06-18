@@ -401,7 +401,7 @@ Return only the transcript text.
             "8. AGGREGATE DUPLICATES: Listen carefully to the entire transcript. If the user mentions the exact same item multiple times (e.g., '5 kilo chini' and later '10 kilo chini aur'), YOU MUST add the quantities together. Example -> quantity: '15', unit: 'kilo', name: 'chini'.\n"
             "9. NEVER MERGE UNRELATED ITEMS: Do not accidentally glue two completely different products into one name. Extract 'surf excel' and 'chawal' as TWO separate items. NEVER extract 'surf excel chawal'.\n"
             "10. PRESERVE RAW DELIVERY TIME: Extract delivery time exactly as spoken. Do not put delivery-time words inside delivery_address.\n"
-            "11. EXACT RAW QUANTITY: For the 'quantity' field in items, NEVER convert fractional Hindi words (like dhai, sawa) into numbers. ALWAYS extract the exact raw words spoken as a STRING (e.g. 'dhai', '0.5'). Do not do math or silently default to 1.\n"
+            "11. EXACT RAW QUANTITY: For the 'quantity' field in items, NEVER convert fractional Hindi words (like dhai, sawa) into numbers. ALWAYS extract the exact raw words spoken as a STRING (e.g. 'dhai', '0.5'). If quantity is not mentioned, use null. Do not use 'missing' as a string.\n"
             "12. FLAG UNKNOWN/AMBIGUOUS FIELDS: Add warnings to extraction_notes if product/quantity is ambiguous.\n\n"
             "## OUTPUT FORMAT\n"
             "Return ONLY a JSON object containing a `cards` array. No markdown, no explanation.\n"
@@ -411,7 +411,7 @@ Return only the transcript text.
             '      "type": "ORDER" | "CANCEL" | "COMPLAINT" | "RETURN" | "QUERY" | "PAYMENT_REMINDER",\n'
             '      "customer_name": "string (use UNKNOWN if unclear)",\n'
             '      "customer_phone": "string",\n'
-            '      "items": [{"name": "string", "quantity": "STRING (exact spoken words)", "unit": "string", "price": number}],\n'
+            '      "items": [{"name": "string (never prefix with missing)", "quantity": "STRING or null", "unit": "string or null", "price": number}],\n'
             '      "delivery_address": "string",\n'
             '      "delivery_time_raw": "string",\n'
             '      "confidence": number (0.0 to 1.0. Reduce if name/qty/product is unclear),\n'
@@ -425,7 +425,7 @@ Return only the transcript text.
             "- Credit: 'udhaar mein likh dena' -> Add to extraction_notes: 'User requested udhaar/credit'\n"
             "- Cancellation: 'kal wala chips cancel kar do' -> type: 'CANCEL', extraction_notes: 'Cancelling previous chips order'\n"
             "- Substitution: 'Parle nahi hai toh Britannia bhej dena' -> extraction_notes: 'Substitution requested: Britannia if Parle unavailable'\n"
-            "- Incomplete order: 'chips bhej dena' -> quantity: 'missing', extraction_notes: 'Quantity not specified for chips'\n\n"
+            "- Incomplete order: 'chips bhej dena' -> items: [{\"name\": \"chips\", \"quantity\": null, \"unit\": null}], extraction_notes: 'Quantity not specified for chips'\n\n"
             f"Transcript:\n{transcript}\n"
             "Output only JSON."
         )
@@ -537,8 +537,12 @@ Return only the transcript text.
                     price = 0.0
 
                 # Pass customer_phone as customer_id for ChainMap resolution
-                cust_phone = parsed.get("customer_phone", "").strip()
-                res = business_memory.resolve_product_detailed(item.get("name", "").strip(), customer_id=cust_phone)
+                cust_phone = parsed.get("customer_phone", "")
+                cust_phone = cust_phone.strip() if cust_phone else ""
+                
+                raw_name = item.get("name")
+                safe_name = raw_name.strip() if raw_name else "Unknown Item"
+                res = business_memory.resolve_product_detailed(safe_name, customer_id=cust_phone)
                 normalized_items.append({
                     "name": res["name"],
                     "quantity": qty,
@@ -562,12 +566,14 @@ Return only the transcript text.
         if not normalized_items:
             normalized_items = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
 
-        cust_name = parsed.get("customer_name", "").strip()
+        raw_cust_name = parsed.get("customer_name", "")
+        cust_name = raw_cust_name.strip() if raw_cust_name else ""
         normalized_cust = normalize_alias(cust_name, BUSINESS_ALIASES["customer_aliases"])
         
         # Apply deterministic time parsing
-        raw_delivery_time = parsed.get("delivery_time_raw", parsed.get("delivery_time", "")).strip()
-        time_data = parse_delivery_time(raw_delivery_time)
+        raw_delivery_time = parsed.get("delivery_time_raw", parsed.get("delivery_time", ""))
+        safe_delivery_time = raw_delivery_time.strip() if raw_delivery_time else ""
+        time_data = parse_delivery_time(safe_delivery_time)
 
         # --- Layer 2: LLM Fallback Assist ---
         fallback_payload = {}

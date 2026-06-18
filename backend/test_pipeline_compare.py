@@ -10,7 +10,8 @@ test_cases = [
     "sawa kilo doodh aur 5 packet parle G dus wala likh lo jaldi",
     "kal wali 2 bori chawal cancel kar do aur ek lal surf bhej do",
     "paanch kilo aata, aur paanch kilo aata aur daal dena",
-    "gupta store se bol raha hu, ek surf excel chawal bhej dena"
+    "gupta store se bol raha hu, ek surf excel chawal bhej dena",
+    "chips bhej dena"
 ]
 
 async def compare():
