@@ -128,6 +128,8 @@ async def extract_action_card(payload: ExtractRequest) -> ActionCard:
                 qty = None
 
             unit = (it.get("unit") or "") if isinstance(it, dict) else ""
+            if str(unit).strip().lower() in ["none", "null", "missing", "unknown"]:
+                unit = ""
             price = None
             if isinstance(it, dict) and it.get("price") is not None:
                 try:

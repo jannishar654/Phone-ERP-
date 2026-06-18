@@ -398,14 +398,14 @@ function ActionCardContent() {
                             min="0.01"
                             step="0.01"
                             placeholder="Qty"
-                            value={item.quantity}
+                            value={item.quantity === null || ['none', 'null', 'missing', 'unknown'].includes(String(item.quantity).toLowerCase()) ? '' : item.quantity}
                             onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
                             className="w-10 bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-900 text-center font-medium focus:outline-none focus:border-indigo-500"
                           />
                           <input
                             type="text"
                             placeholder="Unit"
-                            value={item.unit || ''}
+                            value={['none', 'null', 'missing', 'unknown'].includes(String(item.unit || '').toLowerCase()) ? '' : (item.unit || '')}
                             onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
                             className="w-14 bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
                           />
@@ -525,7 +525,20 @@ function ActionCardContent() {
                       {selectedCard.items.map((item, idx) => (
                         <div key={idx} className="flex justify-between items-center text-xs p-2 rounded bg-slate-50 border border-slate-100 shadow-3xs">
                           <div className="text-slate-800 font-medium">
-                            <span className="font-bold text-slate-900">{item.quantity}{item.unit ? ` ${item.unit}` : 'x'}</span> {item.name}
+                            {(() => {
+                              const isQtyMissing = item.quantity === null || item.quantity === undefined || ['none', 'null', 'missing', 'unknown'].includes(String(item.quantity).toLowerCase());
+                              const isUnitMissing = !item.unit || ['none', 'null', 'missing', 'unknown'].includes(String(item.unit).toLowerCase());
+                              
+                              if (isQtyMissing) {
+                                return <span className="font-bold text-amber-600 bg-amber-50 px-1 py-0.5 rounded border border-amber-200 mr-1.5">Missing Qty</span>;
+                              }
+                              return (
+                                <span className="font-bold text-slate-900 mr-1">
+                                  {item.quantity}{!isUnitMissing ? ` ${item.unit}` : 'x'}
+                                </span>
+                              );
+                            })()}
+                            {item.name}
                           </div>
                           {item.price !== undefined && item.price !== null && item.price > 0 ? (
                             <div className="text-right font-mono text-slate-500 font-bold">
