@@ -542,6 +542,14 @@ Return only the transcript text.
                 
                 raw_name = item.get("name")
                 safe_name = raw_name.strip() if raw_name else "Unknown Item"
+                
+                lower_name = safe_name.lower()
+                for prefix in ("none ", "missing ", "null ", "unknown "):
+                    if lower_name.startswith(prefix):
+                        safe_name = safe_name[len(prefix):].strip()
+                        qty = None
+                        break
+
                 res = business_memory.resolve_product_detailed(safe_name, customer_id=cust_phone)
                 normalized_items.append({
                     "name": res["name"],
