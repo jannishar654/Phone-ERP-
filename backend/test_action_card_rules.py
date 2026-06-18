@@ -115,11 +115,13 @@ def run_tests():
     # 6. RISK DETECTION
     risk_tests = [
         ("kal udhaar mein likh dena", [], ["credit_request"]),
+        ("paisa udhaar rahega aur unka naam Shayam hai", [], ["credit_request"]),
         ("chips cancel kar do", [], ["cancellation"]),
         ("nahi hai toh substitute kar dena", [], ["substitution"]),
         ("scheme laga dena", [], ["discount"]),
         ("bhai jaldi bhejna", [], ["urgent"]),
         ("aaj", [{"name": "A", "quantity": 100, "unit": "packet", "price": 0}], ["large_quantity"]),
+        ("50 kilo aalu bhej dena", [{"name": "aalu", "quantity": 50, "unit": "kg", "price": 0}], ["large_quantity"]),
         ("aaj", [{"name": "A", "quantity": 10, "unit": "packet", "price": 1000}], ["high_value"])
     ]
     print("\n6. Risk Detection:")

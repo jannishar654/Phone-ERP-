@@ -11,7 +11,9 @@ test_cases = [
     "kal wali 2 bori chawal cancel kar do aur ek lal surf bhej do",
     "paanch kilo aata, aur paanch kilo aata aur daal dena",
     "gupta store se bol raha hu, ek surf excel chawal bhej dena",
-    "chips bhej dena"
+    "chips bhej dena",
+    "suno kal aisa karna 5:30 baje Gupta store jo ki Jamia Nagar Shain Bagh Okhla mein hai unke yaha 50 kilo aalu 50 kilo tamatar 15 kilo chini 5 badi si doodh ki thaili 5 packet surf excel aur 15 kilo namkeen aur 15 kilo rasgulla bhej dena aur unka naam Sahi ba hai",
+    "Suno kal aisa karna 5:30 baje Guptastore mein jo ki Shaheen Bagh Okhla mein hai unke yahaan 50 kilo aloo 50 kilo tamatar les packit aur 15 packet cheeni bhej dena paisa udhaar rahega aur unka naam Shayam hai"
 ]
 
 async def compare():

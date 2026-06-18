@@ -400,20 +400,23 @@ Return only the transcript text.
             "7. GROCERY STORE CONTEXT: Assume all items are standard grocery or household products. Do not hallucinate non-grocery words.\n"
             "8. AGGREGATE DUPLICATES: Listen carefully to the entire transcript. If the user mentions the exact same item multiple times (e.g., '5 kilo chini' and later '10 kilo chini aur'), YOU MUST add the quantities together. Example -> quantity: '15', unit: 'kilo', name: 'chini'.\n"
             "9. NEVER MERGE UNRELATED ITEMS: Do not accidentally glue two completely different products into one name. Extract 'surf excel' and 'chawal' as TWO separate items. NEVER extract 'surf excel chawal'.\n"
-            "10. PRESERVE RAW DELIVERY TIME: Extract delivery time exactly as spoken. Do not put delivery-time words inside delivery_address.\n"
-            "11. EXACT RAW QUANTITY: For the 'quantity' field in items, NEVER convert fractional Hindi words (like dhai, sawa) into numbers. ALWAYS extract the exact raw words spoken as a STRING (e.g. 'dhai', '0.5'). If quantity is not mentioned, use null. Do not use 'missing' as a string.\n"
-            "12. FLAG UNKNOWN/AMBIGUOUS FIELDS: Add warnings to extraction_notes if product/quantity is ambiguous.\n\n"
+            "10. PRESERVE RAW DELIVERY TIME: Detect Hindi/Hinglish time phrases (e.g., 'kal 5:30 baje', 'aaj shaam') and extract EXACTLY as spoken into `delivery_time_raw`. Do not put delivery-time words inside `delivery_address`.\n"
+            "11. EXACT RAW QUANTITY & UNIT: For the 'quantity' field in items, extract the exact raw words spoken (e.g. 'dhai', '0.5', '50'). Do not do math or silently default to 1. If quantity is missing, use null. Preserve spoken units (e.g., 'packet', 'kilo') exactly as spoken in the `unit` field.\n"
+            "12. EXTRACT CUSTOMER NAME: If transcript explicitly says 'unka naam X hai', use X as `customer_name`. If a store/location is mentioned instead of a person, use the store name as the customer_name (e.g. 'Guptastore'). Do not leave customer_name as Unknown if a name or store name is clearly spoken. Do not invent names.\n"
+            "13. DETECT PAYMENT METHOD/UDHAAR: If the user says 'udhaar', 'paisa udhaar rahega', 'baad mein denge', 'credit', or 'khata mein likh do', set `payment_method` to 'Credit/Udhaar' and add a note in `extraction_notes`.\n"
+            "14. FLAG UNKNOWN/AMBIGUOUS FIELDS: Add warnings to extraction_notes if product/quantity is ambiguous.\n\n"
             "## OUTPUT FORMAT\n"
             "Return ONLY a JSON object containing a `cards` array. No markdown, no explanation.\n"
             "{\n"
             '  "cards": [\n'
             "    {\n"
             '      "type": "ORDER" | "CANCEL" | "COMPLAINT" | "RETURN" | "QUERY" | "PAYMENT_REMINDER",\n'
-            '      "customer_name": "string (use UNKNOWN if unclear)",\n'
+            '      "customer_name": "string (Extract exact name or store. Use UNKNOWN only if completely unclear)",\n'
             '      "customer_phone": "string",\n'
             '      "items": [{"name": "string (never prefix with missing)", "quantity": "STRING or null", "unit": "string or null", "price": number}],\n'
             '      "delivery_address": "string",\n'
             '      "delivery_time_raw": "string",\n'
+            '      "payment_method": "string (e.g. Cash, Online, Credit/Udhaar)",\n'
             '      "confidence": number (0.0 to 1.0. Reduce if name/qty/product is unclear),\n'
             '      "extraction_notes": "string (notes on ambiguity, missing fields, risky instructions, multiple orders, or unknown products)"\n'
             "    }\n"
@@ -422,7 +425,8 @@ Return only the transcript text.
             "## EXAMPLES\n"
             "- Local alias: 'lal Surf dena' -> name: 'lal Surf'\n"
             "- Pack variant: 'dus wala Parle' -> name: 'dus wala Parle'\n"
-            "- Credit: 'udhaar mein likh dena' -> Add to extraction_notes: 'User requested udhaar/credit'\n"
+            "- Credit: 'udhaar mein likh dena' -> payment_method: 'Credit/Udhaar', extraction_notes: 'User requested udhaar/credit'\n"
+            "- Time & Name: 'kal aisa karna 5:30 baje Guptastore... unka naam Shayam hai' -> customer_name: 'Shayam', delivery_time_raw: 'kal 5:30 baje', delivery_address: 'Guptastore'\n"
             "- Cancellation: 'kal wala chips cancel kar do' -> type: 'CANCEL', extraction_notes: 'Cancelling previous chips order'\n"
             "- Substitution: 'Parle nahi hai toh Britannia bhej dena' -> extraction_notes: 'Substitution requested: Britannia if Parle unavailable'\n"
             "- Incomplete order: 'chips bhej dena' -> items: [{\"name\": \"chips\", \"quantity\": null, \"unit\": null}], extraction_notes: 'Quantity not specified for chips'\n\n"
@@ -633,13 +637,14 @@ Return only the transcript text.
 
         final_data = {
             "customer_name": normalized_cust,
-            "customer_phone": primary_card.get("customer_phone", "").strip(),
-            "delivery_address": primary_card.get("delivery_address", "").strip(),
+            "customer_phone": str(primary_card.get("customer_phone") or "").strip(),
+            "delivery_address": str(primary_card.get("delivery_address") or "").strip(),
             "delivery_time_raw": raw_delivery_time,
             "delivery_time_normalized": time_data["normalized"],
             "delivery_time_confidence": time_data["confidence"],
             "delivery_time_warning": time_data["warning"],
             "delivery_time": time_data["normalized"] or raw_delivery_time, # fallback for UI compatibility
+            "payment_method": str(primary_card.get("payment_method") or "").strip() or None,
             "items": normalized_items,
             "type": primary_card.get("type", "ORDER"),
             "confidence": primary_card.get("confidence", 0.0),

@@ -7,7 +7,7 @@ def detect_risks(transcript: str, items: List[Dict[str, Any]]) -> Dict[str, Any]
     t_lower = str(transcript).lower()
     
     # 1. Credit Request
-    if any(word in t_lower for word in ["udhaar", "credit", "baad mein", "udhar", "उधार", "बाद में", "बाकी", "hisaab mein likh", "hisaab me likh"]):
+    if any(word in t_lower for word in ["udhaar", "credit", "baad mein", "udhar", "उधार", "बाद में", "बाकी", "hisaab mein likh", "hisaab me likh", "paisa udhaar rahega", "khata mein likh do"]):
         risk_flags.append("credit_request")
         validation_warnings.append("Customer requested credit/udhaar.")
         
