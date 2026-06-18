@@ -109,6 +109,7 @@ export async function extractActionCard(
   source: 'audio' | 'text' = 'text',
   provider: string = "gemini",
   stt_provider: string | null = null,
+  pipeline: string = "gemini_gemini",
   save_evaluation: boolean = false
 ): Promise<ActionCard> {
   const headers = await getAuthHeaders();
@@ -118,7 +119,7 @@ export async function extractActionCard(
       ...headers,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ transcript, source, provider, stt_provider, save_evaluation }),
+    body: JSON.stringify({ transcript, source, provider, stt_provider, pipeline, save_evaluation }),
   });
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);

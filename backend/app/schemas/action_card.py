@@ -32,6 +32,11 @@ class ActionCard(BaseModel):
     payment_method: Optional[str] = None
     status: str = "pending"
     source: str
+    message_type: str = "ORDER"
+    confidence: Optional[float] = None
+    stt_provider: Optional[str] = None
+    extraction_provider: Optional[str] = None
+    metadata: dict = Field(default_factory=dict)
     transcript: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -56,6 +61,11 @@ class ActionCardCreate(BaseModel):
     validation_warnings: List[str] = Field(default_factory=list)
     status: str = "pending"
     source: str = "text"
+    message_type: str = "ORDER"
+    confidence: Optional[float] = None
+    stt_provider: Optional[str] = None
+    extraction_provider: Optional[str] = None
+    metadata: dict = Field(default_factory=dict)
     transcript: str = "Manual order entry"
 
 
@@ -75,6 +85,11 @@ class ActionCardUpdate(BaseModel):
     validation_warnings: Optional[List[str]] = None
     status: Optional[str] = None
     source: Optional[str] = None
+    message_type: Optional[str] = None
+    confidence: Optional[float] = None
+    stt_provider: Optional[str] = None
+    extraction_provider: Optional[str] = None
+    metadata: Optional[dict] = None
     transcript: Optional[str] = None
 
 

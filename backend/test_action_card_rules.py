@@ -134,6 +134,32 @@ def run_tests():
             print(f"  [FAIL] '{raw_transcript}' -> Expected flags {expected_flags}, got {flags}")
 
     print(f"\nTotal: {total}, Passed: {passed}, Failed: {total - passed}")
+
+    # 7. ACTION CARD VALIDATION
+    print("\n7. Action Card Validation (qty > 0):")
+    from app.services.action_card_validator import validate_action_card
     
+    val_tests = [
+        # Should pass
+        ({"items": [{"name": "A", "quantity": 0.5}]}, []),
+        # Should fail (negative/missing)
+        ({"items": [{"name": "A", "quantity": -1}]}, ["quantity"]),
+        ({"items": [{"name": "A", "quantity": None}]}, ["quantity"]),
+    ]
+    
+    for card_data, expected_missing in val_tests:
+        total += 1
+        res = validate_action_card(card_data, "test")
+        missing = res.get("missing_fields", [])
+        if "quantity" in expected_missing and "quantity" in missing:
+            print(f"  [PASS] Handled invalid quantity correctly.")
+            passed += 1
+        elif "quantity" not in expected_missing and "quantity" not in missing:
+            print(f"  [PASS] Handled valid quantity correctly: {card_data}")
+            passed += 1
+        else:
+            print(f"  [FAIL] Expected missing {expected_missing}, got {missing} for {card_data}")
+            
+    print(f"\nFinal -> Total: {total}, Passed: {passed}, Failed: {total - passed}")
 if __name__ == "__main__":
     run_tests()

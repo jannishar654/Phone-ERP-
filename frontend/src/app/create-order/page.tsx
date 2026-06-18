@@ -24,7 +24,7 @@ export default function CreateOrder() {
   const [isQuotaError, setIsQuotaError] = useState(false);
   const [manualTranscript, setManualTranscript] = useState('');
   const [orderSource, setOrderSource] = useState<'audio' | 'text'>('audio');
-  const [pipeline, setPipeline] = useState('sarvam_gemini');
+  const [pipeline, setPipeline] = useState('gemini_gemini');
   // Generated Card Editing States
   const [isEditing, setIsEditing] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -138,7 +138,7 @@ export default function CreateOrder() {
         }
       }
 
-      const card = await extractActionCard(transcription.transcript, 'audio', extractProvider, sttProvider, true);
+      const card = await extractActionCard(transcription.transcript, 'audio', extractProvider, sttProvider, pipeline, true);
       setCardId(card.id);
       setOrderSource('audio');
 
@@ -195,7 +195,8 @@ export default function CreateOrder() {
       }
 
       const extractProvider = pipeline.endsWith('ollama') ? 'ollama' : 'gemini';
-      const card = await extractActionCard(manualTranscript, 'text', extractProvider, null, true);
+      const sttProvider = pipeline.startsWith('sarvam') ? 'sarvam' : 'gemini';
+      const card = await extractActionCard(manualTranscript, 'text', extractProvider, sttProvider, pipeline, true);
       setCardId(card.id);
       setOrderSource('text');
 

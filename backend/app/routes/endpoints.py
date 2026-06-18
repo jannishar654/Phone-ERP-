@@ -14,6 +14,9 @@ router = APIRouter()
 class ExtractRequest(BaseModel):
     transcript: str
     source: str = "text"
+    stt_provider: Optional[str] = "gemini"
+    extraction_provider: Optional[str] = "gemini"
+    pipeline: Optional[str] = "gemini_gemini"
 
 # Health check endpoint
 @router.get("/health", status_code=status.HTTP_200_OK, response_model=Dict[str, str])
@@ -114,15 +117,15 @@ async def extract_action_card(payload: ExtractRequest) -> ActionCard:
             if not name:
                 name = "Unknown Item"
 
-            # Preserve decimal quantities such as 2.5 kg.
-            qty = 1.0
-            if isinstance(it, dict) and it.get("quantity") is not None:
+            # Allow missing/invalid quantity to pass through as missing/None so validators catch it
+            qty_raw = it.get("quantity")
+            if qty_raw is not None:
                 try:
-                    qty = float(it.get("quantity") or 0)
+                    qty = float(qty_raw)
                 except Exception:
-                    qty = 1.0
-            if qty <= 0:
-                qty = 1.0
+                    qty = None
+            else:
+                qty = None
 
             unit = (it.get("unit") or "") if isinstance(it, dict) else ""
             price = None
@@ -132,17 +135,17 @@ async def extract_action_card(payload: ExtractRequest) -> ActionCard:
                 except Exception:
                     price = None
 
-            safe_items.append({"name": name, "quantity": qty, "unit": unit, "price": price})
+            safe_items.append({"name": name, "quantity": qty if qty is not None else -1, "unit": unit, "price": price})
         except Exception:
             # On any unexpected structure, fall back to a single unknown item
-            safe_items.append({"name": "Unknown Item", "quantity": 1, "unit": "", "price": None})
+            safe_items.append({"name": "Unknown Item", "quantity": -1, "unit": "", "price": None})
 
     # Create Pydantic Item models (this will still validate and raise if something unexpected remains)
     try:
         items_models = [Item(**item) for item in safe_items]
-    except Exception:
-        # If validation still fails, fallback to a minimal item list
-        items_models = [Item(name="Unknown Item", quantity=1, price=None)]
+    except Exception as e:
+        # If validation still fails, fallback to a minimal item list but mark qty invalid
+        items_models = [Item(name="Unknown Item", quantity=-1, price=None)]
 
     card_data = {
         "customer_name": extracted.get("customer_name", "Unknown"),
@@ -152,6 +155,15 @@ async def extract_action_card(payload: ExtractRequest) -> ActionCard:
         "delivery_time": extracted.get("delivery_time", ""),
         "status": "pending",
         "source": payload.source,
+        "message_type": extracted.get("type", "ORDER"),
+        "confidence": extracted.get("confidence", 0.0),
+        "stt_provider": payload.stt_provider,
+        "extraction_provider": payload.extraction_provider,
+        "metadata": {
+            "pipeline": payload.pipeline,
+            "extraction_notes": extracted.get("extraction_notes", ""),
+            "multi_card_notes": "Multiple cards returned but currently only using the first card in UI." if extracted.get("_multi_card_flag") else ""
+        },
         "transcript": payload.transcript,
     }
 

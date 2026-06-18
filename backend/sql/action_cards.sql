@@ -18,6 +18,11 @@ CREATE TABLE IF NOT EXISTS public.action_cards (
     payment_method text DEFAULT 'Not Specified',
     status text DEFAULT 'pending',
     source text DEFAULT 'text',
+    message_type text DEFAULT 'ORDER',
+    confidence numeric,
+    stt_provider text,
+    extraction_provider text,
+    metadata jsonb DEFAULT '{}'::jsonb,
     transcript text,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL

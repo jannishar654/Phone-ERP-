@@ -48,6 +48,11 @@ class ActionCardController:
                 "payment_method": card_data.get("payment_method", "Not Specified"),
                 "status": card_data.get("status", "pending"),
                 "source": card_data.get("source", "text"),
+                "message_type": card_data.get("message_type", "ORDER"),
+                "confidence": card_data.get("confidence"),
+                "stt_provider": card_data.get("stt_provider"),
+                "extraction_provider": card_data.get("extraction_provider"),
+                "metadata": card_data.get("metadata", {}),
                 "transcript": card_data.get("transcript", "Manual order entry")
             }
             # Remove None values to let DB defaults apply

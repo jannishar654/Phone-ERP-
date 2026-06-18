@@ -25,6 +25,11 @@ export interface ActionCard {
   payment_method?: string;
   status: ActionCardStatus | string;
   source: 'audio' | 'text' | string;
+  message_type?: string;
+  confidence?: number;
+  stt_provider?: string;
+  extraction_provider?: string;
+  metadata?: Record<string, any>;
   transcript: string;
   created_at: string; // ISO datetime string
 }

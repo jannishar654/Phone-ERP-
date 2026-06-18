@@ -385,30 +385,40 @@ Return only the transcript text.
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-        # Create a detailed system prompt defining the output schema
         prompt = (
-            "You are an expert grocery order extraction AI.\n"
-            "Your task is to extract structured entities from a customer transcript.\n"
-            "IMPORTANT RULES:\n"
-            "1. ALL VALUES MUST BE IN ENGLISH LETTERS (ROMANIZED HINGLISH). DO NOT OUTPUT ANY DEVANAGARI/HINDI SCRIPT.\n"
-            "2. ISOLATE CORE PRODUCT NAMES: Strictly separate the core product name from its quantity, unit, or packaging type. The `name` field must ONLY contain the core product (e.g., 'doodh', 'aata', 'oil'). NEVER include numbers, units (kilo, liter, gram), or packaging words (packet, thaili, bori, dabba, bottle) in the `name` field.\n"
-            "   - Example: 'ek badi thaili doodh ki' -> name: 'bada doodh', quantity: 1, unit: 'thaili'\n"
-            "   - Example: '10 kilo aata ka packet' -> name: 'aata', quantity: 10, unit: 'kilo'\n"
-            "   - Example: '2 bori chawal' -> name: 'chawal', quantity: 2, unit: 'bori'\n"
-            "3. TRANSLITERATE AND STANDARDIZE: Convert Devanagari Hindi into Romanized English letters. Use standard English dictionary spellings for common English words (e.g. 'sugar' instead of 'shugar', 'potato' instead of 'potato/poteto'). For pure Hindi words without English equivalents, use standard Hinglish spelling (e.g. 'aata', 'aaloo').\n"
-            "4. SYNTHESIZE FULL ADDRESSES: For `customer_name` and `delivery_address`, NEVER output Devanagari. Transliterate to English EXACTLY as spoken phonetically. DO NOT hallucinate, guess, or \"correct\" location names to different places (e.g., if the user says 'Shaheen Bagh', keep it as 'Shaheen Bagh', do NOT change it to 'Shahi Nagar'). CRITICAL: You must capture the ENTIRE address. If a house name, number, or landmark (e.g., 'Gupta House') is mentioned alongside an area (e.g., 'Batla House'), combine them into a full address (e.g., 'Gupta House, Batla House'). Remove conversational filler like 'ke yahan'.\n"
-            "5. EXTRACT FRACTIONAL HINDI TIMES CORRECTLY: If the user speaks fractional Hindi times, accurately convert them to English digital time. For example: 'साढ़े सात' (saadhe saat) -> 7:30, 'सवा पाँच' (sawa paanch) -> 5:15, 'पौने आठ' (paune aath) -> 7:45, 'ढाई' (dhai) -> 2:30, 'डेढ़' (dedh) -> 1:30. Pay close attention to 'साढ़े' which strictly means 30 minutes past the hour.\n"
-            "6. CLEAN ITEM NAMES: Remove all conversational action verbs from item names (e.g., 'bhijwa dena', 'de dena', 'pack kar dena', 'le aana'). For example, '15 liter tail bhijwa dena' -> name: 'tail' (or 'oil'), NEVER 'tail bhijwa dena'.\n"
-            "7. GROCERY STORE CONTEXT: You are processing orders for an Indian grocery store. Assume all items are standard grocery or household products. If a Devanagari word is difficult to transliterate (e.g., 'चीनी'), aggressively map it to standard grocery vocabulary (e.g., 'chini', 'sugar', 'aata', 'chawal', 'tail', 'sabji'). DO NOT hallucinate strange, non-grocery, or offensive words.\n"
-            "8. AGGREGATE DUPLICATES: Listen carefully to the entire transcript. If the user mentions the exact same item multiple times (e.g., '5 kilo chini' and later '10 kilo chini aur'), YOU MUST add the quantities together. Example -> quantity: 15, unit: 'kilo', name: 'chini'. DO NOT drop duplicate mentions.\n"
-            "9. NEVER MERGE UNRELATED ITEMS: Do not accidentally glue two completely different products into one name. For example, 'surf excel' is detergent and 'chawal' is rice. If the user says them together, extract them as TWO separate items. NEVER extract 'surf excel chawal'.\n"
-            "10. PRESERVE RAW DELIVERY TIME: Extract delivery time exactly as spoken. Preserve words like kal, tomorrow, parso, aaj, subah, shaam, raat, after 8 PM, 5 baje, 10:15 pe. Do not put delivery-time words inside delivery_address. If exact normalized date/time is unclear, keep delivery_time_raw and leave delivery_time_normalized blank. Do not invent missing customer, address, price, quantity, or delivery time.\n"
-            "11. EXACT RAW QUANTITY: For the 'quantity' field in items, NEVER convert fractional Hindi words (like dhai, saadhe paanch, sawa 2) into numbers. ALWAYS extract the exact raw words spoken as a STRING (e.g. 'dhai', 'साढ़े पाँच', 'sawa'). Do not do math.\n"
-            "Map the extracted data into the following JSON schema:\n"
-            "customer_name, customer_phone, delivery_address, delivery_time_raw, items.\n"
-            "items must be an array of objects with name, quantity (STRING), unit, price.\n"
-            "If a value is not present, use an empty string or 0.\n"
-            "Do not include any additional keys.\n\n"
+            "You are an expert order extraction agent for PhoneERP, an Indian grocery/wholesale/kirana business.\n"
+            "You receive transcripts of voice notes or phone calls from clients placing orders, making queries, or raising complaints.\n"
+            "Clients may speak Hindi, English, or Hinglish (mixed).\n\n"
+            "## CORE RULES\n"
+            "1. TRANSLITERATE AND STANDARDIZE: Convert all Devanagari Hindi into Romanized English letters exactly as spoken. NEVER output Hindi script. Do not invent missing customer names, addresses, or products.\n"
+            "2. ISOLATE CORE PRODUCT NAMES: Separate product name from quantity/packaging. Do not include 'kilo', 'packet', 'dabba' inside the product name.\n"
+            "   - Product names often include local aliases, shorthand, and pack variants.\n"
+            "3. EXACT RAW QUANTITY: For 'quantity', extract the exact spoken words as a STRING (e.g. '0.5', 'dhai', 'aadha', 'sawa 2'). NEVER do math or silently default to 1.\n"
+            "4. TIME EXPRESSIONS: Extract delivery time exactly as spoken ('kal subah', 'aaj shaam 5 baje').\n"
+            "5. SYNTHESIZE FULL ADDRESSES: Transliterate addresses phonetically. Do not guess or hallucinate places.\n\n"
+            "## OUTPUT FORMAT\n"
+            "Return ONLY a JSON object containing a `cards` array. No markdown, no explanation.\n"
+            "{\n"
+            '  "cards": [\n'
+            "    {\n"
+            '      "type": "ORDER" | "CANCEL" | "COMPLAINT" | "RETURN" | "QUERY" | "PAYMENT_REMINDER",\n'
+            '      "customer_name": "string (use UNKNOWN if unclear)",\n'
+            '      "customer_phone": "string",\n'
+            '      "items": [{"name": "string", "quantity": "STRING (exact spoken words)", "unit": "string", "price": number}],\n'
+            '      "delivery_address": "string",\n'
+            '      "delivery_time_raw": "string",\n'
+            '      "confidence": number (0.0 to 1.0. Reduce if name/qty/product is unclear),\n'
+            '      "extraction_notes": "string (notes on ambiguity, missing fields, risky instructions, multiple orders, or unknown products)"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n\n"
+            "## EXAMPLES\n"
+            "- Local alias: 'lal Surf dena' -> name: 'lal Surf'\n"
+            "- Pack variant: 'dus wala Parle' -> name: 'dus wala Parle'\n"
+            "- Credit: 'udhaar mein likh dena' -> Add to extraction_notes: 'User requested udhaar/credit'\n"
+            "- Cancellation: 'kal wala chips cancel kar do' -> type: 'CANCEL', extraction_notes: 'Cancelling previous chips order'\n"
+            "- Substitution: 'Parle nahi hai toh Britannia bhej dena' -> extraction_notes: 'Substitution requested: Britannia if Parle unavailable'\n"
+            "- Incomplete order: 'chips bhej dena' -> quantity: 'missing', extraction_notes: 'Quantity not specified for chips'\n\n"
             f"Transcript:\n{transcript}\n"
             "Output only JSON."
         )
@@ -468,7 +478,19 @@ Return only the transcript text.
                 logger.exception("Gemini extraction failed.")
                 raise RuntimeError(f"Gemini extraction failed: {error}") from error
 
-        items = parsed.get("items") or []
+        # Safely extract the first card from the cards array.
+        # Ensure compatibility with multiple cards structure without breaking existing single-card endpoints.
+        cards = parsed.get("cards", [])
+        if not cards or not isinstance(cards, list):
+            # Fallback if model didn't wrap it in a cards array
+            cards = [parsed]
+        
+        primary_card = cards[0]
+        # Flag if multiple cards were present so endpoints can log it
+        if len(cards) > 1:
+            primary_card["_multi_card_flag"] = True
+
+        items = primary_card.get("items") or []
         if not isinstance(items, list):
             items = []
 
@@ -590,14 +612,18 @@ Return only the transcript text.
 
         final_data = {
             "customer_name": normalized_cust,
-            "customer_phone": parsed.get("customer_phone", "").strip(),
-            "delivery_address": parsed.get("delivery_address", "").strip(),
+            "customer_phone": primary_card.get("customer_phone", "").strip(),
+            "delivery_address": primary_card.get("delivery_address", "").strip(),
             "delivery_time_raw": raw_delivery_time,
             "delivery_time_normalized": time_data["normalized"],
             "delivery_time_confidence": time_data["confidence"],
             "delivery_time_warning": time_data["warning"],
             "delivery_time": time_data["normalized"] or raw_delivery_time, # fallback for UI compatibility
             "items": normalized_items,
+            "type": primary_card.get("type", "ORDER"),
+            "confidence": primary_card.get("confidence", 0.0),
+            "extraction_notes": primary_card.get("extraction_notes", ""),
+            "_multi_card_flag": primary_card.get("_multi_card_flag", False),
             "validation_warnings": validation_warnings
         }
 

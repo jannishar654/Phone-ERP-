@@ -464,8 +464,28 @@ function ActionCardContent() {
                       {selectedCard.status}
                     </span>
                   </div>
-                  <h2 className="text-xl font-extrabold text-slate-900 mt-2">{selectedCard.customer_name || 'Anonymous'}</h2>
-                  <p className="text-sm text-indigo-650 font-bold mt-0.5">{selectedCard.customer_phone || 'No phone number provided'}</p>
+                  <h2 className="text-xl font-extrabold text-slate-900 mt-2 flex items-center gap-2">
+                    {selectedCard.customer_name || 'Anonymous'}
+                    {selectedCard.message_type && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded border uppercase tracking-wider font-bold ${
+                        selectedCard.message_type === 'COMPLAINT' || selectedCard.message_type === 'CANCEL' 
+                        ? 'bg-red-100 text-red-800 border-red-300' 
+                        : selectedCard.message_type === 'RETURN' 
+                        ? 'bg-orange-100 text-orange-800 border-orange-300'
+                        : 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                      }`}>
+                        {selectedCard.message_type}
+                      </span>
+                    )}
+                  </h2>
+                  <p className="text-sm text-indigo-650 font-bold mt-0.5 flex justify-between items-center">
+                    <span>{selectedCard.customer_phone || 'No phone number provided'}</span>
+                    {selectedCard.confidence !== undefined && (
+                      <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded">
+                        Confidence: {(selectedCard.confidence * 100).toFixed(0)}%
+                      </span>
+                    )}
+                  </p>
                 </div>
 
                 <div className="space-y-3">
@@ -523,10 +543,35 @@ function ActionCardContent() {
 
                   {selectedCard.transcript && (
                     <div className="pt-2 border-t border-slate-100">
-                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Original AI Transcript</h4>
-                      <blockquote className="mt-2 text-xs text-slate-650 bg-slate-50 p-3 rounded border border-slate-150 italic leading-relaxed font-medium">
+                      <div className="flex justify-between items-center mb-2">
+                        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Original AI Transcript</h4>
+                        {selectedCard.metadata?.pipeline && (
+                          <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono border border-slate-200">
+                            Pipeline: {selectedCard.metadata.pipeline}
+                          </span>
+                        )}
+                      </div>
+                      <blockquote className="mt-1 text-xs text-slate-650 bg-slate-50 p-3 rounded border border-slate-150 italic leading-relaxed font-medium">
                         "{selectedCard.transcript}"
                       </blockquote>
+                      
+                      {selectedCard.metadata?.extraction_notes && (
+                        <div className="mt-2 text-[10px] text-slate-600 bg-blue-50 p-2 rounded border border-blue-100 flex items-start gap-1.5">
+                          <svg className="h-3 w-3 text-blue-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <div><span className="font-bold">Extraction Notes:</span> {selectedCard.metadata.extraction_notes}</div>
+                        </div>
+                      )}
+                      
+                      {selectedCard.metadata?.multi_card_notes && (
+                        <div className="mt-1 text-[10px] text-amber-700 bg-amber-50 p-2 rounded border border-amber-200 flex items-start gap-1.5">
+                          <svg className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <div><span className="font-bold">Multi-card Warning:</span> {selectedCard.metadata.multi_card_notes}</div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

@@ -19,8 +19,8 @@ def validate_action_card(extracted_data: Dict[str, Any], transcript: str) -> Dic
     else:
         for item in items:
             qty = item.get("quantity")
-            # Quantity must be a valid positive number. If it's a string (e.g. gibberish fallback) or None, mark missing
-            if qty is None or not isinstance(qty, (int, float)) or qty < 1:
+            # Quantity must be a valid positive number (>0). If it's a string (e.g. gibberish fallback), None, or <=0, mark missing
+            if qty is None or not isinstance(qty, (int, float)) or qty <= 0:
                 missing_fields.append("quantity")
                 
             # If the product didn't match the catalog
