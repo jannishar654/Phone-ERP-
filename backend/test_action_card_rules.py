@@ -1,5 +1,7 @@
 import sys
 import os
+import asyncio
+from datetime import datetime, timedelta
 
 # Add backend dir to python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'app')))
@@ -17,23 +19,25 @@ def run_tests():
     print("--- Testing Deterministic Parsers ---\n")
     
     # 1. TIME PARSING
+    tomorrow_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    today_date = datetime.now().strftime('%Y-%m-%d')
     time_tests = [
-        ("kal sade 8", "8:30"),
-        ("sawa chhe", "6:15"),
-        ("paune 5", "4:45"),
-        ("dhai baje", "2:30"),
-        ("kal 10:15 pe", "10:15")
+        ("kal sade 8", f"{tomorrow_date} 8:30"),
+        ("sawa chhe", f"{today_date} 6:15"),
+        ("paune 5", f"{today_date} 4:45"),
+        ("dhai baje", f"{today_date} 2:30 baje"),
+        ("kal 10:15 pe", f"{tomorrow_date} 10:15 pe"),
+        ("kal 5:30 baje", f"{tomorrow_date} 5:30 baje"),
     ]
     print("1. Time Parsing:")
     for raw, expected_time in time_tests:
-        total += 1
         res = parse_delivery_time(raw)
-        norm = res["normalized"] or ""
-        if expected_time in norm:
-            print(f"  [PASS] '{raw}' -> {norm}")
+        if expected_time in str(res["normalized"]):
+            print(f"  [PASS] '{raw}' -> {res['normalized']}")
             passed += 1
         else:
-            print(f"  [FAIL] '{raw}' -> Expected to contain {expected_time}, got {norm}")
+            print(f"  [FAIL] '{raw}' -> {res['normalized']} (Expected {expected_time})")
+        total += 1
             
     # 2. QUANTITY PARSING
     quantity_tests = [

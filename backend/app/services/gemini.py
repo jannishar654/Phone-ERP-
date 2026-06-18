@@ -594,9 +594,9 @@ Return only the transcript text.
                 cust_name = name_match.group(1).strip().title()
                 
         if not safe_delivery_time:
-            time_match = re.search(r'\b(kal|aaj|parso|subah|shaam|raat)\b', t_lower)
-            if time_match:
-                raw_delivery_time = time_match.group(1)
+            time_matches = list(re.finditer(r'\b(kal|aaj|parso|subah|dopahar|shaam|raat)(?:\s+(?:sade|saade|sawa|paune|dhai|dedh|aadha|[0-9]+(?:[:.][0-9]+)?|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah)(?:\s+(?:[0-9]+|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah))?\s*(?:baje|bje|am|pm))?\b', t_lower))
+            if time_matches:
+                raw_delivery_time = time_matches[-1].group(0)
                 safe_delivery_time = raw_delivery_time
                 
         normalized_cust = normalize_alias(cust_name, BUSINESS_ALIASES["customer_aliases"])
