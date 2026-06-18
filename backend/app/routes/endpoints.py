@@ -135,17 +135,17 @@ async def extract_action_card(payload: ExtractRequest) -> ActionCard:
                 except Exception:
                     price = None
 
-            safe_items.append({"name": name, "quantity": qty if qty is not None else -1, "unit": unit, "price": price})
+            safe_items.append({"name": name, "quantity": qty if qty is not None else None, "unit": unit, "price": price})
         except Exception:
             # On any unexpected structure, fall back to a single unknown item
-            safe_items.append({"name": "Unknown Item", "quantity": -1, "unit": "", "price": None})
+            safe_items.append({"name": "Unknown Item", "quantity": None, "unit": "", "price": None})
 
     # Create Pydantic Item models (this will still validate and raise if something unexpected remains)
     try:
         items_models = [Item(**item) for item in safe_items]
     except Exception as e:
         # If validation still fails, fallback to a minimal item list but mark qty invalid
-        items_models = [Item(name="Unknown Item", quantity=-1, price=None)]
+        items_models = [Item(name="Unknown Item", quantity=None, price=None)]
 
     card_data = {
         "customer_name": extracted.get("customer_name", "Unknown"),

@@ -88,6 +88,7 @@ export async function getHealth(): Promise<{ status: string; timestamp: string; 
 export async function transcribeAudio(audioFile: File, provider: string = "gemini"): Promise<{ transcript: string; confidence: number | null }> {
   const formData = new FormData();
   formData.append('file', audioFile);
+  formData.append('provider', provider); // Send as Form Data
 
   const headers = await getAuthHeaders();
   const res = await fetch(`${API_BASE_URL}/transcribe?provider=${provider}`, {
