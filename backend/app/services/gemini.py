@@ -586,7 +586,6 @@ Return only the transcript text.
         safe_delivery_time = raw_delivery_time.strip() if raw_delivery_time else ""
 
         # --- Deterministic Fallbacks for Missing Fields ---
-        import re
         t_lower = transcript.lower()
         
         if not cust_name or cust_name.lower() == "unknown":
