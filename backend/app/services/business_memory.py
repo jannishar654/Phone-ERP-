@@ -133,7 +133,7 @@ class BusinessMemoryResolver:
             return {"name": memory[strict_matches[0]], "matched": True, "possible_matches": []}
             
         # Low confidence match (possible suggestions)
-        loose_matches = difflib.get_close_matches(normalized_raw, all_keys, n=3, cutoff=0.5)
+        loose_matches = difflib.get_close_matches(normalized_raw, all_keys, n=3, cutoff=0.75)
         possible_suggestions = list(set([memory[m] for m in loose_matches]))
         
         return {

@@ -9,6 +9,9 @@ from app.services.gemini import GeminiService
 from google.genai import errors
 from app.config.settings import settings
 
+import logging
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 class ExtractRequest(BaseModel):
@@ -101,7 +104,7 @@ async def transcribe_audio(file: UploadFile = File(...), provider: str = Form(se
 async def extract_action_card(payload: ExtractRequest) -> ActionCard:
     try:
         extracted = await GeminiService.extract_order_details(payload.transcript)
-        print(f"Extracted data: {extracted}")
+        logger.info(f"Extracted data (INFO): Pipeline={payload.pipeline}, Items={len(extracted.get('items', []))}, Success=True")
     except Exception as error:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

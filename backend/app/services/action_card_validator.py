@@ -44,6 +44,6 @@ def validate_action_card(extracted_data: Dict[str, Any], transcript: str) -> Dic
     # We just need to merge any missing fields here
     
     return {
-        "missing_fields": missing_fields,
+        "missing_fields": list(dict.fromkeys(missing_fields)),
         "warnings": validation_warnings
     }

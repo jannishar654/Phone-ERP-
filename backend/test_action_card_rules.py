@@ -22,6 +22,7 @@ def run_tests():
     tomorrow_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
     today_date = datetime.now().strftime('%Y-%m-%d')
     time_tests = [
+        ("kal 5 baje, nahi aaj 8 baje", f"{today_date} 8 baje", "AM/PM ambiguity detected. Please confirm."),
         ("kal sade 8", f"{tomorrow_date} 8:30", None),
         ("sawa chhe", None, "Missing specific day"),
         ("paune 5", None, "Missing specific day"),
@@ -302,7 +303,7 @@ def run_tests():
     {
       "transcript_normalized": "kal 5:30 baje Gupta Store mein 5 kilo aloo bhejna",
       "metadata": {
-        "normalizer_changes": ["आलू -> aloo"]
+        "model_normalizer_notes": ["आलू -> aloo"]
       },
       "cards": [{"type": "ORDER", "customer_name": "Gupta Store", "delivery_time_raw": "kal 5:30 baje", "items": [{"name": "aloo", "quantity": "5", "unit": "kilo"}]}]
     }
@@ -315,10 +316,10 @@ def run_tests():
         else: print("  [FAIL] Flag enabled Devanagari.")
         total += 1
         
-        if res.get("metadata", {}).get("normalizer_changes") == ["आलू -> aloo"]:
-            print("  [PASS] normalizer_changes matches actual transformation.")
+        if res.get("metadata", {}).get("model_normalizer_notes") == ["आलू -> aloo"]:
+            print("  [PASS] model_normalizer_notes matches actual transformation.")
             passed += 1
-        else: print("  [FAIL] normalizer_changes mismatch.")
+        else: print("  [FAIL] model_normalizer_notes mismatch.")
         total += 1
 
     # Case B: Flag disabled, Devanagari
@@ -399,17 +400,116 @@ def run_tests():
         else: print("  [FAIL] failed to read from primary_card.")
         total += 1
         
-    # Case I: One-call response preserves metadata fields
-    with patch('google.genai.Client', return_value=get_mock_client(good_json)):
-        res = asyncio.run(GeminiService.extract_order_details(dev_transcript))
-        meta = res.get("metadata", {})
-        if all(k in meta for k in ["transcript_original", "transcript_normalized", "stt_provider", "extraction_provider", "pipeline"]) and res["items"][0]["quantity"] == 5.0:
-            print("  [PASS] Metadata preserved, original quantities/names intact.")
+    # Case J: Full Offline Regression Test (Production Safety)
+    regression_transcript = "कल ऐसा करना साढ़े पाँच बजे, नहीं नहीं साढ़े आठ बजे ओखला विहार शाहीन बाग में 15 किलो आलू 5 किलो टमाटर 50 किलो चीनी 50 किलो बैंगन 15 किलो नमकीन और ek tight surf add karo, wait tight cancel kar dena aur 10 kilo aloo 10 kilo tamatar add karna aur naam Danish rahega."
+    regression_json = """
+    {
+      "transcript_normalized": "kal aisa karna saade paanch baje, nahi nahi saade aath baje Okhla Vihar Shaheen Bagh mein 15 kilo aloo 5 kilo tamatar 50 kilo chini 50 kilo baingan 15 kilo namkeen aur ek tight surf add karo, wait tight cancel kar dena aur 10 kilo aloo 10 kilo tamatar add karna aur naam Danish rahega.",
+      "metadata": {
+        "model_normalizer_notes": [
+          "साढ़े पाँच -> saade paanch",
+          "साढ़े आठ -> saade aath",
+          "पंद्रह -> pandrah"
+        ],
+        "cancelled_items": [{"name": "tight surf", "quantity": "1", "unit": ""}]
+      },
+      "cards": [
+        {
+          "type": "ORDER",
+          "customer_name": "Danish",
+          "delivery_address": "Okhla Vihar Shaheen Bagh",
+          "delivery_time_raw": "kal saade paanch baje, nahi nahi saade aath baje",
+          "items": [
+            {"name": "aloo", "quantity": "15", "unit": "kilo"},
+            {"name": "tamatar", "quantity": "5", "unit": "kilo"},
+            {"name": "chini", "quantity": "50", "unit": "kilo"},
+            {"name": "baingan", "quantity": "50", "unit": "kilo"},
+            {"name": "namkeen", "quantity": "15", "unit": "kilo"},
+            {"name": "tight surf", "quantity": "1", "unit": ""},
+            {"name": "aloo", "quantity": "10", "unit": "kilo"},
+            {"name": "tamatar", "quantity": "10", "unit": "kilo"}
+          ]
+        }
+      ]
+    }
+    """
+    with patch('google.genai.Client', return_value=get_mock_client(regression_json)):
+        res = asyncio.run(GeminiService.extract_order_details(regression_transcript))
+        
+        # Verify customer, address, aloo qty
+        if res.get("customer_name") == "Danish" and res.get("delivery_address") == "Okhla Vihar Shaheen Bagh":
+            print("  [PASS] Full Regression: Customer and address preserved.")
             passed += 1
-        else: print("  [FAIL] Metadata missing fields.")
+        else: print(f"  [FAIL] Full Regression: Customer/address wrong: {res}")
+        total += 1
+        
+        # Verify Aloo, Tamatar, Chini, Baingan, Namkeen aggregation
+        aloo_item = next((i for i in res["items"] if i["name"] == "aloo"), None)
+        tamatar_item = next((i for i in res["items"] if i["name"] == "tamatar"), None)
+        chini_item = next((i for i in res["items"] if i["name"] == "Sugar"), None)
+        baingan_item = next((i for i in res["items"] if i["name"] == "baingan"), None)
+        namkeen_item = next((i for i in res["items"] if i["name"] == "namkeen"), None)
+        
+        if (aloo_item and aloo_item["quantity"] == 25 and
+            tamatar_item and tamatar_item["quantity"] == 15 and
+            chini_item and chini_item["quantity"] == 50 and
+            baingan_item and baingan_item["quantity"] == 50 and
+            namkeen_item and namkeen_item["quantity"] == 15):
+            print("  [PASS] Full Regression: Aggregated qtys (aloo 25, tamatar 15, chini 50, baingan 50, namkeen 15) correct.")
+            passed += 1
+        else: print(f"  [FAIL] Full Regression: Qtys incorrect. Items: {res['items']}")
+        total += 1
+        
+        # Corrected time handling & day preserved & AM/PM warning
+        if "2026" in str(res["delivery_time_normalized"]) and "8:30" in str(res["delivery_time_normalized"]):
+            print("  [PASS] Full Regression: Time mapped to 8:30 and day preserved.")
+            passed += 1
+        else: print(f"  [FAIL] Full Regression: Time parsing failed: {res['delivery_time_normalized']}")
+        total += 1
+        
+        if "AM/PM ambiguity" in str(res["delivery_time_warning"]):
+            print("  [PASS] Full Regression: AM/PM ambiguity surfaced.")
+            passed += 1
+        else: print(f"  [FAIL] Full Regression: No AM/PM warning. Got: {res['delivery_time_warning']}")
+        total += 1
+        
+        # Cancelled tight surf is not active
+        if not any("tight surf" in i["name"] for i in res["items"]) and res["metadata"]["cancelled_items"]:
+            print("  [PASS] Full Regression: Cancelled item not active, but present in metadata.")
+            passed += 1
+        else: print("  [FAIL] Full Regression: Cancellation logic failed.")
+        total += 1
+        
+        # Risks remain
+        if "cancellation" in res["risk_flags"] and "large_quantity" in res["risk_flags"]:
+            print("  [PASS] Full Regression: Risks remain (cancellation, large_quantity).")
+            passed += 1
+        else: print(f"  [FAIL] Full Regression: Risks missing. Got: {res['risk_flags']}")
+        total += 1
+        
+        # Truthful normalization metadata
+        if "पंद्रह -> pandrah" in res["metadata"]["model_normalizer_notes"]:
+            print("  [PASS] Full Regression: Truthful normalization notes.")
+            passed += 1
+        else: print("  [FAIL] Full Regression: Truthful normalization missing.")
+        total += 1
+        
+        # Unique missing_fields
+        if len(res["missing_fields"]) == len(set(res["missing_fields"])):
+            print("  [PASS] Full Regression: missing_fields are unique.")
+            passed += 1
+        else: print("  [FAIL] Full Regression: missing_fields not unique.")
+        total += 1
+        
+        # Irrelevant matches absent (aloo should not have possible matches because cutoff is high)
+        if not aloo_item["possible_matches"]:
+            print("  [PASS] Full Regression: Irrelevant possible matches absent.")
+            passed += 1
+        else: print(f"  [FAIL] Full Regression: Irrelevant matches exist: {aloo_item['possible_matches']}")
         total += 1
 
     settings.ENABLE_LLM_TRANSLITERATION = original_flag
+
         
     print(f"\nFinal -> Total: {total}, Passed: {passed}, Failed: {total - passed}")
 

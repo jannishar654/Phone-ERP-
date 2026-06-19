@@ -436,15 +436,15 @@ Return only the transcript text.
         output_schema_additions = ""
         if has_devanagari and enable_transliteration:
             normalization_instruction = (
-                "2. NORMALIZE TRANSCRIPT: The transcript contains Devanagari. You MUST transliterate it into Romanized Hinglish and output it as `transcript_normalized` in the root JSON. Preserve all English brand names natively. Convert Hindi number words to Arabic digits ('पाँच' -> '5'). Transliterate fractional Hindi times phonetically ('साढ़े पाँच' -> 'saade paanch'). Record the exact transformation mappings (e.g., 'साढ़े पाँच' -> 'saade paanch', 'पाँच' -> '5') in `metadata.normalizer_changes`.\n"
+                "2. NORMALIZE TRANSCRIPT: The transcript contains Devanagari. You MUST transliterate it into Romanized Hinglish and output it as `transcript_normalized` in the root JSON. Preserve all English brand names natively. Convert Hindi number words to Arabic digits ('पाँच' -> '5'). Transliterate fractional Hindi times phonetically ('साढ़े पाँच' -> 'saade paanch'). Record the exact phonetic transformation mappings (e.g., 'साढ़े पाँच' -> 'saade paanch', 'पाँच' -> '5') in `metadata.model_normalizer_notes`.\n"
             )
             output_schema_additions = (
                 '  "transcript_normalized": "string (Romanized Hinglish transliteration)",\n'
-                '  "metadata": {"normalizer_changes": ["string"]},\n'
+                '  "metadata": {"model_normalizer_notes": ["string"], "cancelled_items": [{"name": "string", "quantity": "string", "unit": "string"}]},\n'
             )
         else:
             normalization_instruction = "2. NORMALIZE TRANSCRIPT: Output the exact original transcript as `transcript_normalized` in the root JSON.\n"
-            output_schema_additions = '  "transcript_normalized": "string",\n'
+            output_schema_additions = '  "transcript_normalized": "string",\n  "metadata": {"cancelled_items": [{"name": "string", "quantity": "string", "unit": "string"}]},\n'
 
         prompt = (
             "You are an expert grocery order extraction AI for PhoneERP, an Indian grocery/wholesale/kirana business.\n"
@@ -464,7 +464,8 @@ Return only the transcript text.
             "10. EXACT RAW QUANTITY & UNIT: For the 'quantity' field in items, extract the exact raw numerical quantity spoken. Do not do math or silently default to 1. If quantity is missing, use null. Preserve spoken units (e.g., 'packet', 'kilo') exactly as spoken in the `unit` field.\n"
             "11. EXTRACT CUSTOMER NAME: If transcript explicitly says 'unka naam X hai' or 'naam X rahega', use X as `customer_name`. If a store/location is mentioned instead of a person, use the store name as the customer_name (e.g. 'Guptastore'). Do not leave customer_name as Unknown if a name or store name is clearly spoken. Do not invent names.\n"
             "12. DETECT PAYMENT METHOD/UDHAAR: If the user says 'udhaar', 'paisa udhaar rahega', 'baad mein denge', 'credit', or 'khata mein likh do', set `payment_method` to 'Credit/Udhaar' and add a note in `extraction_notes`.\n"
-            "13. FLAG UNKNOWN/AMBIGUOUS FIELDS: Add warnings to extraction_notes if product/quantity is ambiguous.\n\n"
+            "13. FLAG UNKNOWN/AMBIGUOUS FIELDS: Add warnings to extraction_notes if product/quantity is ambiguous.\n"
+            "14. IN-FLIGHT CANCELLATIONS: If an item is added but later cancelled in the same transcript (e.g. 'ek tight surf add karo... nahi surf cancel kar dena'), DO NOT include it in `items`. Place it in `metadata.cancelled_items` instead.\n\n"
             "## OUTPUT FORMAT\n"
             "Return ONLY a JSON object containing `transcript_normalized` and a `cards` array. No markdown, no explanation.\n"
             "{\n"
@@ -644,6 +645,27 @@ Return only the transcript text.
                 item["quantity"] = 1
                 item["unit"] = ""
 
+        # --- Deterministic Cancellation Filter ---
+        cancelled_items = normalization_metadata.get("cancelled_items", [])
+        cancelled_names = [str(ci.get("name", "")).strip().lower() for ci in cancelled_items if ci.get("name")]
+        
+        has_cancellation = False
+        final_items = []
+        for item in normalized_items:
+            item_name_lower = str(item.get("name", "")).lower()
+            is_cancelled = False
+            for cn in cancelled_names:
+                if cn in item_name_lower or item_name_lower in cn:
+                    is_cancelled = True
+                    break
+            
+            if is_cancelled:
+                has_cancellation = True
+                continue
+            final_items.append(item)
+            
+        normalized_items = final_items
+
         if not normalized_items:
             normalized_items = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
 
@@ -779,7 +801,8 @@ Return only the transcript text.
                 "transcript_normalized": transcript_normalized,
                 "normalization_used": normalization_used,
                 "normalization_warnings": normalization_warnings,
-                "normalizer_changes": normalization_metadata.get("normalizer_changes", []),
+                "model_normalizer_notes": normalization_metadata.get("model_normalizer_notes", []),
+                "cancelled_items": normalization_metadata.get("cancelled_items", []),
                 "stt_provider": "sarvam", # Assuming sarvam_gemini handles this by default as requested
                 "extraction_provider": "gemini",
                 "pipeline": "sarvam_gemini"
@@ -789,6 +812,8 @@ Return only the transcript text.
         # Apply deterministic action card validation
         from app.services.risk_detector import detect_risks
         risk_data = detect_risks(transcript, final_aggregated_items)
+        if has_cancellation and "cancellation" not in risk_data["risk_flags"]:
+            risk_data["risk_flags"].append("cancellation")
         final_data.update(risk_data)
         
         validation_data = validate_action_card(final_data, transcript)

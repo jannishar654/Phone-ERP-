@@ -73,14 +73,17 @@ def parse_delivery_time(raw_text: Optional[str], reference_datetime: Optional[da
     text = re.sub(r'\bdh?e+a?dh?\b|डेढ़|डेढ़', '1:30', text)
     text = re.sub(r'\bdh?a+i+\b|ढाई', '2:30', text)
 
-    # Exact time matcher must be evaluated first for context-aware fallbacks
-    exact_time_match = re.search(r'(\d{1,2}:\d{2}(?:\s*(?:am|pm|baje|ke baad|after|बजे|pe|पे))?|\d{1,2}\s+(?:am|pm|baje|ke baad|after|बजे|pe|पे))', text)
+    # Find all exact time matches
+    time_matches = list(re.finditer(r'(\d{1,2}:\d{2}(?:\s*(?:am|pm|baje|ke baad|after|बजे|pe|पे))?|\d{1,2}\s+(?:am|pm|baje|ke baad|after|बजे|pe|पे))', text))
+    
+    exact_time_match = time_matches[-1] if time_matches else None
+    first_time_match = time_matches[0] if time_matches else None
 
     # Determine the day
     date_str = None
     has_kalle = False
     
-    if exact_time_match:
+    if exact_time_match: # Use the final time match to anchor the day
         clock_start = exact_time_match.start()
         # Find all day matches
         days = list(re.finditer(r'\b(kal|kall|kalle|tomorrow|कल|aaj|today|आज|parso|day after tomorrow|परसो)\b', text))
@@ -122,6 +125,8 @@ def parse_delivery_time(raw_text: Optional[str], reference_datetime: Optional[da
     if exact_time_match:
         time_str = exact_time_match.group(1)
         confidence = 0.9
+        if "am" not in time_str.lower() and "pm" not in time_str.lower() and not has_subah and not has_shaam and not has_raat and not has_dopahar:
+            warning = "AM/PM ambiguity detected. Please confirm."
     elif has_subah:
         time_str = "Morning"
         confidence = 0.8
@@ -141,7 +146,7 @@ def parse_delivery_time(raw_text: Optional[str], reference_datetime: Optional[da
     elif date_str:
         normalized = date_str
         confidence = 0.7
-        warning = "Time needs confirmation"
+        if not warning: warning = "Time needs confirmation"
     elif time_str:
         normalized = None
         confidence = 0.5
