@@ -398,7 +398,7 @@ Return only the transcript text.
             "5. EXTRACT FRACTIONAL HINDI TIMES CORRECTLY: Convert fractional Hindi times to English digital time. 'साढ़े सात' -> 7:30, 'सवा पाँच' -> 5:15, 'ढाई' -> 2:30.\n"
             "6. CLEAN ITEM NAMES: Remove all conversational action verbs from item names (e.g., 'bhijwa dena', 'pack kar dena').\n"
             "7. GROCERY STORE CONTEXT: Assume all items are standard grocery or household products. Do not hallucinate non-grocery words.\n"
-            "8. AGGREGATE DUPLICATES: Listen carefully to the entire transcript. If the same item is mentioned multiple times, you MUST accurately ADD the quantities together. Do not guess or round up. (e.g., 50 kilo aata + 15 kilo aata = 65 kilo aata).\n"
+            "8. DO NOT AGGREGATE DUPLICATES: If the same item is mentioned multiple times in the transcript, extract each mention as a SEPARATE item in the list. Do NOT do math. We will aggregate them later.\n"
             "9. NEVER MERGE UNRELATED ITEMS: Do not accidentally glue two completely different products into one name. Extract 'surf excel' and 'chawal' as TWO separate items. NEVER extract 'surf excel chawal'.\n"
             "10. PRESERVE RAW DELIVERY TIME: Detect Hindi/Hinglish time phrases (e.g., 'kal 5:30 baje', 'aaj shaam') and extract EXACTLY as spoken into `delivery_time_raw`. Do not put delivery-time words inside `delivery_address`.\n"
             "11. EXACT RAW QUANTITY & UNIT: For the 'quantity' field in items, extract the exact raw words spoken (e.g. 'dhai', '0.5', '50'). Do not do math or silently default to 1. If quantity is missing, use null. Preserve spoken units (e.g., 'packet', 'kilo') exactly as spoken in the `unit` field.\n"
@@ -571,7 +571,7 @@ Return only the transcript text.
                 "rupee" in unit_lower
                 or "rs" in unit_lower
                 or "inr" in unit_lower):
-                item["price"] = max(item["price"], float(item["quantity"]))
+                item["price"] = max(item["price"], float(item["quantity"] or 0))
                 item["quantity"] = 1
                 item["unit"] = ""
 
@@ -653,6 +653,32 @@ Return only the transcript text.
                         normalized_items[idx]["possible_matches"] = res["possible_matches"]
                         validation_warnings.append(f"AI Assist corrected spelling for '{orig_unresolved['raw_name']}'.")
 
+        # --- Aggregate duplicate items deterministically ---
+        aggregated_items = {}
+        for item in normalized_items:
+            # We already handled 'rupee'/'rs' normalizations in layer 1
+            unit_lower = item.get("unit", "").lower().strip()
+            key = (item["name"], unit_lower)
+            if key not in aggregated_items:
+                aggregated_items[key] = item.copy()
+            else:
+                existing_qty = aggregated_items[key]["quantity"]
+                new_qty = item["quantity"]
+                if existing_qty is not None and new_qty is not None:
+                    aggregated_items[key]["quantity"] = existing_qty + new_qty
+                elif existing_qty is None and new_qty is not None:
+                    aggregated_items[key]["quantity"] = new_qty
+        
+        final_aggregated_items = list(aggregated_items.values())
+        if not final_aggregated_items:
+            final_aggregated_items = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
+
+        print("\n--- GEMINI EXTRACTION DEBUG ---")
+        print("Raw Gemini Items:", items)
+        print("Normalized Items:", normalized_items)
+        print("Final Aggregated Items:", final_aggregated_items)
+        print("-------------------------------\n")
+
         final_data = {
             "customer_name": normalized_cust,
             "customer_phone": str(primary_card.get("customer_phone") or "").strip(),
@@ -663,7 +689,7 @@ Return only the transcript text.
             "delivery_time_warning": time_data["warning"],
             "delivery_time": time_data["normalized"] or raw_delivery_time, # fallback for UI compatibility
             "payment_method": str(primary_card.get("payment_method") or "").strip() or None,
-            "items": normalized_items,
+            "items": final_aggregated_items,
             "type": primary_card.get("type", "ORDER"),
             "confidence": primary_card.get("confidence", 0.0),
             "extraction_notes": primary_card.get("extraction_notes", ""),
@@ -673,7 +699,7 @@ Return only the transcript text.
 
         # Apply deterministic action card validation
         from app.services.risk_detector import detect_risks
-        risk_data = detect_risks(transcript, normalized_items)
+        risk_data = detect_risks(transcript, final_aggregated_items)
         final_data.update(risk_data)
         
         validation_data = validate_action_card(final_data, transcript)
