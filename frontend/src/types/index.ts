@@ -3,6 +3,13 @@ export interface Item {
   unit?: string;
   quantity: number;
   price?: number;
+  raw_name?: string;
+  canonical_name?: string;
+  resolution_status?: string;
+  resolution_source?: string;
+  possible_matches?: string[];
+  resolution_confidence?: number;
+  alias_used?: boolean;
 }
 
 export type ActionCardStatus = 'pending' | 'processing' | 'completed';

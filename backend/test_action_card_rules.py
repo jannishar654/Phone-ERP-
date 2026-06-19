@@ -446,7 +446,7 @@ def run_tests():
         # Verify Aloo, Tamatar, Chini, Baingan, Namkeen aggregation
         aloo_item = next((i for i in res["items"] if i["name"] == "aloo"), None)
         tamatar_item = next((i for i in res["items"] if i["name"] == "tamatar"), None)
-        chini_item = next((i for i in res["items"] if i["name"] == "Sugar"), None)
+        chini_item = next((i for i in res["items"] if i["name"] == "chini"), None)
         baingan_item = next((i for i in res["items"] if i["name"] == "baingan"), None)
         namkeen_item = next((i for i in res["items"] if i["name"] == "namkeen"), None)
         

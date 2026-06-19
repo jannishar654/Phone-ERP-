@@ -25,17 +25,17 @@ def aggregate_items_deterministically(normalized_items: list[dict]) -> list[dict
         # Extract fields safely
         name = item.get("name", "Unknown Item")
         unit_lower = str(item.get("unit") or "").lower().strip()
-        
+
         # Key uses canonical name (which inherently includes variant/pack_size) and unit
         key = (name, unit_lower)
-        
+
         if key not in aggregated_items:
             aggregated_items[key] = item.copy()
         else:
             # Safely handle decimal quantities and missing quantities
             existing_qty = aggregated_items[key].get("quantity")
             new_qty = item.get("quantity")
-            
+
             if existing_qty is not None and new_qty is not None:
                 try:
                     total_qty = float(existing_qty) + float(new_qty)
@@ -45,7 +45,7 @@ def aggregate_items_deterministically(normalized_items: list[dict]) -> list[dict
                     logger.warning(f"Failed to add quantities '{existing_qty}' and '{new_qty}' for {name}")
             elif existing_qty is None and new_qty is not None:
                 aggregated_items[key]["quantity"] = new_qty
-            
+
             # Use max price if multiple prices are provided
             existing_price = aggregated_items[key].get("price", 0.0)
             new_price = item.get("price", 0.0)
@@ -53,7 +53,7 @@ def aggregate_items_deterministically(normalized_items: list[dict]) -> list[dict
                 aggregated_items[key]["price"] = max(float(existing_price), float(new_price))
             except (ValueError, TypeError):
                 pass
-                
+
     final_aggregated = list(aggregated_items.values())
     if not final_aggregated:
         return [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
@@ -393,7 +393,7 @@ Return only the transcript text.
                 # If word parsing failed, try parse_quantity (for digits)
                 parsed_qty, _ = GeminiService._parse_quantity(quantity)
                 qty = parsed_qty if parsed_qty is not None else 0
-            
+
             unit = unit_token.strip()
             if name and qty > 0:
                 foods.append({
@@ -412,7 +412,7 @@ Return only the transcript text.
         }
 
     @staticmethod
-    async def extract_order_details(transcript_text: str) -> dict:
+    async def extract_order_details(transcript_text: str, stt_provider: str = "gemini", extraction_provider: str = "gemini", pipeline: str = "gemini_gemini") -> dict:
         """Extract structured order details from transcript."""
         transcript = transcript_text.strip()
         if not transcript:
@@ -425,13 +425,13 @@ Return only the transcript text.
             return GeminiService._parse_order_fallback(transcript)
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        
+
         # --- Normalization Layer for Devanagari (One-Call Unified) ---
         transcript_original = transcript
         has_devanagari = bool(re.search(r'[\u0900-\u097F]', transcript))
-        
+
         enable_transliteration = getattr(settings, "ENABLE_LLM_TRANSLITERATION", False)
-        
+
         normalization_instruction = ""
         output_schema_additions = ""
         if has_devanagari and enable_transliteration:
@@ -465,11 +465,26 @@ Return only the transcript text.
             "11. EXTRACT CUSTOMER NAME: If transcript explicitly says 'unka naam X hai' or 'naam X rahega', use X as `customer_name`. If a store/location is mentioned instead of a person, use the store name as the customer_name (e.g. 'Guptastore'). Do not leave customer_name as Unknown if a name or store name is clearly spoken. Do not invent names.\n"
             "12. DETECT PAYMENT METHOD/UDHAAR: If the user says 'udhaar', 'paisa udhaar rahega', 'baad mein denge', 'credit', or 'khata mein likh do', set `payment_method` to 'Credit/Udhaar' and add a note in `extraction_notes`.\n"
             "13. FLAG UNKNOWN/AMBIGUOUS FIELDS: Add warnings to extraction_notes if product/quantity is ambiguous.\n"
-            "14. IN-FLIGHT CANCELLATIONS: If an item is added but later cancelled in the same transcript (e.g. 'ek tight surf add karo... nahi surf cancel kar dena'), DO NOT include it in `items`. Place it in `metadata.cancelled_items` instead.\n\n"
+            "14. IN-FLIGHT CANCELLATIONS: If an item is added but later cancelled in the same transcript (e.g. 'ek tight surf add karo... nahi surf cancel kar dena'), DO NOT include it in `items`. Place it in `metadata.cancelled_items` instead.\n"
+            "15. EXTRACT OPERATIONS: Extract an ordered sequence of events from the transcript into the `operations` array using ADD, SET_QUANTITY, CANCEL, RETURN, SUBSTITUTE, or PREVIOUS_ORDER_REFERENCE.\n\n"
             "## OUTPUT FORMAT\n"
             "Return ONLY a JSON object containing `transcript_normalized` and a `cards` array. No markdown, no explanation.\n"
             "{\n"
             f"{output_schema_additions}"
+            '  "operations": [\n'
+            '    {\n'
+            '      "sequence": 1,\n'
+            '      "operation_id": "string (unique identifier for this operation)",\n'
+            '      "target_operation_id": "string (optional, operation_id this operation modifies)",\n'
+            '      "type": "ADD|SET_QUANTITY|CANCEL|RETURN|SUBSTITUTE|PREVIOUS_ORDER_REFERENCE",\n'
+            '      "raw_product": "string",\n'
+            '      "quantity_raw": "string",\n'
+            '      "quantity": 1,\n'
+            '      "unit": "string",\n'
+            '      "condition": "string",\n'
+            '      "evidence": "string"\n'
+            '    }\n'
+            '  ],\n'
             '  "cards": [\n'
             "    {\n"
             '      "type": "ORDER" | "CANCEL" | "COMPLAINT" | "RETURN" | "QUERY" | "PAYMENT_REMINDER",\n'
@@ -557,7 +572,7 @@ Return only the transcript text.
         if not cards or not isinstance(cards, list):
             # Fallback if model didn't wrap it in a cards array
             cards = [parsed]
-        
+
         primary_card = cards[0]
         # Flag if multiple cards were present so endpoints can log it
         if len(cards) > 1:
@@ -566,12 +581,26 @@ Return only the transcript text.
         transcript_normalized = parsed.get("transcript_normalized")
         if not transcript_normalized or not isinstance(transcript_normalized, str):
             transcript_normalized = transcript_original
-            
+
         normalization_metadata = parsed.get("metadata", {})
         normalization_used = transcript_normalized != transcript_original
         normalization_warnings = None
 
-        items = primary_card.get("items") or []
+        from app.services.operation_reducer import OperationReducer
+        operations = parsed.get("operations", [])
+        reduced_state = None
+        if operations:
+            reduced_state = OperationReducer.parse_and_reduce(operations)
+            items = reduced_state["active_items"]
+            normalization_metadata["cancelled_items"] = reduced_state["cancelled_items"]
+            normalization_metadata["return_items"] = reduced_state["return_items"]
+            normalization_metadata["substitution_instructions"] = reduced_state["substitution_instructions"]
+            normalization_metadata["previous_order_reference"] = reduced_state["previous_order_reference"]
+            normalization_metadata["invalid_operations"] = reduced_state.get("invalid_operations", [])
+            normalization_metadata["operation_warnings"] = reduced_state.get("operation_warnings", [])
+        else:
+            items = primary_card.get("items") or []
+
         if not isinstance(items, list):
             items = []
 
@@ -581,17 +610,17 @@ Return only the transcript text.
                 # --- quantity + unit (new pipeline) ---
                 raw_qty = item.get("quantity")
                 raw_unit = item.get("unit", "")
-                
+
                 # If LLM passed a string containing quantity and unit, pipe it to quantity_parser
                 from app.services.quantity_parser import parse_quantity
                 from app.services.unit_normalizer import normalize_unit
-                
+
                 combined_raw = f"{raw_qty} {raw_unit}".strip()
                 parsed_qty_data = parse_quantity(combined_raw)
-                
+
                 qty = parsed_qty_data["quantity"]
                 unit_str = parsed_qty_data["unit"] or str(raw_unit)
-                
+
                 # Fallback to Nasir/dev logic
                 if qty is None:
                     fallback_qty, fallback_unit = GeminiService._parse_quantity(str(raw_qty))
@@ -599,7 +628,7 @@ Return only the transcript text.
                         qty = fallback_qty
                     if fallback_unit and not parsed_qty_data["unit"]:
                         unit_str = fallback_unit
-                
+
                 unit = normalize_unit(unit_str)
 
                 # --- price (dev: robust None / invalid-value handling,
@@ -611,12 +640,12 @@ Return only the transcript text.
                     price = 0.0
 
                 # Pass customer_phone as customer_id for ChainMap resolution
-                cust_phone = parsed.get("customer_phone", "")
+                cust_phone = primary_card.get("customer_phone", "")
                 cust_phone = cust_phone.strip() if cust_phone else ""
-                
+
                 raw_name = item.get("name")
                 safe_name = raw_name.strip() if raw_name else "Unknown Item"
-                
+
                 lower_name = safe_name.lower()
                 for prefix in ("none ", "missing ", "null ", "unknown "):
                     if lower_name.startswith(prefix):
@@ -627,6 +656,10 @@ Return only the transcript text.
                 res = business_memory.resolve_product_detailed(safe_name, customer_id=cust_phone)
                 normalized_items.append({
                     "name": res["name"],
+                    "raw_name": res.get("raw_name", safe_name),
+                    "canonical_name": res.get("canonical_name"),
+                    "resolution_status": res.get("resolution_status", "unresolved"),
+                    "alias_used": res.get("alias_used", False),
                     "quantity": qty,
                     "unit": unit,
                     "price": price,
@@ -648,7 +681,7 @@ Return only the transcript text.
         # --- Deterministic Cancellation Filter ---
         cancelled_items = normalization_metadata.get("cancelled_items", [])
         cancelled_names = [str(ci.get("name", "")).strip().lower() for ci in cancelled_items if ci.get("name")]
-        
+
         has_cancellation = False
         final_items = []
         for item in normalized_items:
@@ -658,12 +691,12 @@ Return only the transcript text.
                 if cn in item_name_lower or item_name_lower in cn:
                     is_cancelled = True
                     break
-            
+
             if is_cancelled:
                 has_cancellation = True
                 continue
             final_items.append(item)
-            
+
         normalized_items = final_items
 
         if not normalized_items:
@@ -671,34 +704,34 @@ Return only the transcript text.
 
         raw_cust_name = primary_card.get("customer_name", "")
         cust_name = raw_cust_name.strip() if raw_cust_name else ""
-        
+
         # Apply deterministic time parsing
         raw_delivery_time = primary_card.get("delivery_time_raw", primary_card.get("delivery_time", ""))
         safe_delivery_time = raw_delivery_time.strip() if raw_delivery_time else ""
 
         # --- Deterministic Fallbacks for Missing Fields ---
         t_lower = transcript_normalized.lower()
-        
+
         if not cust_name or cust_name.lower() == "unknown":
             name_match = re.search(r'(?:unka naam|naam|customer ka naam|party ka naam|नाम|उनका नाम|पार्टी का नाम)\s+(.*?)(?:\s+(?:hai|tha|aur|rahega|है|था|और|रहेगा)|$)', t_lower)
             if name_match:
                 cust_name = name_match.group(1).strip().title()
-                
+
         if not safe_delivery_time:
             # Detect clock expression independently
             clock_regex = r'\b(?:sade|saade|sawa|paune|dhai|dedh|aadha|साढ़े|साढ़े|सवा|पौने|ढाई|डेढ़|आधा|[0-9]+(?:[:.][0-9]+)?|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah|एक|दो|तीन|चार|पाँच|छह|सात|आठ|नौ|दस|ग्यारह|बारह)(?:\s+(?:[0-9]+|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah|एक|दो|तीन|चार|पाँच|छह|सात|आठ|नौ|दस|ग्यारह|बारह))?\s*(?:baje|bje|am|pm|बजे|बजे)\b'
             clocks = list(re.finditer(clock_regex, t_lower))
-            
+
             if clocks:
                 last_clock = clocks[-1]
                 clock_str = last_clock.group(0)
                 clock_start = last_clock.start()
                 clock_end = last_clock.end()
-                
+
                 # Search within a bounded window (50 chars before) for a day token
                 window_start = max(0, clock_start - 50)
                 window_text = t_lower[window_start:clock_start]
-                
+
                 # In time context, safely recognize ASR variants kall/kalle
                 day_matches_in_window = list(re.finditer(r'\b(kal|kall|kalle|aaj|parso|subah|dopahar|shaam|raat|कल|आज|परसों|सुबह|दोपहर|शाम|रात)\b', window_text))
                 if day_matches_in_window:
@@ -708,7 +741,7 @@ Return only the transcript text.
                 else:
                     # Clock detected but day uncertain, preserve clock
                     raw_delivery_time = clock_str
-                    
+
                 safe_delivery_time = raw_delivery_time
             else:
                 # Fallback: Day only
@@ -716,10 +749,10 @@ Return only the transcript text.
                 if day_matches:
                     raw_delivery_time = day_matches[-1].group(0)
                     safe_delivery_time = raw_delivery_time
-                
+
         if cust_name:
             cust_name = re.sub(r'(?:\s+(?:likhna|likh\s*dena|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai|लिखना|लिख\s*देना|लिखदो|रखना|करना|भेजना|देना|है|ठीक\s*है))+$', '', cust_name, flags=re.IGNORECASE).strip()
-                
+
         normalized_cust = normalize_alias(cust_name, BUSINESS_ALIASES["customer_aliases"])
         time_data = parse_delivery_time(safe_delivery_time)
 
@@ -736,7 +769,7 @@ Return only the transcript text.
                     "raw_quantity": str(items[i].get("quantity", "")),
                     "raw_unit": str(items[i].get("unit", ""))
                 })
-                
+
         if not time_data["normalized"] and raw_delivery_time:
             fallback_payload["unresolved_time"] = raw_delivery_time
 
@@ -748,21 +781,21 @@ Return only the transcript text.
             from app.services.llm_normalizer import LLMNormalizer
             logger.info(f"Triggering Layer 2 LLM Normalizer for {len(unresolved_items)} items/time.")
             fixed_data = await LLMNormalizer.fix_messy_fields(fallback_payload)
-            
+
             if "unresolved_time" in fixed_data and fixed_data["unresolved_time"]:
                 time_data["normalized"] = fixed_data["unresolved_time"]
                 validation_warnings.append("AI Assist used to fix delivery time.")
-                
+
             if "unresolved_items" in fixed_data and isinstance(fixed_data["unresolved_items"], list):
                 # Zip safely handles if LLM returns fewer items
                 for fixed_item, orig_unresolved in zip(fixed_data["unresolved_items"], unresolved_items):
                     idx = orig_unresolved["index"]
-                    
+
                     if fixed_item.get("raw_quantity") is not None:
                         # LLM fixed the quantity
                         normalized_items[idx]["quantity"] = fixed_item["raw_quantity"]
                         validation_warnings.append(f"AI Assist used to parse quantity for '{orig_unresolved['raw_name']}'.")
-                        
+
                     if fixed_item.get("raw_name") and fixed_item.get("raw_name").lower() != orig_unresolved["raw_name"].lower():
                         # LLM fixed spelling, run business memory again!
                         res = business_memory.resolve_product_detailed(fixed_item["raw_name"], customer_id=cust_phone)
@@ -803,11 +836,20 @@ Return only the transcript text.
                 "normalization_warnings": normalization_warnings,
                 "model_normalizer_notes": normalization_metadata.get("model_normalizer_notes", []),
                 "cancelled_items": normalization_metadata.get("cancelled_items", []),
-                "stt_provider": "sarvam", # Assuming sarvam_gemini handles this by default as requested
-                "extraction_provider": "gemini",
-                "pipeline": "sarvam_gemini"
+                "return_items": normalization_metadata.get("return_items", []),
+                "substitution_instructions": normalization_metadata.get("substitution_instructions", []),
+                "previous_order_reference": normalization_metadata.get("previous_order_reference", None),
+                "invalid_operations": normalization_metadata.get("invalid_operations", []),
+                "operation_warnings": normalization_metadata.get("operation_warnings", []),
+                "operations": operations,
+                "stt_provider": stt_provider,
+                "extraction_provider": extraction_provider,
+                "pipeline": pipeline
             }
         }
+
+        if reduced_state and reduced_state.get("operation_warnings"):
+            validation_warnings.extend(reduced_state["operation_warnings"])
 
         # Apply deterministic action card validation
         from app.services.risk_detector import detect_risks
@@ -815,14 +857,14 @@ Return only the transcript text.
         if has_cancellation and "cancellation" not in risk_data["risk_flags"]:
             risk_data["risk_flags"].append("cancellation")
         final_data.update(risk_data)
-        
+
         validation_data = validate_action_card(final_data, transcript)
-        
+
         # Merge AI Fallback warnings into the main warnings list
         if "warnings" not in validation_data:
             validation_data["warnings"] = []
         validation_data["warnings"].extend(final_data.pop("validation_warnings", []))
-            
+
         final_data.update(validation_data)
-        
+
         return final_data
