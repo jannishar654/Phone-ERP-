@@ -33,7 +33,7 @@ function ActionCardContent() {
     try {
       const data = await getActionCards();
       setCards(data);
-      
+
       // If a card ID was passed in search params, pre-select it
       if (cardIdParam) {
         const found = data.find(c => c.id === cardIdParam);
@@ -120,6 +120,28 @@ function ActionCardContent() {
     }
   };
 
+  const handleResolveSuggestion = async (itemIndex: number, action: 'accepted' | 'kept_raw') => {
+    if (!selectedCard) return;
+    const newItems = [...selectedCard.items];
+    const item = newItems[itemIndex];
+
+    if (action === 'accepted') {
+      item.name = item.canonical_name || item.name;
+      item.resolution_status = 'accepted';
+    } else {
+      item.name = item.raw_name || item.name;
+      item.resolution_status = 'kept_raw';
+    }
+
+    try {
+      const updated = await updateActionCard(selectedCard.id, { items: newItems });
+      setSelectedCard(updated);
+      setCards(cards.map(c => c.id === selectedCard.id ? updated : c));
+    } catch (err) {
+      alert('Failed to update item resolution on the backend.');
+    }
+  };
+
   const startEdit = () => {
     if (!selectedCard) return;
     setEditName(selectedCard.customer_name || '');
@@ -133,11 +155,11 @@ function ActionCardContent() {
   const handleItemChange = (index: number, field: keyof Item, value: any) => {
     const updated = [...editItems];
     if (field === 'quantity') {
-      updated[index][field] = Math.max(0.01, parseFloat(value) || 1);
+      (updated[index] as any)[field] = Math.max(0.01, parseFloat(value) || 1);
     } else if (field === 'price') {
-      updated[index][field] = Math.max(0, parseFloat(value) || 0);
+      (updated[index] as any)[field] = Math.max(0, parseFloat(value) || 0);
     } else {
-      updated[index][field] = value;
+      (updated[index] as any)[field] = value;
     }
     setEditItems(updated);
   };
@@ -182,9 +204,9 @@ function ActionCardContent() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          transcript: demoTranscript, 
-          source: 'text', 
+        body: JSON.stringify({
+          transcript: demoTranscript,
+          source: 'text',
           provider: extractProvider,
           save_evaluation: true
         }),
@@ -296,7 +318,7 @@ function ActionCardContent() {
             </p>
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Extraction Engine</label>
-              <select 
+              <select
                 value={extractProvider}
                 onChange={(e) => setExtractProvider(e.target.value)}
                 disabled={isExtracting}
@@ -468,9 +490,9 @@ function ActionCardContent() {
                     {selectedCard.customer_name || 'Anonymous'}
                     {selectedCard.message_type && (
                       <span className={`text-[10px] px-2 py-0.5 rounded border uppercase tracking-wider font-bold ${
-                        selectedCard.message_type === 'COMPLAINT' || selectedCard.message_type === 'CANCEL' 
-                        ? 'bg-red-100 text-red-800 border-red-300' 
-                        : selectedCard.message_type === 'RETURN' 
+                        selectedCard.message_type === 'COMPLAINT' || selectedCard.message_type === 'CANCEL'
+                        ? 'bg-red-100 text-red-800 border-red-300'
+                        : selectedCard.message_type === 'RETURN'
                         ? 'bg-orange-100 text-orange-800 border-orange-300'
                         : 'bg-indigo-100 text-indigo-800 border-indigo-300'
                       }`}>
@@ -511,8 +533,8 @@ function ActionCardContent() {
                   <div className="pt-2 border-t border-slate-100">
                     <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Payment Details</h4>
                     <p className={`text-xs mt-1 font-bold ${
-                      selectedCard.payment_method === 'Credit (Udhaar)' ? 'text-red-650' : 
-                      selectedCard.payment_method === 'Cash' || selectedCard.payment_method === 'Online' ? 'text-emerald-650' : 
+                      selectedCard.payment_method === 'Credit (Udhaar)' ? 'text-red-650' :
+                      selectedCard.payment_method === 'Cash' || selectedCard.payment_method === 'Online' ? 'text-emerald-650' :
                       'text-slate-600'
                     }`}>
                       {selectedCard.payment_method || 'Not Specified'}
@@ -528,7 +550,7 @@ function ActionCardContent() {
                             {(() => {
                               const isQtyMissing = item.quantity === null || item.quantity === undefined || ['none', 'null', 'missing', 'unknown'].includes(String(item.quantity).toLowerCase());
                               const isUnitMissing = !item.unit || ['none', 'null', 'missing', 'unknown'].includes(String(item.unit).toLowerCase());
-                              
+
                               if (isQtyMissing) {
                                 return <span className="font-bold text-amber-600 bg-amber-50 px-1 py-0.5 rounded border border-amber-200 mr-1.5">Missing Qty</span>;
                               }
@@ -538,7 +560,21 @@ function ActionCardContent() {
                                 </span>
                               );
                             })()}
-                            {item.name}
+                            <span className="font-bold">{item.raw_name || item.name}</span>
+                            {item.resolution_status === 'suggested' && item.canonical_name && (
+                              <div className="mt-1 text-[10px] text-blue-600 font-bold flex flex-wrap items-center gap-1">
+                                <span className="bg-blue-50 border border-blue-200 px-1 rounded">Suggested: {item.canonical_name}</span>
+                                <span className="text-slate-500 font-normal ml-1">
+                                  <button className="underline hover:text-blue-800 font-semibold" onClick={(e) => { e.preventDefault(); handleResolveSuggestion(idx, 'accepted'); }}>Accept</button> |
+                                  <button className="underline hover:text-blue-800 ml-1" onClick={(e) => { e.preventDefault(); handleResolveSuggestion(idx, 'kept_raw'); }}>Keep spoken</button>
+                                </span>
+                              </div>
+                            )}
+                            {item.alias_used && item.canonical_name && (
+                              <div className="mt-0.5 text-[9px] text-emerald-600 font-bold">
+                                Auto-applied alias: {item.canonical_name}
+                              </div>
+                            )}
                           </div>
                           {item.price !== undefined && item.price !== null && item.price > 0 ? (
                             <div className="text-right font-mono text-slate-500 font-bold">
@@ -554,6 +590,77 @@ function ActionCardContent() {
                     </div>
                   </div>
 
+                  {selectedCard.metadata?.cancelled_items?.length > 0 && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <h4 className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        Cancelled Items
+                      </h4>
+                      <ul className="text-xs text-red-700 font-medium list-disc pl-4 space-y-0.5">
+                        {selectedCard.metadata?.cancelled_items.map((ci: any, idx: number) => (
+                          <li key={idx}>
+                            <span className="font-bold">{ci.name}</span>
+                            {ci.evidence && <span className="text-[10px] text-red-500 italic block">"{ci.evidence}"</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {selectedCard.metadata?.return_items?.length > 0 && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <h4 className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                        </svg>
+                        Return Requested
+                      </h4>
+                      <ul className="text-xs text-orange-700 font-medium list-disc pl-4 space-y-0.5">
+                        {selectedCard.metadata?.return_items.map((ri: any, idx: number) => (
+                          <li key={idx}>
+                            <span className="font-bold">{ri.quantity} {ri.unit} {ri.name}</span>
+                            {ri.evidence && <span className="text-[10px] text-orange-500 italic block">"{ri.evidence}"</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {selectedCard.metadata?.substitution_instructions?.length > 0 && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <h4 className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                        </svg>
+                        Substitution Instructions
+                      </h4>
+                      <ul className="text-xs text-indigo-700 font-medium list-disc pl-4 space-y-0.5">
+                        {selectedCard.metadata?.substitution_instructions.map((si: any, idx: number) => (
+                          <li key={idx}>
+                            <span className="font-bold">{si.name}</span> - {si.condition}
+                            {si.evidence && <span className="text-[10px] text-indigo-500 italic block">"{si.evidence}"</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {selectedCard.metadata?.previous_order_reference && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <h4 className="text-[10px] font-bold text-purple-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Previous Order Reference
+                      </h4>
+                      <p className="text-xs text-purple-700 font-medium pl-1">
+                        Manual review required: <span className="italic">"{selectedCard.metadata?.previous_order_reference}"</span>
+                      </p>
+                    </div>
+                  )}
+
                   {selectedCard.transcript && (
                     <div className="pt-2 border-t border-slate-100">
                       <div className="flex justify-between items-center mb-2">
@@ -567,7 +674,7 @@ function ActionCardContent() {
                       <blockquote className="mt-1 text-xs text-slate-650 bg-slate-50 p-3 rounded border border-slate-150 italic leading-relaxed font-medium">
                         "{selectedCard.transcript}"
                       </blockquote>
-                      
+
                       {selectedCard.metadata?.extraction_notes && (
                         <div className="mt-2 text-[10px] text-slate-600 bg-blue-50 p-2 rounded border border-blue-100 flex items-start gap-1.5">
                           <svg className="h-3 w-3 text-blue-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -576,7 +683,7 @@ function ActionCardContent() {
                           <div><span className="font-bold">Extraction Notes:</span> {selectedCard.metadata.extraction_notes}</div>
                         </div>
                       )}
-                      
+
                       {selectedCard.metadata?.multi_card_notes && (
                         <div className="mt-1 text-[10px] text-amber-700 bg-amber-50 p-2 rounded border border-amber-200 flex items-start gap-1.5">
                           <svg className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

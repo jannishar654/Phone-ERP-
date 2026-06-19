@@ -11,6 +11,13 @@ class Item(BaseModel):
     price_status: Optional[str] = None
     confidence: Optional[float] = None
     warnings: List[str] = Field(default_factory=list)
+    raw_name: Optional[str] = None
+    canonical_name: Optional[str] = None
+    resolution_status: Optional[str] = None
+    resolution_source: Optional[str] = None
+    possible_matches: List[str] = Field(default_factory=list)
+    resolution_confidence: Optional[float] = None
+    alias_used: Optional[bool] = False
 
 
 class ActionCard(BaseModel):

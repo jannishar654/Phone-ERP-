@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     STT_PROVIDER: str = "sarvam"
     EXTRACTION_PROVIDER: str = "gemini"
     ENABLE_OLLAMA: bool = False
+    BUSINESS_ALIAS_MODE: str = "off"
     # Enable fallback Layer 2 LLM Normalizer for messy hinglish
     ENABLE_LLM_FALLBACK: bool = True
     # Enable One-Call LLM Transliteration for Devanagari ASR transcripts

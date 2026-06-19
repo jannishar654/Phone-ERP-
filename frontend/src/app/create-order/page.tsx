@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createActionCard, extractActionCard, transcribeAudio, updateActionCard, deleteActionCard } from '@/lib/api';
+import { saveVoiceRecording } from '@/lib/voice-recordings';
 import { Item } from '@/types';
 
 export default function CreateOrder() {
@@ -25,6 +26,9 @@ export default function CreateOrder() {
   const [manualTranscript, setManualTranscript] = useState('');
   const [orderSource, setOrderSource] = useState<'audio' | 'text'>('audio');
   const [pipeline, setPipeline] = useState('gemini_gemini');
+  const [audioSaved, setAudioSaved] = useState(false);
+  const [audioStoragePath, setAudioStoragePath] = useState<string | null>(null);
+  const [isSavingAudio, setIsSavingAudio] = useState(false);
   // Generated Card Editing States
   const [isEditing, setIsEditing] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -33,7 +37,7 @@ export default function CreateOrder() {
   const [deliveryTime, setDeliveryTime] = useState('');
   const [items, setItems] = useState<Item[]>([]);
   const [transcript, setTranscript] = useState('');
-  
+
   // Risk and Validation States
   const [riskFlags, setRiskFlags] = useState<string[]>([]);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
@@ -104,6 +108,14 @@ export default function CreateOrder() {
     }
   };
 
+  const discardRecording = () => {
+    setAudioUrl(null);
+    setAudioChunks([]);
+    setRecordingState('idle');
+    setAudioSaved(false);
+    setAudioStoragePath(null);
+  };
+
   const handleGenerateActionCard = async () => {
     if (audioChunks.length === 0) {
       alert('Please record an order before generating an Action Card.');
@@ -128,7 +140,7 @@ export default function CreateOrder() {
       setTranscript(transcription.transcript);
 
       setProcessingStatus(`Running ${extractProvider === 'ollama' ? 'Ollama' : 'Gemini AI'} structured entity extraction...`);
-      
+
       // Clean up previous generated card in this session if any, to avoid orphaned records
       if (cardId) {
         try {
@@ -141,6 +153,8 @@ export default function CreateOrder() {
       const card = await extractActionCard(transcription.transcript, 'audio', extractProvider, sttProvider, pipeline, true);
       setCardId(card.id);
       setOrderSource('audio');
+      setAudioSaved(false);
+      setAudioStoragePath(null);
 
       setCustomerName(card.customer_name || '');
       setCustomerPhone(card.customer_phone || '');
@@ -157,10 +171,10 @@ export default function CreateOrder() {
     } catch (error) {
       console.error(error);
       const errMsg = error instanceof Error ? error.message : String(error);
-      const isQuota = errMsg.includes('429') || 
-                      errMsg.toUpperCase().includes('RESOURCE_EXHAUSTED') || 
-                      errMsg.toUpperCase().includes('QUOTA') || 
-                      errMsg.toUpperCase().includes('RATE_LIMIT') || 
+      const isQuota = errMsg.includes('429') ||
+                      errMsg.toUpperCase().includes('RESOURCE_EXHAUSTED') ||
+                      errMsg.toUpperCase().includes('QUOTA') ||
+                      errMsg.toUpperCase().includes('RATE_LIMIT') ||
                       errMsg.includes('temporarily unavailable');
 
       if (isQuota) {
@@ -216,12 +230,12 @@ export default function CreateOrder() {
     } catch (error) {
       console.error(error);
       const errMsg = error instanceof Error ? error.message : String(error);
-      const isQuota = errMsg.includes('429') || 
-                      errMsg.toUpperCase().includes('RESOURCE_EXHAUSTED') || 
-                      errMsg.toUpperCase().includes('QUOTA') || 
-                      errMsg.toUpperCase().includes('RATE_LIMIT') || 
+      const isQuota = errMsg.includes('429') ||
+                      errMsg.toUpperCase().includes('RESOURCE_EXHAUSTED') ||
+                      errMsg.toUpperCase().includes('QUOTA') ||
+                      errMsg.toUpperCase().includes('RATE_LIMIT') ||
                       errMsg.includes('temporarily unavailable');
-      
+
       if (isQuota) {
         setExtractionError('Voice processing is temporarily unavailable due to API quota limits. Please enter the order manually.');
         setIsQuotaError(true);
@@ -238,11 +252,11 @@ export default function CreateOrder() {
   const handleItemChange = (index: number, field: keyof Item, value: any) => {
     const updated = [...items];
     if (field === 'quantity') {
-      updated[index][field] = Math.max(0.01, parseFloat(value) || 1);
+      (updated[index] as any)[field] = Math.max(0.01, parseFloat(value) || 1);
     } else if (field === 'price') {
-      updated[index][field] = Math.max(0, parseFloat(value) || 0);
+      (updated[index] as any)[field] = Math.max(0, parseFloat(value) || 0);
     } else {
-      updated[index][field] = value;
+      (updated[index] as any)[field] = value;
     }
     setItems(updated);
   };
@@ -354,7 +368,7 @@ export default function CreateOrder() {
           <div className="flex flex-col items-center justify-center space-y-4">
             <div className="w-full max-w-xs text-left mb-2">
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">AI Pipeline</label>
-              <select 
+              <select
                 value={pipeline}
                 onChange={(e) => setPipeline(e.target.value)}
                 disabled={recordingState === 'recording' || isProcessing}
@@ -402,13 +416,22 @@ export default function CreateOrder() {
               )}
 
               {recordingState === 'captured' && (
-                <button
-                  type="button"
-                  onClick={handleGenerateActionCard}
-                  className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-sm transition-colors cursor-pointer shadow-sm"
-                >
-                  Generate Action Card
-                </button>
+                <div className="flex flex-col items-center gap-3 mt-2">
+                  <button
+                    type="button"
+                    onClick={handleGenerateActionCard}
+                    className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-sm transition-colors cursor-pointer shadow-sm w-full max-w-xs"
+                  >
+                    Generate Action Card
+                  </button>
+                  <button
+                    type="button"
+                    onClick={discardRecording}
+                    className="px-5 py-2 text-slate-500 hover:text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Discard Recording
+                  </button>
+                </div>
               )}
             </div>
 
@@ -468,7 +491,7 @@ export default function CreateOrder() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          
+
           <div className="space-y-2 text-center">
             <h3 className="text-lg font-bold text-amber-950">Voice Processing Unavailable</h3>
             <p className="text-sm text-amber-805 font-semibold max-w-md mx-auto">
@@ -684,8 +707,8 @@ export default function CreateOrder() {
                   <div className="pt-4 border-t border-slate-100">
                     <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Payment Details</h4>
                     <p className={`text-xs mt-1 font-bold ${
-                      paymentMethod === 'Credit (Udhaar)' ? 'text-red-650' : 
-                      paymentMethod === 'Cash' || paymentMethod === 'Online' ? 'text-emerald-650' : 
+                      paymentMethod === 'Credit (Udhaar)' ? 'text-red-650' :
+                      paymentMethod === 'Cash' || paymentMethod === 'Online' ? 'text-emerald-650' :
                       'text-slate-600'
                     }`}>
                       {paymentMethod}
@@ -778,44 +801,116 @@ export default function CreateOrder() {
             )}
 
             {/* Verification Footer Action Controls */}
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={async () => {
-                  if (cardId) {
-                    try {
-                      await deleteActionCard(cardId);
-                    } catch (err) {
-                      console.error("Failed to delete cancelled card:", err);
-                    }
-                    setCardId(null);
-                  }
-                  setIsGenerated(false);
-                  setRecordingState('idle');
-                  setAudioUrl(null);
-                }}
-                className="px-4 py-2.5 border border-slate-300 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
+            <div className="flex justify-between items-center mt-4">
+              <div className="flex items-center">
+                {orderSource === 'audio' && !audioSaved && (
+                  <button
+                    type="button"
+                    disabled={isSavingAudio}
+                    onClick={async () => {
+                      if (!cardId) return;
+                      setIsSavingAudio(true);
+                      try {
+                        const mimeType = mediaRecorder?.mimeType || audioChunks[0]?.type || 'audio/mp4';
+                        const extension = mimeType.includes('webm') ? 'webm' : 'm4a';
+                        const audioBlob = new Blob(audioChunks, { type: mimeType });
 
-              {!isEditing && (
+                        const res = await saveVoiceRecording(
+                          audioBlob,
+                          extension,
+                          recordingSeconds,
+                          cardId,
+                          true, // Explicit consent granted by clicking this button
+                          pipeline,
+                          transcript
+                        );
+                        if (res.success && res.storagePath) {
+                          setAudioSaved(true);
+                          setAudioStoragePath(res.storagePath);
+                          alert('Audio saved successfully for evaluation!');
+                        } else {
+                          alert(`Failed to save audio: ${res.error}`);
+                        }
+                      } finally {
+                        setIsSavingAudio(false);
+                      }
+                    }}
+                    className="px-4 py-2.5 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                  >
+                    {isSavingAudio ? 'Saving...' : '💾 Save Audio for AI Eval'}
+                  </button>
+                )}
+                {audioSaved && audioStoragePath && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-2 rounded border border-emerald-200">
+                      Audio Saved ✔
+                    </span>
+                    <button
+                      type="button"
+                      disabled={isSavingAudio}
+                      onClick={async () => {
+                        setIsSavingAudio(true);
+                        try {
+                          const { deleteVoiceRecording } = await import('@/lib/voice-recordings');
+                          const res = await deleteVoiceRecording(audioStoragePath);
+                          if (res.success) {
+                            setAudioSaved(false);
+                            setAudioStoragePath(null);
+                            alert('Recording deleted.');
+                          } else {
+                            alert(`Failed to delete recording: ${res.error}`);
+                          }
+                        } finally {
+                          setIsSavingAudio(false);
+                        }
+                      }}
+                      className="px-2 py-2 text-xs font-bold text-red-600 hover:text-red-800 cursor-pointer"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setIsEditing(true)}
-                  className="px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 transition-colors cursor-pointer"
+                  onClick={async () => {
+                    if (cardId) {
+                      try {
+                        await deleteActionCard(cardId);
+                      } catch (err) {
+                        console.error("Failed to delete cancelled card:", err);
+                      }
+                      setCardId(null);
+                    }
+                    setIsGenerated(false);
+                    setRecordingState('idle');
+                    setAudioUrl(null);
+                  }}
+                  className="px-4 py-2.5 border border-slate-300 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
                 >
-                  Edit Card
+                  Cancel
                 </button>
-              )}
 
-              <button
-                type="submit"
-                disabled={!!getValidationWarning()}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-705 disabled:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-lg text-sm transition-colors shadow-sm cursor-pointer"
-              >
-                Submit Order
-              </button>
+                {!isEditing && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    className="px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 transition-colors cursor-pointer"
+                  >
+                    Edit Card
+                  </button>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={!!getValidationWarning()}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-705 disabled:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-lg text-sm transition-colors shadow-sm cursor-pointer"
+                >
+                  Submit Order
+                </button>
+              </div>
             </div>
           </form>
         </div>

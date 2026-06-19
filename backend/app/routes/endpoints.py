@@ -54,7 +54,7 @@ async def transcribe_audio(file: UploadFile = File(...), provider: str = Form(se
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded audio file is empty.",
         )
-        
+
     MAX_FILE_SIZE = 20 * 1024 * 1024 # 20 MB
     if len(file_content) > MAX_FILE_SIZE:
         raise HTTPException(
@@ -103,7 +103,12 @@ async def transcribe_audio(file: UploadFile = File(...), provider: str = Form(se
 @router.post("/extract-action-card", response_model=ActionCard, status_code=status.HTTP_201_CREATED)
 async def extract_action_card(payload: ExtractRequest) -> ActionCard:
     try:
-        extracted = await GeminiService.extract_order_details(payload.transcript)
+        extracted = await GeminiService.extract_order_details(
+            payload.transcript,
+            stt_provider=payload.stt_provider,
+            extraction_provider=payload.extraction_provider,
+            pipeline=payload.pipeline
+        )
         logger.info(f"Extracted data (INFO): Pipeline={payload.pipeline}, Items={len(extracted.get('items', []))}, Success=True")
     except Exception as error:
         raise HTTPException(
