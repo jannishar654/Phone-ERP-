@@ -15,9 +15,9 @@ from app.services.business_memory import BusinessMemoryResolver
 def run_tests():
     passed = 0
     total = 0
-    
+
     print("--- Testing Deterministic Parsers ---\n")
-    
+
     # 1. TIME PARSING
     tomorrow_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
     today_date = datetime.now().strftime('%Y-%m-%d')
@@ -38,20 +38,20 @@ def run_tests():
     print("1. Time Parsing:")
     for raw, expected_time, expected_warning in time_tests:
         res = parse_delivery_time(raw)
-        
+
         time_match = expected_time is None and res["normalized"] is None
         if not time_match and expected_time is not None and res["normalized"] is not None:
             time_match = expected_time in str(res["normalized"])
-            
+
         warning_match = expected_warning is None or (res["warning"] and expected_warning in res["warning"])
-        
+
         if time_match and warning_match:
             print(f"  [PASS] '{raw}' -> {res['normalized']} (Warning: {res['warning']})")
             passed += 1
         else:
             print(f"  [FAIL] '{raw}' -> {res['normalized']} | Expected: {expected_time}. Warning: {res['warning']} | Expected Warning: {expected_warning}")
         total += 1
-            
+
     # 2. QUANTITY PARSING
     quantity_tests = [
         ("aadha kilo", 0.5, "kilo"),
@@ -74,7 +74,7 @@ def run_tests():
             passed += 1
         else:
             print(f"  [FAIL] '{raw}' -> Expected {expected_qty} {expected_unit}, got {res['quantity']} {res['unit']}")
-            
+
     # 3. UNIT NORMALIZATION
     unit_tests = [
         ("peti", "carton"),
@@ -94,7 +94,7 @@ def run_tests():
             passed += 1
         else:
             print(f"  [FAIL] '{raw}' -> Expected {expected}, got {res}")
-            
+
     # 4. ALIAS RESOLUTION
     resolver = BusinessMemoryResolver()
     alias_tests = [
@@ -113,7 +113,7 @@ def run_tests():
             passed += 1
         else:
             print(f"  [FAIL] '{raw}' -> Expected {expected}, got {res}")
-            
+
     customer_tests = [
         ("jaaneeshaar", "Jannishar"),
         ("sharma ji", "Sharma Store"),
@@ -158,7 +158,7 @@ def run_tests():
     # 7. ACTION CARD VALIDATION
     print("\n7. Action Card Validation (qty > 0):")
     from app.services.action_card_validator import validate_action_card
-    
+
     val_tests = [
         # Should pass
         ({"customer_name": "Danish", "delivery_address": "Here", "items": [{"name": "A", "quantity": 0.5, "unit": "kg", "price": 0.0}]}, []),
@@ -168,15 +168,15 @@ def run_tests():
         # Missing unit (should fail unit)
         ({"customer_name": "Danish", "delivery_address": "Here", "items": [{"name": "15 tide sarf", "quantity": 15, "unit": None, "price": 0.0}]}, ["unit"]),
     ]
-    
+
     for card_data, expected_missing in val_tests:
         total += 1
         res = validate_action_card(card_data, "test")
         missing = res.get("missing_fields", [])
-        
+
         # Check if expected missing fields match actual missing fields
         missing_match = set(expected_missing).issubset(set(missing)) and len(expected_missing) > 0
-        
+
         if not expected_missing and not missing:
             print(f"  [PASS] Valid card handled correctly: {card_data}")
             passed += 1
@@ -185,7 +185,7 @@ def run_tests():
             passed += 1
         else:
             print(f"  [FAIL] Expected missing {expected_missing}, got {missing} for {card_data}")
-            
+
     # 8. NAME CLEANUP PARSING
     print("\n8. Name Cleanup Parsing:")
     import re
@@ -213,11 +213,11 @@ def run_tests():
         else:
             print(f"  [FAIL] '{transcript}' -> '{cleaned}' (Expected '{expected}')")
         total += 1
-            
+
     # 9. DETERMINISTIC AGGREGATION
     print("\n9. Deterministic Aggregation:")
     from app.services.gemini import aggregate_items_deterministically
-    
+
     agg_tests = [
         # 50 kg atta + 15 kg atta = 65 kg
         (
@@ -250,14 +250,14 @@ def run_tests():
             [{"name": "atta", "quantity": 65, "unit": "kg"}]
         )
     ]
-    
+
     for raw_items, expected_agg in agg_tests:
         agg = aggregate_items_deterministically(raw_items)
-        
+
         # compare ignoring order
         def norm(lst):
             return sorted([{k: v for k, v in i.items() if k in ["name", "quantity", "unit"]} for i in lst], key=lambda x: str(x))
-            
+
         if norm(agg) == norm(expected_agg):
             print(f"  [PASS] Aggregation logic: {raw_items} -> {agg}")
             passed += 1
@@ -280,15 +280,15 @@ def run_tests():
     from unittest.mock import patch, MagicMock
     from app.services.gemini import GeminiService
     from app.config.settings import settings
-    
+
     # Temporarily set flag to True for testing
     original_flag = getattr(settings, "ENABLE_LLM_TRANSLITERATION", False)
-    
+
     # Helpers for mocking
     def get_mock_client(response_text=None, error=None):
         mock_response = MagicMock()
         mock_response.text = response_text
-        
+
         mock_client = MagicMock()
         if error:
             mock_client.models.generate_content.side_effect = error
@@ -315,7 +315,7 @@ def run_tests():
             passed += 1
         else: print("  [FAIL] Flag enabled Devanagari.")
         total += 1
-        
+
         if res.get("metadata", {}).get("model_normalizer_notes") == ["आलू -> aloo"]:
             print("  [PASS] model_normalizer_notes matches actual transformation.")
             passed += 1
@@ -377,7 +377,7 @@ def run_tests():
             passed += 1
         else: print("  [FAIL] Missing cards failed.")
         total += 1
-        
+
     # Case G: 429/503 API Fallback Exception
     class MockException(Exception): pass
     err = MockException("503 UNAVAILABLE")
@@ -390,7 +390,7 @@ def run_tests():
                 print("  [PASS] 503 Exception gracefully raised RuntimeError without crashing.")
                 passed += 1
         total += 1
-        
+
     # Case H: Customer Name & Time read from primary_card
     with patch('google.genai.Client', return_value=get_mock_client(good_json)):
         res = asyncio.run(GeminiService.extract_order_details(dev_transcript))
@@ -399,7 +399,7 @@ def run_tests():
             passed += 1
         else: print("  [FAIL] failed to read from primary_card.")
         total += 1
-        
+
     # Case J: Full Offline Regression Test (Production Safety)
     regression_transcript = "कल ऐसा करना साढ़े पाँच बजे, नहीं नहीं साढ़े आठ बजे ओखला विहार शाहीन बाग में 15 किलो आलू 5 किलो टमाटर 50 किलो चीनी 50 किलो बैंगन 15 किलो नमकीन और ek tight surf add karo, wait tight cancel kar dena aur 10 kilo aloo 10 kilo tamatar add karna aur naam Danish rahega."
     regression_json = """
@@ -435,21 +435,21 @@ def run_tests():
     """
     with patch('google.genai.Client', return_value=get_mock_client(regression_json)):
         res = asyncio.run(GeminiService.extract_order_details(regression_transcript))
-        
+
         # Verify customer, address, aloo qty
         if res.get("customer_name") == "Danish" and res.get("delivery_address") == "Okhla Vihar Shaheen Bagh":
             print("  [PASS] Full Regression: Customer and address preserved.")
             passed += 1
         else: print(f"  [FAIL] Full Regression: Customer/address wrong: {res}")
         total += 1
-        
+
         # Verify Aloo, Tamatar, Chini, Baingan, Namkeen aggregation
         aloo_item = next((i for i in res["items"] if i["name"] == "aloo"), None)
         tamatar_item = next((i for i in res["items"] if i["name"] == "tamatar"), None)
         chini_item = next((i for i in res["items"] if i["name"] == "chini"), None)
         baingan_item = next((i for i in res["items"] if i["name"] == "baingan"), None)
         namkeen_item = next((i for i in res["items"] if i["name"] == "namkeen"), None)
-        
+
         if (aloo_item and aloo_item["quantity"] == 25 and
             tamatar_item and tamatar_item["quantity"] == 15 and
             chini_item and chini_item["quantity"] == 50 and
@@ -459,48 +459,48 @@ def run_tests():
             passed += 1
         else: print(f"  [FAIL] Full Regression: Qtys incorrect. Items: {res['items']}")
         total += 1
-        
+
         # Corrected time handling & day preserved & AM/PM warning
         if "2026" in str(res["delivery_time_normalized"]) and "8:30" in str(res["delivery_time_normalized"]):
             print("  [PASS] Full Regression: Time mapped to 8:30 and day preserved.")
             passed += 1
         else: print(f"  [FAIL] Full Regression: Time parsing failed: {res['delivery_time_normalized']}")
         total += 1
-        
+
         if "AM/PM ambiguity" in str(res["delivery_time_warning"]):
             print("  [PASS] Full Regression: AM/PM ambiguity surfaced.")
             passed += 1
         else: print(f"  [FAIL] Full Regression: No AM/PM warning. Got: {res['delivery_time_warning']}")
         total += 1
-        
+
         # Cancelled tight surf is not active
         if not any("tight surf" in i["name"] for i in res["items"]) and res["metadata"]["cancelled_items"]:
             print("  [PASS] Full Regression: Cancelled item not active, but present in metadata.")
             passed += 1
         else: print("  [FAIL] Full Regression: Cancellation logic failed.")
         total += 1
-        
+
         # Risks remain
         if "cancellation" in res["risk_flags"] and "large_quantity" in res["risk_flags"]:
             print("  [PASS] Full Regression: Risks remain (cancellation, large_quantity).")
             passed += 1
         else: print(f"  [FAIL] Full Regression: Risks missing. Got: {res['risk_flags']}")
         total += 1
-        
+
         # Truthful normalization metadata
         if "पंद्रह -> pandrah" in res["metadata"]["model_normalizer_notes"]:
             print("  [PASS] Full Regression: Truthful normalization notes.")
             passed += 1
         else: print("  [FAIL] Full Regression: Truthful normalization missing.")
         total += 1
-        
+
         # Unique missing_fields
         if len(res["missing_fields"]) == len(set(res["missing_fields"])):
             print("  [PASS] Full Regression: missing_fields are unique.")
             passed += 1
         else: print("  [FAIL] Full Regression: missing_fields not unique.")
         total += 1
-        
+
         # Irrelevant matches absent (aloo should not have possible matches because cutoff is high)
         if not aloo_item["possible_matches"]:
             print("  [PASS] Full Regression: Irrelevant possible matches absent.")
@@ -508,10 +508,50 @@ def run_tests():
         else: print(f"  [FAIL] Full Regression: Irrelevant matches exist: {aloo_item['possible_matches']}")
         total += 1
 
-    settings.ENABLE_LLM_TRANSLITERATION = original_flag
+    # Test Delivery Time Enrichment
+    print("\n11. Delivery Time Enrichment:")
 
-        
-    print(f"\nFinal -> Total: {total}, Passed: {passed}, Failed: {total - passed}")
+    # Mock primary_card and transcript
+    async def mock_time_enrichment(raw_llm_time, transcript):
+        class MockResponse:
+            def __init__(self):
+                self.text = f'{{"cards": [{{"delivery_time_raw": "{raw_llm_time}"}}], "transcript_normalized": "{transcript}"}}'
+
+        from google.genai import types
+        import unittest.mock as mock
+
+        with mock.patch("app.services.gemini.genai.Client") as MockClient:
+            mock_client_instance = MockClient.return_value
+            mock_client_instance.models.generate_content.return_value = MockResponse()
+
+            # Since extract_order_details needs API key
+            settings.GEMINI_API_KEY = "dummy"
+            res = await GeminiService.extract_order_details(transcript)
+            return res
+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    res1 = loop.run_until_complete(mock_time_enrichment("5 baje", "kal aisa karna 5 baje bhej dena"))
+    if res1["delivery_time_raw"] == "kal aisa karna 5 baje" or "kal" in res1["delivery_time_raw"]:
+        print(f"  [PASS] 'kal 5 baje' recovery: {res1['delivery_time_raw']}")
+        passed += 1
+    else:
+        print(f"  [FAIL] 'kal 5 baje' recovery failed, got: {res1['delivery_time_raw']}")
+    total += 1
+
+    res2 = loop.run_until_complete(mock_time_enrichment("5 baje", "kal 5 baje bhej dena nahi aaj 8 baje bhej dena"))
+    if "aaj" in res2["delivery_time_raw"] and "8 baje" in res2["delivery_time_raw"]:
+        print(f"  [PASS] 'aaj 8 baje' correction recovery: {res2['delivery_time_raw']}")
+        passed += 1
+    else:
+        print(f"  [FAIL] 'aaj 8 baje' correction recovery failed, got: {res2['delivery_time_raw']}")
+    total += 1
+
+    # Duplicate removed
 
 if __name__ == "__main__":
     run_tests()
