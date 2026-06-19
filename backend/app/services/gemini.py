@@ -687,10 +687,17 @@ Return only the transcript text.
         for item in normalized_items:
             item_name_lower = str(item.get("name", "")).lower()
             is_cancelled = False
-            for cn in cancelled_names:
-                if cn in item_name_lower or item_name_lower in cn:
-                    is_cancelled = True
-                    break
+
+            # If operations were used, operation reducer already handled exact CANCEL.
+            # Only apply legacy fallback cancellation if operations weren't used.
+            if not operations and cancelled_names:
+                for cn in cancelled_names:
+                    if cn == item_name_lower:
+                        is_cancelled = True
+                        break
+                    elif cn in item_name_lower or item_name_lower in cn:
+                        # Ambiguous match, don't cancel but add a warning
+                        validation_warnings.append(f"Review Required: Ambiguous cancellation for '{cn}' against '{item.get('name')}'.")
 
             if is_cancelled:
                 has_cancellation = True
@@ -700,7 +707,11 @@ Return only the transcript text.
         normalized_items = final_items
 
         if not normalized_items:
-            normalized_items = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
+            if operations:
+                validation_warnings.append("Review Required: Order contains no active items.")
+                normalized_items = []
+            else:
+                normalized_items = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
 
         raw_cust_name = primary_card.get("customer_name", "")
         cust_name = raw_cust_name.strip() if raw_cust_name else ""
@@ -717,7 +728,10 @@ Return only the transcript text.
             if name_match:
                 cust_name = name_match.group(1).strip().title()
 
-        if not safe_delivery_time:
+        has_clock_in_llm = bool(re.search(r'\d', safe_delivery_time) or re.search(r'\b(baje|bje|am|pm|बजे)\b', safe_delivery_time, re.I))
+        has_day_in_llm = bool(re.search(r'\b(kal|aaj|parso|कल|आज|परसों)\b', safe_delivery_time, re.I))
+
+        if not safe_delivery_time or (has_clock_in_llm and not has_day_in_llm):
             # Detect clock expression independently
             clock_regex = r'\b(?:sade|saade|sawa|paune|dhai|dedh|aadha|साढ़े|साढ़े|सवा|पौने|ढाई|डेढ़|आधा|[0-9]+(?:[:.][0-9]+)?|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah|एक|दो|तीन|चार|पाँच|छह|सात|आठ|नौ|दस|ग्यारह|बारह)(?:\s+(?:[0-9]+|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah|एक|दो|तीन|चार|पाँच|छह|सात|आठ|नौ|दस|ग्यारह|बारह))?\s*(?:baje|bje|am|pm|बजे|बजे)\b'
             clocks = list(re.finditer(clock_regex, t_lower))

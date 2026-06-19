@@ -11,7 +11,7 @@ class OperationReducer:
         """Find the indices of items that match exact normalized raw product or target_operation_id."""
         target_id = op_dict.get("target_operation_id")
         matches = []
-        
+
         # If target_operation_id is provided, match by it
         if target_id:
             for i, item in enumerate(active_items):
@@ -29,14 +29,14 @@ class OperationReducer:
             item_raw = str(item.get("raw_name", "")).strip().lower()
             if item_raw == item_name:
                 matches.append(i)
-                
+
         return matches
 
     @staticmethod
     def parse_and_reduce(raw_operations: List[Dict]) -> Dict[str, Any]:
         valid_ops = []
         invalid_operations = []
-        
+
         # Parse safely
         for raw_op in raw_operations:
             try:
@@ -55,7 +55,7 @@ class OperationReducer:
     def reduce(operations: List[Dict], invalid_operations: List[Dict] = None) -> Dict[str, Any]:
         if invalid_operations is None:
             invalid_operations = []
-            
+
         active_items = []
         cancelled_items = []
         return_items = []
@@ -63,25 +63,72 @@ class OperationReducer:
         previous_order_reference = None
         operation_warnings = []
 
-        # Safely handle sequence values
-        def get_seq(op):
+        # Sequence validation
+        seen_seqs = set()
+        valid_seq_ops = []
+        for op in operations:
             seq = op.get("sequence")
-            if seq is None or type(seq) not in (int, float):
-                return float('inf') # Move unordered to the end
-            return seq
+            if seq is None or type(seq) not in (int, float) or seq < 0:
+                invalid_operations.append({
+                    "evidence": op.get("evidence", str(op)),
+                    "error": f"Invalid or missing sequence: {seq}"
+                })
+            elif seq in seen_seqs:
+                invalid_operations.append({
+                    "evidence": op.get("evidence", str(op)),
+                    "error": f"Duplicate sequence: {seq}"
+                })
+            else:
+                seen_seqs.add(seq)
+                valid_seq_ops.append(op)
 
-        sorted_ops = sorted(operations, key=get_seq)
+        def get_seq(op):
+            return op.get("sequence")
+
+        sorted_ops = sorted(valid_seq_ops, key=get_seq)
 
         if invalid_operations:
-            operation_warnings.append("Review Required: Unparseable operations detected.")
+            operation_warnings.append("Review Required: Unparseable or invalid operations detected.")
+
+        from app.services.quantity_parser import parse_quantity
 
         for op_dict in sorted_ops:
             op_type = op_dict.get("type")
             raw_product = op_dict.get("raw_product", "")
             qty = op_dict.get("quantity")
+            qty_raw = op_dict.get("quantity_raw", "")
             unit = op_dict.get("unit", "")
             evidence = op_dict.get("evidence", "")
             operation_id = op_dict.get("operation_id")
+
+            # Priority 2: Use qty_raw if qty is missing
+            if qty is None and qty_raw:
+                parsed_qr = parse_quantity(qty_raw)
+                if parsed_qr.get("quantity") is not None:
+                    qty = parsed_qr["quantity"]
+                if not unit and parsed_qr.get("unit"):
+                    unit = parsed_qr["unit"]
+
+            # Priority 3: raw_product parsing
+            if raw_product:
+                parsed_rp = parse_quantity(raw_product)
+                if parsed_rp.get("quantity") is not None:
+                    if qty is None:
+                        qty = parsed_rp["quantity"]
+                    if not unit and parsed_rp.get("unit"):
+                        unit = parsed_rp["unit"]
+                if parsed_rp.get("cleaned_text"):
+                    raw_product = parsed_rp["cleaned_text"]
+
+            # Priority 4: evidence parsing (only if unit is explicitly present to avoid arbitrary numbers)
+            if (qty is None or not unit) and evidence:
+                parsed_ev = parse_quantity(evidence)
+                if qty is None and parsed_ev.get("quantity") is not None and parsed_ev.get("unit"):
+                    qty = parsed_ev["quantity"]
+                    if not unit:
+                        unit = parsed_ev["unit"]
+                elif not unit and parsed_ev.get("unit"):
+                    unit = parsed_ev["unit"]
 
             if op_type == OperationType.ADD.value:
                 active_items.append({
@@ -139,7 +186,7 @@ class OperationReducer:
                     "error": f"Invalid operation type: {op_type}"
                 })
                 operation_warnings.append("Review Required: Invalid operation type detected.")
-        
+
         return {
             "active_items": active_items,
             "cancelled_items": cancelled_items,

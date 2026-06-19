@@ -292,7 +292,7 @@ export default function CreateOrder() {
     }
     for (const item of validItems) {
       if (item.quantity <= 0) {
-        return `Item "${item.name}" must have a quantity of 1 or more.`;
+        return `Item "${item.name}" must have a valid quantity greater than 0.`;
       }
       if (item.price !== undefined && item.price !== null && item.price < 0) {
         return `Item "${item.name}" cannot have a negative price.`;

@@ -78,9 +78,12 @@ def run_tests():
             "name": "8. Missing/Duplicate sequence values",
             "operations": [
                 {"sequence": None, "type": "SET_QUANTITY", "raw_product": "Surf", "quantity": 5, "evidence": "missing seq", "target_operation_id": "op1"},
-                {"sequence": 1, "operation_id": "op1", "type": "ADD", "raw_product": "Surf", "quantity": 1, "evidence": "add"}
+                {"sequence": 1, "operation_id": "op1", "type": "ADD", "raw_product": "Surf", "quantity": 1, "evidence": "add"},
+                {"sequence": 1, "type": "ADD", "raw_product": "Duplicate", "quantity": 1, "evidence": "duplicate"}
             ],
-            "expected_items": [{"operation_id": "op1", "name": "Surf", "raw_name": "Surf", "quantity": 5.0, "unit": None}],
+            "expected_items": [{"operation_id": "op1", "name": "Surf", "raw_name": "Surf", "quantity": 1.0, "unit": None}],
+            "expected_invalid": True,
+            "expected_warnings": ["Review Required: Unparseable or invalid operations detected."]
         },
         {
             "name": "9. SET_QUANTITY target missing",
@@ -89,6 +92,32 @@ def run_tests():
             ],
             "expected_items": [],
             "expected_warnings": ["Quantity update requested for 'Unknown' but item not found in order."]
+        },
+        {
+            "name": "10. Fractional quantity recovery",
+            "operations": [
+                {"sequence": 1, "type": "ADD", "raw_product": "aadha kilo cheeni", "evidence": "aadha kilo cheeni"},
+                {"sequence": 2, "type": "ADD", "raw_product": "sawa kilo doodh", "evidence": "sawa kilo doodh bhej dena"},
+                {"sequence": 3, "type": "ADD", "raw_product": "chawal", "evidence": "2.5 kilo chawal"},
+                {"sequence": 4, "type": "ADD", "raw_product": "chips", "evidence": "chips ka packet missing qty"}
+            ],
+            "expected_items": [
+                {"operation_id": None, "name": "cheeni", "raw_name": "cheeni", "quantity": 0.5, "unit": "kg"},
+                {"operation_id": None, "name": "doodh", "raw_name": "doodh", "quantity": 1.25, "unit": "kg"},
+                {"operation_id": None, "name": "chawal", "raw_name": "chawal", "quantity": 2.5, "unit": "kg"},
+                {"operation_id": None, "name": "chips", "raw_name": "chips", "quantity": None, "unit": "packet"}
+            ]
+        },
+        {
+            "name": "11. Evidence parsing safety (avoid arbitrary numbers)",
+            "operations": [
+                {"sequence": 1, "type": "ADD", "raw_product": "Surf Excel", "evidence": "Surf Excel 10 wala bhej do"},
+                {"sequence": 2, "type": "ADD", "raw_product": "Parle-G Rs 10 pack", "evidence": "Parle-G Rs 10 pack dena"}
+            ],
+            "expected_items": [
+                {"operation_id": None, "name": "Surf Excel", "raw_name": "Surf Excel", "quantity": None, "unit": None},
+                {"operation_id": None, "name": "Parle-G Rs 10 pack", "raw_name": "Parle-G Rs 10 pack", "quantity": None, "unit": None}
+            ]
         }
     ]
 
@@ -97,13 +126,13 @@ def run_tests():
 
     for idx, case in enumerate(test_cases, 1):
         res = OperationReducer.parse_and_reduce(case["operations"])
-        
+
         errs = []
-        
+
         # Check active items
         if res["active_items"] != case.get("expected_items", []):
             errs.append(f"Active items mismatch. Expected {case.get('expected_items', [])}, got {res['active_items']}")
-            
+
         # Check cancelled
         if "expected_cancelled" in case and res["cancelled_items"] != case["expected_cancelled"]:
             errs.append(f"Cancelled items mismatch. Expected {case['expected_cancelled']}, got {res['cancelled_items']}")
@@ -115,11 +144,11 @@ def run_tests():
         # Check substitute
         if "expected_sub" in case and res["substitution_instructions"] != case["expected_sub"]:
             errs.append(f"Substitution items mismatch. Expected {case['expected_sub']}, got {res['substitution_instructions']}")
-            
+
         # Check previous order
         if "expected_prev" in case and res["previous_order_reference"] != case["expected_prev"]:
             errs.append(f"Previous order mismatch. Expected {case['expected_prev']}, got {res['previous_order_reference']}")
-            
+
         # Check warnings
         if "expected_warnings" in case:
             for w in case["expected_warnings"]:
@@ -129,7 +158,7 @@ def run_tests():
         # Check invalid
         if case.get("expected_invalid") and not res["invalid_operations"]:
             errs.append("Expected invalid operations but found none.")
-            
+
         if errs:
             print(f"❌ Test {idx} FAILED ({case['name']})")
             for e in errs:
@@ -139,12 +168,42 @@ def run_tests():
             print(f"✅ Test {idx} PASSED ({case['name']})")
             passed += 1
 
-    print("-" * 35)
-    print(f"Total: {len(test_cases)} | Passed: {passed} | Failed: {failed}")
-    if failed == 0:
-        print("🎉 ALL TESTS PASSED! Operation Reducer is ready.")
+    total = len(test_cases)
+    print("\n--- Testing Quantity Parser Direct Tests ---")
+    from app.services.quantity_parser import parse_quantity
+
+    pq_res1 = parse_quantity("Surf Excel 10 wala")
+    if pq_res1["quantity"] is None and pq_res1["cleaned_text"] == "Surf Excel 10 wala":
+        print(f"✅ [PASS] 'Surf Excel 10 wala' -> quantity=None, cleaned_text unchanged")
+        passed += 1
     else:
+        print(f"❌ [FAIL] 'Surf Excel 10 wala' failed, got: {pq_res1}")
+    total += 1
+
+    pq_res2 = parse_quantity("Parle-G Rs 10 pack")
+    if pq_res2["quantity"] is None and pq_res2["cleaned_text"] == "Parle-G Rs 10 pack":
+        print(f"✅ [PASS] 'Parle-G Rs 10 pack' -> quantity=None, cleaned_text unchanged")
+        passed += 1
+    else:
+        print(f"❌ [FAIL] 'Parle-G Rs 10 pack' failed, got: {pq_res2}")
+    total += 1
+
+    pq_res3 = parse_quantity("aadha kilo cheeni")
+    if pq_res3["quantity"] == 0.5 and pq_res3["unit"] == "kg" and pq_res3["cleaned_text"] == "cheeni":
+        print(f"✅ [PASS] 'aadha kilo cheeni' -> 0.5 kg cheeni")
+        passed += 1
+    else:
+        print(f"❌ [FAIL] 'aadha kilo cheeni' failed, got: {pq_res3}")
+    total += 1
+
+    print("-" * 35)
+    print(f"Total: {total} | Passed: {passed} | Failed: {total - passed}")
+    if passed != total:
         print("⚠️ SOME TESTS FAILED.")
+        import sys
+        sys.exit(1)
+    else:
+        print("🎉 ALL TESTS PASSED! Operation Reducer is ready.")
 
 if __name__ == "__main__":
     run_tests()
