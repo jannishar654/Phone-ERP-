@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     ENABLE_OLLAMA: bool = False
     # Enable fallback Layer 2 LLM Normalizer for messy hinglish
     ENABLE_LLM_FALLBACK: bool = True
+    # Enable One-Call LLM Transliteration for Devanagari ASR transcripts
+    ENABLE_LLM_TRANSLITERATION: bool = False
 
     # Security: Require JWT Auth for backend routes
     REQUIRE_AUTH: bool = False

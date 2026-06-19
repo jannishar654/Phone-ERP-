@@ -274,7 +274,145 @@ def run_tests():
         print(f"  [FAIL] large_quantity not detected on aggregated 50kg atta. Risks: {risks}")
     total += 1
 
+    # 10. ONE-CALL LLM MOCK TESTS (DEVANAGARI, FAILURES, EDGE CASES)
+    print("\n10. One-Call LLM Mock Tests (Edge Cases):")
+    from unittest.mock import patch, MagicMock
+    from app.services.gemini import GeminiService
+    from app.config.settings import settings
+    
+    # Temporarily set flag to True for testing
+    original_flag = getattr(settings, "ENABLE_LLM_TRANSLITERATION", False)
+    
+    # Helpers for mocking
+    def get_mock_client(response_text=None, error=None):
+        mock_response = MagicMock()
+        mock_response.text = response_text
+        
+        mock_client = MagicMock()
+        if error:
+            mock_client.models.generate_content.side_effect = error
+        else:
+            mock_client.models.generate_content.return_value = mock_response
+        return mock_client
+
+    # Case A: Flag enabled, Devanagari
+    settings.ENABLE_LLM_TRANSLITERATION = True
+    dev_transcript = "कल 5:30 baje Gupta Store mein 5 kilo आलू bhejna"
+    good_json = """
+    {
+      "transcript_normalized": "kal 5:30 baje Gupta Store mein 5 kilo aloo bhejna",
+      "metadata": {
+        "normalizer_changes": ["आलू -> aloo"]
+      },
+      "cards": [{"type": "ORDER", "customer_name": "Gupta Store", "delivery_time_raw": "kal 5:30 baje", "items": [{"name": "aloo", "quantity": "5", "unit": "kilo"}]}]
+    }
+    """
+    with patch('google.genai.Client', return_value=get_mock_client(good_json)):
+        res = asyncio.run(GeminiService.extract_order_details(dev_transcript))
+        if res.get("metadata", {}).get("transcript_normalized") == "kal 5:30 baje Gupta Store mein 5 kilo aloo bhejna":
+            print("  [PASS] Flag enabled with Devanagari: outputs transcript_normalized correctly.")
+            passed += 1
+        else: print("  [FAIL] Flag enabled Devanagari.")
+        total += 1
+        
+        if res.get("metadata", {}).get("normalizer_changes") == ["आलू -> aloo"]:
+            print("  [PASS] normalizer_changes matches actual transformation.")
+            passed += 1
+        else: print("  [FAIL] normalizer_changes mismatch.")
+        total += 1
+
+    # Case B: Flag disabled, Devanagari
+    settings.ENABLE_LLM_TRANSLITERATION = False
+    flag_disabled_json = f"""
+    {{
+      "transcript_normalized": "{dev_transcript}",
+      "cards": [{{"type": "ORDER", "customer_name": "Gupta Store", "delivery_time_raw": "kal 5:30 baje", "items": [{{"name": "aloo", "quantity": "5", "unit": "kilo"}}]}}]
+    }}
+    """
+    with patch('google.genai.Client', return_value=get_mock_client(flag_disabled_json)): # LLM ignored translit rules
+        res = asyncio.run(GeminiService.extract_order_details(dev_transcript))
+        if res.get("metadata", {}).get("transcript_normalized") == dev_transcript:
+            print("  [PASS] Flag disabled with Devanagari: defaults to original transcript.")
+            passed += 1
+        else: print(f"  [FAIL] Flag disabled Devanagari: {res.get('metadata')}")
+        total += 1
+
+    # Case C: Roman transcript remains unaffected
+    settings.ENABLE_LLM_TRANSLITERATION = True
+    roman_transcript = "5 kilo aloo"
+    with patch('google.genai.Client', return_value=get_mock_client("""{"cards": [{"items": [{"name": "aloo", "quantity": "5", "unit": "kg"}]}]}""")):
+        res = asyncio.run(GeminiService.extract_order_details(roman_transcript))
+        if res.get("metadata", {}).get("transcript_normalized") == roman_transcript and not res.get("metadata", {}).get("normalization_used"):
+            print("  [PASS] Roman transcript remains unaffected.")
+            passed += 1
+        else: print("  [FAIL] Roman transcript modified.")
+        total += 1
+
+    # Case D: Malformed JSON Fallback
+    with patch('google.genai.Client', return_value=get_mock_client("malformed { json")):
+        res = asyncio.run(GeminiService.extract_order_details(dev_transcript))
+        if "customer_name" in res:
+            print("  [PASS] Malformed JSON safely falls back to deterministic/Nasir parser.")
+            passed += 1
+        else: print("  [FAIL] Malformed JSON crashed.")
+        total += 1
+
+    # Case E: Missing transcript_normalized fallback
+    missing_norm_json = """{"cards": [{"type": "ORDER", "customer_name": "Test", "items": [{"name": "A", "quantity": "1"}]}]}"""
+    with patch('google.genai.Client', return_value=get_mock_client(missing_norm_json)):
+        res = asyncio.run(GeminiService.extract_order_details(dev_transcript))
+        if res.get("metadata", {}).get("transcript_normalized") == dev_transcript:
+            print("  [PASS] Missing transcript_normalized safely falls back to original.")
+            passed += 1
+        else: print("  [FAIL] Missing transcript_normalized failed.")
+        total += 1
+
+    # Case F: Missing cards
+    missing_cards_json = """{"transcript_normalized": "test"}"""
+    with patch('google.genai.Client', return_value=get_mock_client(missing_cards_json)):
+        res = asyncio.run(GeminiService.extract_order_details(dev_transcript))
+        if res["type"] == "ORDER": # Fallback created a card
+            print("  [PASS] Missing cards safely handled.")
+            passed += 1
+        else: print("  [FAIL] Missing cards failed.")
+        total += 1
+        
+    # Case G: 429/503 API Fallback Exception
+    class MockException(Exception): pass
+    err = MockException("503 UNAVAILABLE")
+    with patch('google.genai.Client', return_value=get_mock_client(error=err)):
+        try:
+            asyncio.run(GeminiService.extract_order_details(dev_transcript))
+            print("  [FAIL] Expected 503 to raise RuntimeError.")
+        except RuntimeError as e:
+            if "failed" in str(e).lower() or "quota" in str(e).lower():
+                print("  [PASS] 503 Exception gracefully raised RuntimeError without crashing.")
+                passed += 1
+        total += 1
+        
+    # Case H: Customer Name & Time read from primary_card
+    with patch('google.genai.Client', return_value=get_mock_client(good_json)):
+        res = asyncio.run(GeminiService.extract_order_details(dev_transcript))
+        if res["customer_name"] == "Gupta Store" and res["delivery_time_raw"] == "kal 5:30 baje":
+            print("  [PASS] customer_name and delivery_time read correctly from primary_card.")
+            passed += 1
+        else: print("  [FAIL] failed to read from primary_card.")
+        total += 1
+        
+    # Case I: One-call response preserves metadata fields
+    with patch('google.genai.Client', return_value=get_mock_client(good_json)):
+        res = asyncio.run(GeminiService.extract_order_details(dev_transcript))
+        meta = res.get("metadata", {})
+        if all(k in meta for k in ["transcript_original", "transcript_normalized", "stt_provider", "extraction_provider", "pipeline"]) and res["items"][0]["quantity"] == 5.0:
+            print("  [PASS] Metadata preserved, original quantities/names intact.")
+            passed += 1
+        else: print("  [FAIL] Metadata missing fields.")
+        total += 1
+
+    settings.ENABLE_LLM_TRANSLITERATION = original_flag
+        
     print(f"\nFinal -> Total: {total}, Passed: {passed}, Failed: {total - passed}")
 
 if __name__ == "__main__":
     run_tests()
+
