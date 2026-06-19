@@ -398,7 +398,7 @@ Return only the transcript text.
             "5. EXTRACT FRACTIONAL HINDI TIMES CORRECTLY: Convert fractional Hindi times to English digital time. 'साढ़े सात' -> 7:30, 'सवा पाँच' -> 5:15, 'ढाई' -> 2:30.\n"
             "6. CLEAN ITEM NAMES: Remove all conversational action verbs from item names (e.g., 'bhijwa dena', 'pack kar dena').\n"
             "7. GROCERY STORE CONTEXT: Assume all items are standard grocery or household products. Do not hallucinate non-grocery words.\n"
-            "8. AGGREGATE DUPLICATES: Listen carefully to the entire transcript. If the user mentions the exact same item multiple times (e.g., '5 kilo chini' and later '10 kilo chini aur'), YOU MUST add the quantities together. Example -> quantity: '15', unit: 'kilo', name: 'chini'.\n"
+            "8. AGGREGATE DUPLICATES: Listen carefully to the entire transcript. If the same item is mentioned multiple times, you MUST accurately ADD the quantities together. Do not guess or round up. (e.g., 50 kilo aata + 15 kilo aata = 65 kilo aata).\n"
             "9. NEVER MERGE UNRELATED ITEMS: Do not accidentally glue two completely different products into one name. Extract 'surf excel' and 'chawal' as TWO separate items. NEVER extract 'surf excel chawal'.\n"
             "10. PRESERVE RAW DELIVERY TIME: Detect Hindi/Hinglish time phrases (e.g., 'kal 5:30 baje', 'aaj shaam') and extract EXACTLY as spoken into `delivery_time_raw`. Do not put delivery-time words inside `delivery_address`.\n"
             "11. EXACT RAW QUANTITY & UNIT: For the 'quantity' field in items, extract the exact raw words spoken (e.g. 'dhai', '0.5', '50'). Do not do math or silently default to 1. If quantity is missing, use null. Preserve spoken units (e.g., 'packet', 'kilo') exactly as spoken in the `unit` field.\n"
@@ -594,7 +594,7 @@ Return only the transcript text.
                 cust_name = name_match.group(1).strip().title()
                 
         if not safe_delivery_time:
-            time_matches = list(re.finditer(r'\b(kal|aaj|parso|subah|dopahar|shaam|raat)(?:\s+(?:sade|saade|sawa|paune|dhai|dedh|aadha|[0-9]+(?:[:.][0-9]+)?|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah)(?:\s+(?:[0-9]+|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah))?\s*(?:baje|bje|am|pm))?\b', t_lower))
+            time_matches = list(re.finditer(r'\b(kal|aaj|parso|subah|dopahar|shaam|raat)(?:(?:\s+[a-z]+){0,3})?(?:\s+(?:sade|saade|sawa|paune|dhai|dedh|aadha|[0-9]+(?:[:.][0-9]+)?|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah)(?:\s+(?:[0-9]+|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah))?\s*(?:baje|bje|am|pm))?\b', t_lower))
             if time_matches:
                 raw_delivery_time = time_matches[-1].group(0)
                 safe_delivery_time = raw_delivery_time

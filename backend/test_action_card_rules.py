@@ -28,6 +28,7 @@ def run_tests():
         ("dhai baje", f"{today_date} 2:30 baje"),
         ("kal 10:15 pe", f"{tomorrow_date} 10:15 pe"),
         ("kal 5:30 baje", f"{tomorrow_date} 5:30 baje"),
+        ("kal aisa karna 8:30 baje", f"{tomorrow_date} 8:30 baje"),
     ]
     print("1. Time Parsing:")
     for raw, expected_time in time_tests:
