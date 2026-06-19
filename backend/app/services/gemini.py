@@ -836,7 +836,7 @@ Return only the transcript text.
             "delivery_time_confidence": time_data["confidence"],
             "delivery_time_warning": time_data["warning"],
             "delivery_time": time_data["normalized"] or raw_delivery_time, # fallback for UI compatibility
-            "payment_method": str(primary_card.get("payment_method") or "").strip() or None,
+            "payment_method": str(primary_card.get("payment_method") or "").strip() or "Not Specified",
             "items": final_aggregated_items,
             "type": primary_card.get("type", "ORDER"),
             "confidence": primary_card.get("confidence", 0.0),
@@ -870,6 +870,13 @@ Return only the transcript text.
         risk_data = detect_risks(transcript, final_aggregated_items)
         if has_cancellation and "cancellation" not in risk_data["risk_flags"]:
             risk_data["risk_flags"].append("cancellation")
+
+        # Log payment method overrides
+        llm_payment = str(final_data.get("payment_method") or "").strip() or "Not Specified"
+        det_payment = risk_data.get("payment_method", "Not Specified")
+        if llm_payment.lower() not in ["", "not specified", "none", "null"] and llm_payment.lower() != det_payment.lower():
+            validation_warnings.append(f"Payment method '{llm_payment}' overridden to '{det_payment}' based on transcript evidence.")
+
         final_data.update(risk_data)
 
         validation_data = validate_action_card(final_data, transcript)

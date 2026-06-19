@@ -551,8 +551,54 @@ def run_tests():
         print(f"  [FAIL] 'aaj 8 baje' correction recovery failed, got: {res2['delivery_time_raw']}")
     total += 1
 
-    # Duplicate removed
+    print("\n12. Payment Method Hallucination Check:")
+    async def mock_payment_extraction(raw_payment_method, transcript):
+        class MockResponse:
+            def __init__(self):
+                self.text = f'{{"cards": [{{"payment_method": "{raw_payment_method}"}}], "transcript_normalized": "{transcript}"}}'
 
+        from google.genai import types
+        import unittest.mock as mock
+
+        with mock.patch("app.services.gemini.genai.Client") as MockClient:
+            mock_client_instance = MockClient.return_value
+            mock_client_instance.models.generate_content.return_value = MockResponse()
+
+            settings.GEMINI_API_KEY = "dummy"
+            res = await GeminiService.extract_order_details(transcript)
+            return res
+
+    res_pay1 = loop.run_until_complete(mock_payment_extraction("Online", "ek packet sarfexal 10 wala aur ek packet parleji 10 rupiya pack bhej dena"))
+    if res_pay1["payment_method"] == "Not Specified":
+        print(f"  [PASS] Hallucinated 'Online' reverted to Not Specified (no intent found)")
+        passed += 1
+    else:
+        print(f"  [FAIL] Hallucinated 'Online' not reverted: {res_pay1['payment_method']}")
+    total += 1
+
+    res_pay2 = loop.run_until_complete(mock_payment_extraction("Cash", "ek packet parleji 10 rupiya pack bhej dena online payment kar dunga"))
+    if res_pay2["payment_method"] == "Online":
+        print(f"  [PASS] 'Cash' overridden to 'Online' based on transcript intent 'online payment'")
+        passed += 1
+    else:
+        print(f"  [FAIL] 'Cash' not overridden to 'Online': {res_pay2['payment_method']}")
+    total += 1
+
+    res_pay3 = loop.run_until_complete(mock_payment_extraction("Online", "bhaiya sab likh lena udhaar mein"))
+    if res_pay3["payment_method"] == "Credit (Udhaar)":
+        print(f"  [PASS] 'Online' overridden to 'Credit (Udhaar)' based on transcript intent 'udhaar mein'")
+        passed += 1
+    else:
+        print(f"  [FAIL] 'Online' not overridden to 'Credit (Udhaar)': {res_pay3['payment_method']}")
+    total += 1
+
+    res_pay4 = loop.run_until_complete(mock_payment_extraction("Online", "bhaiya nakad le lena"))
+    if res_pay4["payment_method"] == "Cash":
+        print(f"  [PASS] 'Online' overridden to 'Cash' based on transcript intent 'nakad'")
+        passed += 1
+    else:
+        print(f"  [FAIL] 'Online' not overridden to 'Cash': {res_pay4['payment_method']}")
+    total += 1
 if __name__ == "__main__":
     run_tests()
 
