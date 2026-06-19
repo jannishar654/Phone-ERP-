@@ -196,6 +196,67 @@ def run_tests():
             print(f"  [FAIL] '{transcript}' -> '{cleaned}' (Expected '{expected}')")
         total += 1
             
+    # 9. DETERMINISTIC AGGREGATION
+    print("\n9. Deterministic Aggregation:")
+    from app.services.gemini import aggregate_items_deterministically
+    
+    agg_tests = [
+        # 50 kg atta + 15 kg atta = 65 kg
+        (
+            [{"name": "atta", "quantity": 50, "unit": "kg"}, {"name": "atta", "quantity": 15, "unit": "kg"}],
+            [{"name": "atta", "quantity": 65, "unit": "kg"}]
+        ),
+        # 2.5 kg atta + 0.5 kg atta = 3 kg (should be converted to int if flat)
+        (
+            [{"name": "atta", "quantity": 2.5, "unit": "kg"}, {"name": "atta", "quantity": 0.5, "unit": "kg"}],
+            [{"name": "atta", "quantity": 3, "unit": "kg"}]
+        ),
+        # atta and chawal remain separate
+        (
+            [{"name": "atta", "quantity": 10, "unit": "kg"}, {"name": "chawal", "quantity": 20, "unit": "kg"}],
+            [{"name": "atta", "quantity": 10, "unit": "kg"}, {"name": "chawal", "quantity": 20, "unit": "kg"}]
+        ),
+        # 1 packet Surf variant A and 1 packet Surf variant B remain separate
+        (
+            [{"name": "Surf Excel Rs 10", "quantity": 1, "unit": "packet"}, {"name": "Surf Excel Matic", "quantity": 1, "unit": "packet"}],
+            [{"name": "Surf Excel Rs 10", "quantity": 1, "unit": "packet"}, {"name": "Surf Excel Matic", "quantity": 1, "unit": "packet"}]
+        ),
+        # missing quantity does not crash or become zero
+        (
+            [{"name": "atta", "quantity": None, "unit": "kg"}, {"name": "atta", "quantity": 10, "unit": "kg"}],
+            [{"name": "atta", "quantity": 10, "unit": "kg"}]
+        ),
+        # already aggregated 65 kg item remains 65 kg (when run again or returned alone)
+        (
+            [{"name": "atta", "quantity": 65, "unit": "kg"}],
+            [{"name": "atta", "quantity": 65, "unit": "kg"}]
+        )
+    ]
+    
+    for raw_items, expected_agg in agg_tests:
+        agg = aggregate_items_deterministically(raw_items)
+        
+        # compare ignoring order
+        def norm(lst):
+            return sorted([{k: v for k, v in i.items() if k in ["name", "quantity", "unit"]} for i in lst], key=lambda x: str(x))
+            
+        if norm(agg) == norm(expected_agg):
+            print(f"  [PASS] Aggregation logic: {raw_items} -> {agg}")
+            passed += 1
+        else:
+            print(f"  [FAIL] Expected {expected_agg}, got {agg}")
+        total += 1
+
+    # final large_quantity risk is detected on aggregated items
+    agg_items = aggregate_items_deterministically([{"name": "atta", "quantity": 30, "unit": "kg"}, {"name": "atta", "quantity": 20, "unit": "kg"}])
+    risks = detect_risks("transcript", agg_items).get("risk_flags", [])
+    if "large_quantity" in risks:
+        print(f"  [PASS] large_quantity detected correctly on aggregated 50kg atta.")
+        passed += 1
+    else:
+        print(f"  [FAIL] large_quantity not detected on aggregated 50kg atta. Risks: {risks}")
+    total += 1
+
     print(f"\nFinal -> Total: {total}, Passed: {passed}, Failed: {total - passed}")
 
 if __name__ == "__main__":

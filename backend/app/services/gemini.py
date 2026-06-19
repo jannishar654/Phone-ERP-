@@ -17,6 +17,47 @@ from app.services.action_card_validator import validate_action_card
 
 logger = logging.getLogger(__name__)
 
+def aggregate_items_deterministically(normalized_items: list[dict]) -> list[dict]:
+    """Pure helper to safely aggregate items by canonical name and unit."""
+    aggregated_items = {}
+    for item in normalized_items:
+        # We already handled 'rupee'/'rs' normalizations in layer 1
+        # Extract fields safely
+        name = item.get("name", "Unknown Item")
+        unit_lower = str(item.get("unit") or "").lower().strip()
+        
+        # Key uses canonical name (which inherently includes variant/pack_size) and unit
+        key = (name, unit_lower)
+        
+        if key not in aggregated_items:
+            aggregated_items[key] = item.copy()
+        else:
+            # Safely handle decimal quantities and missing quantities
+            existing_qty = aggregated_items[key].get("quantity")
+            new_qty = item.get("quantity")
+            
+            if existing_qty is not None and new_qty is not None:
+                try:
+                    total_qty = float(existing_qty) + float(new_qty)
+                    # Convert to int if no fractional part to keep UI clean
+                    aggregated_items[key]["quantity"] = int(total_qty) if total_qty.is_integer() else total_qty
+                except (ValueError, TypeError):
+                    logger.warning(f"Failed to add quantities '{existing_qty}' and '{new_qty}' for {name}")
+            elif existing_qty is None and new_qty is not None:
+                aggregated_items[key]["quantity"] = new_qty
+            
+            # Use max price if multiple prices are provided
+            existing_price = aggregated_items[key].get("price", 0.0)
+            new_price = item.get("price", 0.0)
+            try:
+                aggregated_items[key]["price"] = max(float(existing_price), float(new_price))
+            except (ValueError, TypeError):
+                pass
+                
+    final_aggregated = list(aggregated_items.values())
+    if not final_aggregated:
+        return [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
+    return final_aggregated
 
 class GeminiService:
 
@@ -654,30 +695,13 @@ Return only the transcript text.
                         validation_warnings.append(f"AI Assist corrected spelling for '{orig_unresolved['raw_name']}'.")
 
         # --- Aggregate duplicate items deterministically ---
-        aggregated_items = {}
-        for item in normalized_items:
-            # We already handled 'rupee'/'rs' normalizations in layer 1
-            unit_lower = item.get("unit", "").lower().strip()
-            key = (item["name"], unit_lower)
-            if key not in aggregated_items:
-                aggregated_items[key] = item.copy()
-            else:
-                existing_qty = aggregated_items[key]["quantity"]
-                new_qty = item["quantity"]
-                if existing_qty is not None and new_qty is not None:
-                    aggregated_items[key]["quantity"] = existing_qty + new_qty
-                elif existing_qty is None and new_qty is not None:
-                    aggregated_items[key]["quantity"] = new_qty
-        
-        final_aggregated_items = list(aggregated_items.values())
-        if not final_aggregated_items:
-            final_aggregated_items = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
+        final_aggregated_items = aggregate_items_deterministically(normalized_items)
 
-        print("\n--- GEMINI EXTRACTION DEBUG ---")
-        print("Raw Gemini Items:", items)
-        print("Normalized Items:", normalized_items)
-        print("Final Aggregated Items:", final_aggregated_items)
-        print("-------------------------------\n")
+        logger.debug("--- GEMINI EXTRACTION DEBUG ---")
+        logger.debug(f"Raw Gemini Items: {items}")
+        logger.debug(f"Normalized Items: {normalized_items}")
+        logger.debug(f"Final Aggregated Items: {final_aggregated_items}")
+        logger.debug("-------------------------------")
 
         final_data = {
             "customer_name": normalized_cust,
