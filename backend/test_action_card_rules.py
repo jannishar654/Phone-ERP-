@@ -22,22 +22,33 @@ def run_tests():
     tomorrow_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
     today_date = datetime.now().strftime('%Y-%m-%d')
     time_tests = [
-        ("kal sade 8", f"{tomorrow_date} 8:30"),
-        ("sawa chhe", f"{today_date} 6:15"),
-        ("paune 5", f"{today_date} 4:45"),
-        ("dhai baje", f"{today_date} 2:30 baje"),
-        ("kal 10:15 pe", f"{tomorrow_date} 10:15 pe"),
-        ("kal 5:30 baje", f"{tomorrow_date} 5:30 baje"),
-        ("kal aisa karna 8:30 baje", f"{tomorrow_date} 8:30 baje"),
+        ("kal sade 8", f"{tomorrow_date} 8:30", None),
+        ("sawa chhe", None, "Missing specific day"),
+        ("paune 5", None, "Missing specific day"),
+        ("dhai baje", None, "Missing specific day"),
+        ("kal 10:15 pe", f"{tomorrow_date} 10:15 pe", None),
+        ("kal 5:30 baje", f"{tomorrow_date} 5:30 baje", None),
+        ("kal aisa karna 8:30 baje", f"{tomorrow_date} 8:30 baje", None),
+        ("kalle esa karna 5:30 baje", f"{tomorrow_date} 5:30 baje", "Interpreted 'kalle' as 'kal'"),
+        ("kal ka order cancel karo, aaj 5 baje naya bhejna", f"{today_date} 5 baje", None),
+        ("5:30 baje bhejna", None, "Missing specific day"),
+        ("kalle", None, "Uncertain delivery time"), # unrelated kalle without clock
     ]
     print("1. Time Parsing:")
-    for raw, expected_time in time_tests:
+    for raw, expected_time, expected_warning in time_tests:
         res = parse_delivery_time(raw)
-        if expected_time in str(res["normalized"]):
-            print(f"  [PASS] '{raw}' -> {res['normalized']}")
+        
+        time_match = expected_time is None and res["normalized"] is None
+        if not time_match and expected_time is not None and res["normalized"] is not None:
+            time_match = expected_time in str(res["normalized"])
+            
+        warning_match = expected_warning is None or (res["warning"] and expected_warning in res["warning"])
+        
+        if time_match and warning_match:
+            print(f"  [PASS] '{raw}' -> {res['normalized']} (Warning: {res['warning']})")
             passed += 1
         else:
-            print(f"  [FAIL] '{raw}' -> {res['normalized']} (Expected {expected_time})")
+            print(f"  [FAIL] '{raw}' -> {res['normalized']} | Expected: {expected_time}. Warning: {res['warning']} | Expected Warning: {expected_warning}")
         total += 1
             
     # 2. QUANTITY PARSING
@@ -149,21 +160,27 @@ def run_tests():
     
     val_tests = [
         # Should pass
-        ({"items": [{"name": "A", "quantity": 0.5}]}, []),
-        # Should fail (negative/missing)
-        ({"items": [{"name": "A", "quantity": -1}]}, ["quantity"]),
-        ({"items": [{"name": "A", "quantity": None}]}, ["quantity"]),
+        ({"customer_name": "Danish", "delivery_address": "Here", "items": [{"name": "A", "quantity": 0.5, "unit": "kg", "price": 0.0}]}, []),
+        # Should fail (negative/missing quantity)
+        ({"customer_name": "Danish", "delivery_address": "Here", "items": [{"name": "A", "quantity": -1, "unit": "kg"}]}, ["quantity"]),
+        ({"customer_name": "Danish", "delivery_address": "Here", "items": [{"name": "A", "quantity": None, "unit": "kg"}]}, ["quantity"]),
+        # Missing unit (should fail unit)
+        ({"customer_name": "Danish", "delivery_address": "Here", "items": [{"name": "15 tide sarf", "quantity": 15, "unit": None, "price": 0.0}]}, ["unit"]),
     ]
     
     for card_data, expected_missing in val_tests:
         total += 1
         res = validate_action_card(card_data, "test")
         missing = res.get("missing_fields", [])
-        if "quantity" in expected_missing and "quantity" in missing:
-            print(f"  [PASS] Handled invalid quantity correctly.")
+        
+        # Check if expected missing fields match actual missing fields
+        missing_match = set(expected_missing).issubset(set(missing)) and len(expected_missing) > 0
+        
+        if not expected_missing and not missing:
+            print(f"  [PASS] Valid card handled correctly: {card_data}")
             passed += 1
-        elif "quantity" not in expected_missing and "quantity" not in missing:
-            print(f"  [PASS] Handled valid quantity correctly: {card_data}")
+        elif expected_missing and missing_match:
+            print(f"  [PASS] Caught missing fields {expected_missing} correctly.")
             passed += 1
         else:
             print(f"  [FAIL] Expected missing {expected_missing}, got {missing} for {card_data}")

@@ -635,10 +635,37 @@ Return only the transcript text.
                 cust_name = name_match.group(1).strip().title()
                 
         if not safe_delivery_time:
-            time_matches = list(re.finditer(r'\b(kal|aaj|parso|subah|dopahar|shaam|raat)(?:(?:\s+[a-z]+){0,3})?(?:\s+(?:sade|saade|sawa|paune|dhai|dedh|aadha|[0-9]+(?:[:.][0-9]+)?|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah)(?:\s+(?:[0-9]+|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah))?\s*(?:baje|bje|am|pm))?\b', t_lower))
-            if time_matches:
-                raw_delivery_time = time_matches[-1].group(0)
+            # Detect clock expression independently
+            clock_regex = r'\b(?:sade|saade|sawa|paune|dhai|dedh|aadha|[0-9]+(?:[:.][0-9]+)?|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah)(?:\s+(?:[0-9]+|ek|do|teen|char|paanch|chhe|saat|aath|nau|das|gyarah|barah))?\s*(?:baje|bje|am|pm)\b'
+            clocks = list(re.finditer(clock_regex, t_lower))
+            
+            if clocks:
+                last_clock = clocks[-1]
+                clock_str = last_clock.group(0)
+                clock_start = last_clock.start()
+                clock_end = last_clock.end()
+                
+                # Search within a bounded window (50 chars before) for a day token
+                window_start = max(0, clock_start - 50)
+                window_text = t_lower[window_start:clock_start]
+                
+                # In time context, safely recognize ASR variants kall/kalle
+                day_matches_in_window = list(re.finditer(r'\b(kal|kall|kalle|aaj|parso|subah|dopahar|shaam|raat)\b', window_text))
+                if day_matches_in_window:
+                    last_day_match = day_matches_in_window[-1]
+                    abs_day_start = window_start + last_day_match.start()
+                    raw_delivery_time = t_lower[abs_day_start:clock_end]
+                else:
+                    # Clock detected but day uncertain, preserve clock
+                    raw_delivery_time = clock_str
+                    
                 safe_delivery_time = raw_delivery_time
+            else:
+                # Fallback: Day only
+                day_matches = list(re.finditer(r'\b(kal|aaj|parso)\b', t_lower))
+                if day_matches:
+                    raw_delivery_time = day_matches[-1].group(0)
+                    safe_delivery_time = raw_delivery_time
                 
         if cust_name:
             cust_name = re.sub(r'(?:\s+(?:likhna|likh\s*dena|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
