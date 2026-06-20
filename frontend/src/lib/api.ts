@@ -105,6 +105,29 @@ export async function transcribeAudio(audioFile: File, provider: string = "gemin
   return res.json();
 }
 
+export async function extractActionCardFromAudio(
+  audioFile: File,
+  pipeline: string = "gemini_audio_extraction"
+): Promise<ActionCard> {
+  const formData = new FormData();
+  formData.append('file', audioFile);
+  formData.append('pipeline', pipeline);
+
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/extract-action-card-audio`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to extract order details from audio.');
+  }
+
+  return res.json();
+}
+
 export async function extractActionCard(
   transcript: string, 
   source: 'audio' | 'text' = 'text',

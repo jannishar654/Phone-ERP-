@@ -4,7 +4,7 @@ import logging
 import os
 import re
 import tempfile
-
+from typing import Union, Optional, Tuple
 from google import genai
 from google.genai import errors
 from google.genai import types
@@ -228,6 +228,409 @@ Return only the transcript text.
                     logger.warning("Could not delete uploaded Gemini file.")
 
     @staticmethod
+    def _parse_json_object(result_text: str):
+        try:
+            parsed = json.loads(result_text)
+        except json.JSONDecodeError:
+            json_match = re.search(r"\{.*\}", result_text, re.S)
+            if not json_match:
+                return None
+
+            try:
+                parsed = json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                return None
+
+        return parsed if isinstance(parsed, dict) else None
+
+    @staticmethod
+    async def extract_order_details_from_audio(file_content: bytes, filename: str, pipeline: str = "gemini_audio_extraction") -> dict:
+        """Extract an action-card payload from audio with one Gemini model call."""
+
+        if not file_content:
+            raise ValueError("Audio file is empty.")
+
+        if (
+            not settings.GEMINI_API_KEY
+            or settings.GEMINI_API_KEY == "your-gemini-api-key-here"
+        ):
+            raise ValueError("Gemini API key is not configured.")
+
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        file_extension, mime_type = GeminiService._detect_audio_format(file_content, filename)
+        temporary_path = None
+        uploaded_file = None
+
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temporary_file:
+                temporary_file.write(file_content)
+                temporary_path = temporary_file.name
+
+            uploaded_file = await asyncio.to_thread(
+                client.files.upload,
+                file=temporary_path,
+                config=types.UploadFileConfig(
+                    mime_type=mime_type,
+                    display_name=filename,
+                ),
+            )
+
+            for _ in range(30):
+                uploaded_file = await asyncio.to_thread(client.files.get, name=uploaded_file.name)
+
+                if uploaded_file.state == types.FileState.ACTIVE:
+                    break
+
+                if uploaded_file.state == types.FileState.FAILED:
+                    raise RuntimeError(
+                        f"Gemini failed to process the uploaded audio: {uploaded_file.error}"
+                    )
+
+                await asyncio.sleep(1)
+            else:
+                raise TimeoutError("Gemini audio processing timed out.")
+
+            prompt = (
+    "You are PhoneERP's AI order extraction engine processing a customer voice recording "
+    "for an Indian grocery, kirana, wholesale, FMCG, or dairy business.\n\n"
+
+    "## STEP 1 — TRANSCRIBE\n"
+    "Listen to the audio and transcribe exactly what the primary speaker says.\n"
+    "- Preserve all languages as spoken: Hindi, English, Hinglish, regional accents.\n"
+    "- Preserve brand names, quantities, units, and customer names exactly as heard.\n"
+    "- Write [unclear] for any word you cannot confidently hear. Do not guess.\n"
+    "- Ignore background conversations, traffic, fan/shop noise, silence, filler words (umm, uh).\n"
+    "- Do NOT include timestamps, speaker labels, or line numbers in the transcript.\n\n"
+
+    "## STEP 2 — EXTRACT\n"
+    "From the transcript, extract structured order data following all rules below.\n"
+    "Do not output reasoning. Return ONLY the final JSON.\n\n"
+
+    "## EXTRACTION RULES\n"
+    "1. ALL VALUES INSIDE `cards` MUST USE ENGLISH LETTERS (ROMANIZED HINGLISH). "
+    "Never output Devanagari script inside the cards array.\n"
+    "2. TRANSLITERATE: If the audio contains Devanagari, transliterate it to Romanized Hinglish "
+    "in `transcript_normalized`. If no Devanagari, copy transcript as-is. "
+    "Record each phonetic mapping in `metadata.model_normalizer_notes` "
+    "(e.g. 'पाँच' → '5', 'साढ़े पाँच' → 'saade paanch').\n"
+    "3. CORE PRODUCT NAMES ONLY: `name` must contain only the product — never quantity, "
+    "unit, or packaging words (packet, thaili, dabba, kilo, liter).\n"
+    "   'ek badi thaili doodh ki' → name:'bada doodh', quantity:'1', unit:'thaili'\n"
+    "4. NEVER INVENT. Do not infer brands, variants, SKUs, or pack sizes unless explicitly spoken.\n"
+    "   'chawal' → 'chawal'  NOT 'India Gate Basmati Rice'\n"
+    "   'doodh'  → 'doodh'   NOT 'Amul Gold Milk'\n"
+    "   'lal surf' → 'lal surf'  NOT 'Surf Excel Easy Wash'\n"
+    "5. DO NOT AGGREGATE: Same item mentioned twice → two separate operations. Never do arithmetic.\n"
+    "6. NEVER MERGE ITEMS: 'surf excel' and 'chawal' are TWO items. Never output 'surf excel chawal'.\n"
+    "7. CLEAN NAMES: Remove action verbs from item names (bhijwa dena, pack kar dena, bhej do).\n"
+    "8. DELIVERY TIME: Extract exact spoken phrase into `delivery_time_raw` "
+    "(e.g. 'kal subah', 'aaj shaam 6 baje', 'parso'). "
+    "Do NOT convert to a date. Do NOT put time words into delivery_address.\n"
+    "9. QUANTITIES: Extract exact spoken number. Missing → null. Never default to 1.\n"
+    "   aadha=0.5  dedh=1.5  dhai=2.5  sawa=1.25  pauna=0.75\n"
+    "10. CUSTOMER NAME: Exact wording as spoken. Store name counts as customer name. "
+    "UNKNOWN only if completely absent.\n"
+    "11. PAYMENT: udhaar / khate mein likh do / baad mein denge → 'Credit (Udhaar)'\n"
+    "    cash de denge → 'Cash'\n"
+    "    phonepe / gpay / online → 'Online'\n"
+    "    Otherwise → 'Not Specified'\n"
+    "12. IN-FLIGHT CANCELLATIONS: Item added then cancelled in same recording → "
+    "omit from items, list in metadata.cancelled_items.\n"
+    "13. CONFIDENCE: Reduce when customer/quantity/product unclear or [unclear] markers present.\n\n"
+
+    "## OPERATIONS (one per spoken event, in order)\n"
+    "Types: ADD | SET_QUANTITY | CANCEL | RETURN | SUBSTITUTE | PREVIOUS_ORDER_REFERENCE\n"
+    "Do NOT resolve corrections. Do NOT compute final state. Return every step.\n\n"
+    "Self-correction: '5 kilo sugar... nahi 2 kilo sugar' "
+    "→ ADD(sugar,5) then SET_QUANTITY(sugar,2). Return both.\n"
+    "Cancel spoken: 'chips cancel kar do' → CANCEL operation. No ADD for chips.\n"
+    "Return: 'kal ke biscuits wapas lo' → RETURN(biscuits).\n"
+    "Substitute: 'Parle nahi toh Britannia' → SUBSTITUTE(Parle→Britannia). Not a normal ADD.\n"
+    "Previous order: 'same order bhej dena' → PREVIOUS_ORDER_REFERENCE. Never invent items.\n\n"
+
+    "## EXAMPLES\n"
+    "'lal Surf dena' → name:'lal Surf'\n"
+    "'dus wala Parle' → name:'dus wala Parle'\n"
+    "'udhaar mein likh dena' → payment_method:'Credit (Udhaar)'\n"
+    "'kal 5:30 baje Guptastore... unka naam Shayam hai' "
+    "→ customer_name:'Shayam', delivery_time_raw:'kal 5:30 baje', delivery_address:'Guptastore'\n"
+    "'chips bhej dena' → items:[{name:'chips', quantity:null, unit:null}], "
+    "extraction_notes:'Quantity not specified for chips'\n\n"
+
+    "## OUTPUT FORMAT\n"
+    "Return ONLY this JSON. No markdown. No explanation. No extra fields.\n"
+    "{\n"
+    '  "transcript": "verbatim words spoken, with [unclear] markers where audio was unclear",\n'
+    '  "transcript_normalized": "Romanized Hinglish — transliterate Devanagari if present, else identical to transcript",\n'
+    '  "metadata": {\n'
+    '    "model_normalizer_notes": ["e.g. पाँच → 5"],\n'
+    '    "cancelled_items": [{"name": "string", "quantity": "string", "unit": "string"}]\n'
+    '  },\n'
+    '  "operations": [\n'
+    '    {\n'
+    '      "sequence": 1,\n'
+    '      "operation_id": "op_1",\n'
+    '      "target_operation_id": null,\n'
+    '      "type": "ADD|SET_QUANTITY|CANCEL|RETURN|SUBSTITUTE|PREVIOUS_ORDER_REFERENCE",\n'
+    '      "raw_product": "exact product name as spoken",\n'
+    '      "quantity_raw": "exact quantity as spoken e.g. paanch, 2.5, dedh",\n'
+    '      "quantity": 5,\n'
+    '      "unit": "exact unit as spoken e.g. kilo, packet",\n'
+    '      "condition": "substitution condition or null",\n'
+    '      "evidence": "exact phrase from audio that triggered this operation"\n'
+    '    }\n'
+    '  ],\n'
+    '  "cards": [\n'
+    '    {\n'
+    '      "type": "ORDER|CANCEL|RETURN|COMPLAINT|QUERY|PAYMENT_REMINDER",\n'
+    '      "customer_name": "exact name or store as spoken — UNKNOWN only if completely absent",\n'
+    '      "customer_phone": "",\n'
+    '      "items": [\n'
+    '        {"name": "core product only", "quantity": "string or null", "unit": "string or null", "price": 0}\n'
+    '      ],\n'
+    '      "delivery_address": "",\n'
+    '      "delivery_time_raw": "exact spoken phrase e.g. kal subah, aaj 6 baje",\n'
+    '      "payment_method": "Cash|Online|Credit (Udhaar)|Not Specified",\n'
+    '      "confidence": 0.9,\n'
+    '      "extraction_notes": "ambiguities, missing fields, [unclear] items, substitutions noted here"\n'
+    '    }\n'
+    '  ]\n'
+    "}"
+)
+
+            response = await asyncio.to_thread(
+                client.models.generate_content,
+                model="gemini-2.5-flash-lite",
+                contents=[uploaded_file, prompt],
+            )
+
+            if not response or not getattr(response, "text", None):
+                raise ValueError("Gemini returned an empty extraction response.")
+
+            parsed = GeminiService._parse_json_object(response.text.strip())
+            if not parsed:
+                raise ValueError("Gemini returned extraction output that was not valid JSON.")
+
+            cards = parsed.get("cards", [])
+            if not cards or not isinstance(cards, list):
+                cards = [parsed]
+
+            primary_card = cards[0] if isinstance(cards[0], dict) else {}
+            if len(cards) > 1:
+                primary_card["_multi_card_flag"] = True
+
+            transcript_original = str(
+                parsed.get("transcript")
+                or parsed.get("transcript_normalized")
+                or primary_card.get("transcript")
+                or ""
+            ).strip()
+            transcript_original = GeminiService._clean_transcript(transcript_original)
+
+            transcript_normalized = str(parsed.get("transcript_normalized") or transcript_original).strip()
+            if not transcript_normalized:
+                transcript_normalized = transcript_original
+
+            normalization_metadata = parsed.get("metadata", {})
+            if not isinstance(normalization_metadata, dict):
+                normalization_metadata = {}
+
+            validation_warnings = []
+            operations = parsed.get("operations", [])
+            reduced_state = None
+            if isinstance(operations, list) and operations:
+                from app.services.operation_reducer import OperationReducer
+                reduced_state = OperationReducer.parse_and_reduce(operations)
+                items = reduced_state["active_items"]
+                normalization_metadata["cancelled_items"] = reduced_state["cancelled_items"]
+                normalization_metadata["return_items"] = reduced_state["return_items"]
+                normalization_metadata["substitution_instructions"] = reduced_state["substitution_instructions"]
+                normalization_metadata["previous_order_reference"] = reduced_state["previous_order_reference"]
+                normalization_metadata["invalid_operations"] = reduced_state.get("invalid_operations", [])
+                normalization_metadata["operation_warnings"] = reduced_state.get("operation_warnings", [])
+            else:
+                operations = []
+                items = primary_card.get("items") or []
+
+            if not isinstance(items, list):
+                items = []
+
+            from app.services.quantity_parser import parse_quantity
+            from app.services.unit_normalizer import normalize_unit
+
+            normalized_items = []
+            cust_phone = str(primary_card.get("customer_phone") or "").strip()
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+
+                raw_qty = item.get("quantity")
+                raw_unit = item.get("unit", "")
+                parsed_qty_data = parse_quantity(f"{raw_qty} {raw_unit}".strip())
+                qty = parsed_qty_data["quantity"]
+                unit_str = parsed_qty_data["unit"] or str(raw_unit or "")
+
+                if qty is None:
+                    fallback_qty, fallback_unit = GeminiService._parse_quantity(str(raw_qty))
+                    if fallback_qty is not None:
+                        qty = fallback_qty
+                    if fallback_unit and not parsed_qty_data["unit"]:
+                        unit_str = fallback_unit
+
+                raw_price = item.get("price")
+                try:
+                    price = float(raw_price) if raw_price not in (None, "", "null", "None") else 0.0
+                except (ValueError, TypeError):
+                    price = 0.0
+
+                raw_name = item.get("name")
+                safe_name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else "Unknown Item"
+                lower_name = safe_name.lower()
+                for prefix in ("none ", "missing ", "null ", "unknown "):
+                    if lower_name.startswith(prefix):
+                        safe_name = safe_name[len(prefix):].strip()
+                        qty = None
+                        break
+
+                res = business_memory.resolve_product_detailed(safe_name, customer_id=cust_phone)
+                normalized_items.append({
+                    "name": res["name"],
+                    "raw_name": res.get("raw_name", safe_name),
+                    "canonical_name": res.get("canonical_name"),
+                    "resolution_status": res.get("resolution_status", "unresolved"),
+                    "alias_used": res.get("alias_used", False),
+                    "quantity": qty,
+                    "unit": normalize_unit(unit_str),
+                    "price": price,
+                    "matched": res["matched"],
+                    "possible_matches": res["possible_matches"],
+                })
+
+            for item in normalized_items:
+                unit_lower = str(item.get("unit") or "").lower().strip()
+                if "rupee" in unit_lower or "rs" in unit_lower or "inr" in unit_lower:
+                    item["price"] = max(item["price"], float(item["quantity"] or 0))
+                    item["quantity"] = 1
+                    item["unit"] = ""
+
+            cancelled_items = normalization_metadata.get("cancelled_items", [])
+            cancelled_names = [
+                str(ci.get("name", "")).strip().lower()
+                for ci in cancelled_items
+                if isinstance(ci, dict) and ci.get("name")
+            ]
+
+            has_cancellation = False
+            final_items = []
+            for item in normalized_items:
+                item_name_lower = str(item.get("name", "")).lower()
+                is_cancelled = False
+                if not operations and cancelled_names:
+                    for cancelled_name in cancelled_names:
+                        if cancelled_name == item_name_lower:
+                            is_cancelled = True
+                            break
+                        if cancelled_name in item_name_lower or item_name_lower in cancelled_name:
+                            validation_warnings.append(
+                                f"Review Required: Ambiguous cancellation for '{cancelled_name}' against '{item.get('name')}'."
+                            )
+
+                if is_cancelled:
+                    has_cancellation = True
+                    continue
+                final_items.append(item)
+
+            normalized_items = final_items
+            if not normalized_items:
+                if operations:
+                    validation_warnings.append("Review Required: Order contains no active items.")
+                    normalized_items = []
+                else:
+                    normalized_items = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
+
+            raw_cust_name = primary_card.get("customer_name", "")
+            cust_name = raw_cust_name.strip() if isinstance(raw_cust_name, str) else ""
+            normalized_cust = normalize_alias(cust_name, BUSINESS_ALIASES["customer_aliases"])
+
+            raw_delivery_time = primary_card.get("delivery_time_raw", primary_card.get("delivery_time", ""))
+            safe_delivery_time = raw_delivery_time.strip() if isinstance(raw_delivery_time, str) else ""
+            time_data = parse_delivery_time(safe_delivery_time)
+            final_aggregated_items = aggregate_items_deterministically(normalized_items)
+
+            final_data = {
+                "customer_name": normalized_cust,
+                "customer_phone": cust_phone,
+                "delivery_address": str(primary_card.get("delivery_address") or "").strip(),
+                "delivery_time_raw": raw_delivery_time,
+                "delivery_time_normalized": time_data["normalized"],
+                "delivery_time_confidence": time_data["confidence"],
+                "delivery_time_warning": time_data["warning"],
+                "delivery_time": time_data["normalized"] or raw_delivery_time,
+                "payment_method": str(primary_card.get("payment_method") or "").strip() or "Not Specified",
+                "items": final_aggregated_items,
+                "type": primary_card.get("type", "ORDER"),
+                "confidence": primary_card.get("confidence", 0.0),
+                "extraction_notes": primary_card.get("extraction_notes", ""),
+                "_multi_card_flag": primary_card.get("_multi_card_flag", False),
+                "validation_warnings": validation_warnings,
+                "transcript": transcript_original,
+                "metadata": {
+                    "transcript_original": transcript_original,
+                    "transcript_normalized": transcript_normalized,
+                    "normalization_used": transcript_normalized != transcript_original,
+                    "normalization_warnings": None,
+                    "model_normalizer_notes": normalization_metadata.get("model_normalizer_notes", []),
+                    "cancelled_items": normalization_metadata.get("cancelled_items", []),
+                    "return_items": normalization_metadata.get("return_items", []),
+                    "substitution_instructions": normalization_metadata.get("substitution_instructions", []),
+                    "previous_order_reference": normalization_metadata.get("previous_order_reference", None),
+                    "invalid_operations": normalization_metadata.get("invalid_operations", []),
+                    "operation_warnings": normalization_metadata.get("operation_warnings", []),
+                    "operations": operations,
+                    "stt_provider": "gemini_audio",
+                    "extraction_provider": "gemini",
+                    "pipeline": pipeline,
+                    "direct_audio_to_extraction": True,
+                },
+            }
+
+            if reduced_state and reduced_state.get("operation_warnings"):
+                validation_warnings.extend(reduced_state["operation_warnings"])
+
+            from app.services.risk_detector import detect_risks
+            risk_data = detect_risks(transcript_normalized or transcript_original, final_aggregated_items)
+            if has_cancellation and "cancellation" not in risk_data["risk_flags"]:
+                risk_data["risk_flags"].append("cancellation")
+
+            final_data.update(risk_data)
+            validation_data = validate_action_card(final_data, transcript_normalized or transcript_original)
+            if "warnings" not in validation_data:
+                validation_data["warnings"] = []
+            validation_data["warnings"].extend(final_data.pop("validation_warnings", []))
+            final_data.update(validation_data)
+
+            return final_data
+
+        except Exception as error:
+            err_msg = str(error).upper()
+            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "QUOTA" in err_msg:
+                logger.error(f"Gemini direct audio extraction hit quota limit: {error}")
+                raise RuntimeError("Gemini API Quota Exhausted. Please try again later.") from error
+
+            logger.exception("Gemini direct audio extraction failed.")
+            raise RuntimeError(f"Gemini direct audio extraction failed: {error}") from error
+
+        finally:
+            if temporary_path and os.path.exists(temporary_path):
+                os.remove(temporary_path)
+
+            if uploaded_file:
+                try:
+                    await asyncio.to_thread(client.files.delete, name=uploaded_file.name)
+                except Exception:
+                    logger.warning("Could not delete uploaded Gemini file.")
+
+    @staticmethod
     def _normalize_quantity(quantity_str: str) -> int:
         quantity_map = {
             "ek": 1, "one": 1, "एक": 1,
@@ -255,7 +658,9 @@ Return only the transcript text.
         return quantity_map.get(quantity_str, 0)
 
     @staticmethod
-    def _parse_quantity(quantity_str: str) -> tuple[int | float | None, str]:
+    def _parse_quantity(
+    quantity_str: str
+) -> Tuple[Optional[Union[int, float]], str]:
         """Parse a quantity string into an integer or float quantity and a unit string."""
         if quantity_str is None:
             return None, ""
