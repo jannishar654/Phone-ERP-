@@ -434,19 +434,6 @@ export default function CreateOrder() {
                 </div>
               )}
             </div>
-
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsQuotaError(true);
-                  setExtractionError(null);
-                }}
-                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer underline transition-colors"
-              >
-                Or, type order manually
-              </button>
-            </div>
           </div>
         </div>
       )}
