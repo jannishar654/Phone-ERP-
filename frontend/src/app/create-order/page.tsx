@@ -51,6 +51,15 @@ export default function CreateOrder() {
     };
   }, []);
 
+  useEffect(() => {
+    if (recordingState === 'captured' && audioChunks.length > 0) {
+      const totalSize = audioChunks.reduce((acc, chunk) => acc + chunk.size, 0);
+      if (totalSize > 0) {
+        handleGenerateActionCard();
+      }
+    }
+  }, [audioChunks, recordingState]);
+
   // MediaRecorder Start
   const startRecording = async () => {
     try {
@@ -86,6 +95,7 @@ export default function CreateOrder() {
       setRecordingState('recording');
       setRecordingSeconds(0);
       setAudioUrl(null);
+      setAudioChunks([]);
 
       timerRef.current = setInterval(() => {
         setRecordingSeconds((prev) => prev + 1);
@@ -121,9 +131,14 @@ export default function CreateOrder() {
       alert('Please record an order before generating an Action Card.');
       return;
     }
+    const totalSize = audioChunks.reduce((acc, chunk) => acc + chunk.size, 0);
+    if (totalSize === 0) {
+      alert('Recording is empty. Please speak into your microphone and try again.');
+      return;
+    }
 
     setIsProcessing(true);
-    setProcessingStatus('Transcribing speech logs...');
+    setProcessingStatus('Uploading audio...');
 
     try {
       const mimeType = mediaRecorder?.mimeType || audioChunks[0]?.type || 'audio/mp4';
@@ -136,10 +151,11 @@ export default function CreateOrder() {
       const sttProvider = pipeline.startsWith('sarvam') ? 'sarvam' : 'gemini';
       const extractProvider = pipeline.endsWith('ollama') ? 'ollama' : 'gemini';
 
+      setProcessingStatus('Transcribing recording...');
       const transcription = await transcribeAudio(audioFile, sttProvider);
       setTranscript(transcription.transcript);
 
-      setProcessingStatus(`Running ${extractProvider === 'ollama' ? 'Ollama' : 'Gemini AI'} structured entity extraction...`);
+      setProcessingStatus('Extracting order details...');
 
       // Clean up previous generated card in this session if any, to avoid orphaned records
       if (cardId) {
@@ -149,6 +165,8 @@ export default function CreateOrder() {
           console.error("Failed to delete previous action card:", err);
         }
       }
+
+      setProcessingStatus('Generating Action Card...');
 
       const card = await extractActionCard(transcription.transcript, 'audio', extractProvider, sttProvider, pipeline, true);
       setCardId(card.id);
@@ -387,15 +405,6 @@ export default function CreateOrder() {
               </div>
             )}
 
-            {recordingState === 'captured' && audioUrl && (
-              <div className="space-y-3">
-                <div className="bg-indigo-50 text-indigo-805 px-4 py-2 rounded-lg border border-indigo-100 text-xs font-semibold">
-                  Audio Captured Successfully
-                </div>
-                <audio src={audioUrl} controls className="mx-auto" />
-              </div>
-            )}
-
             <div className="flex items-center gap-3 pt-2">
               {recordingState !== 'recording' ? (
                 <button
@@ -413,25 +422,6 @@ export default function CreateOrder() {
                 >
                   Stop Recording
                 </button>
-              )}
-
-              {recordingState === 'captured' && (
-                <div className="flex flex-col items-center gap-3 mt-2">
-                  <button
-                    type="button"
-                    onClick={handleGenerateActionCard}
-                    className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-sm transition-colors cursor-pointer shadow-sm w-full max-w-xs"
-                  >
-                    Generate Action Card
-                  </button>
-                  <button
-                    type="button"
-                    onClick={discardRecording}
-                    className="px-5 py-2 text-slate-500 hover:text-slate-700 text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    Discard Recording
-                  </button>
-                </div>
               )}
             </div>
           </div>
