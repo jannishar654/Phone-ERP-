@@ -903,33 +903,34 @@ const s = (secs % 60).toString().padStart(2, '0');
                         {isSavingAudio ? 'Saving...' : '💾 Save Audio for AI Eval'}
                       </button>
                     ) : (
-                      <div className="space-y-2">
-                        <div className="text-xs font-bold text-emerald-705 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-250 flex items-center justify-between">
-                          <span>Audio Saved ✔</span>
-                          <button
-                            type="button"
-                            disabled={isSavingAudio}
-                            onClick={async () => {
-                              setIsSavingAudio(true);
-                              try {
-                                const { deleteVoiceRecording } = await import('@/lib/voice-recordings');
-                                const res = await deleteVoiceRecording(audioStoragePath!);
-                                if (res.success) {
-                                  setAudioSaved(false);
-                                  setAudioStoragePath(null);
-                                  alert('Recording deleted.');
-                                } else {
-                                  alert(`Failed to delete recording: ${res.error}`);
-                                }
-                              } finally {
-                                setIsSavingAudio(false);
-                              }
-                            }}
-                            className="text-[10px] font-extrabold text-red-650 hover:text-red-800 transition-colors uppercase"
-                          >
-                            Delete
-                          </button>
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-750">
+                          <span className="text-emerald-600 font-extrabold text-sm">✓</span>
+                          <span>Recording Available</span>
                         </div>
+                        <button
+                          type="button"
+                          disabled={isSavingAudio}
+                          onClick={async () => {
+                            setIsSavingAudio(true);
+                            try {
+                              const { deleteVoiceRecording } = await import('@/lib/voice-recordings');
+                              const res = await deleteVoiceRecording(audioStoragePath!);
+                              if (res.success) {
+                                setAudioSaved(false);
+                                setAudioStoragePath(null);
+                                alert('Recording deleted.');
+                              } else {
+                                alert(`Failed to delete recording: ${res.error}`);
+                              }
+                            } finally {
+                              setIsSavingAudio(false);
+                            }
+                          }}
+                          className="w-full px-3 py-2 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 rounded-lg text-xs font-bold transition-colors cursor-pointer text-center"
+                        >
+                          Delete Recording
+                        </button>
                       </div>
                     )}
                   </div>
