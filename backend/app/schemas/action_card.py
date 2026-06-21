@@ -4,13 +4,20 @@ from datetime import datetime
 
 class Item(BaseModel):
     name: str
-    quantity: float = Field(..., gt=0)
+    quantity: Optional[float] = None
     unit: Optional[str] = ""
     price: Optional[float] = Field(None, ge=0.0)
     pack_size: Optional[str] = None
     price_status: Optional[str] = None
     confidence: Optional[float] = None
     warnings: List[str] = Field(default_factory=list)
+    raw_name: Optional[str] = None
+    canonical_name: Optional[str] = None
+    resolution_status: Optional[str] = None
+    resolution_source: Optional[str] = None
+    possible_matches: List[str] = Field(default_factory=list)
+    resolution_confidence: Optional[float] = None
+    alias_used: Optional[bool] = False
 
 
 class ActionCard(BaseModel):
@@ -32,6 +39,11 @@ class ActionCard(BaseModel):
     payment_method: Optional[str] = None
     status: str = "pending"
     source: str
+    message_type: str = "ORDER"
+    confidence: Optional[float] = None
+    stt_provider: Optional[str] = None
+    extraction_provider: Optional[str] = None
+    metadata: dict = Field(default_factory=dict)
     transcript: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -56,6 +68,11 @@ class ActionCardCreate(BaseModel):
     validation_warnings: List[str] = Field(default_factory=list)
     status: str = "pending"
     source: str = "text"
+    message_type: str = "ORDER"
+    confidence: Optional[float] = None
+    stt_provider: Optional[str] = None
+    extraction_provider: Optional[str] = None
+    metadata: dict = Field(default_factory=dict)
     transcript: str = "Manual order entry"
 
 
@@ -75,6 +92,11 @@ class ActionCardUpdate(BaseModel):
     validation_warnings: Optional[List[str]] = None
     status: Optional[str] = None
     source: Optional[str] = None
+    message_type: Optional[str] = None
+    confidence: Optional[float] = None
+    stt_provider: Optional[str] = None
+    extraction_provider: Optional[str] = None
+    metadata: Optional[dict] = None
     transcript: Optional[str] = None
 
 

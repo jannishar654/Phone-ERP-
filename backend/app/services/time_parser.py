@@ -73,31 +73,60 @@ def parse_delivery_time(raw_text: Optional[str], reference_datetime: Optional[da
     text = re.sub(r'\bdh?e+a?dh?\b|डेढ़|डेढ़', '1:30', text)
     text = re.sub(r'\bdh?a+i+\b|ढाई', '2:30', text)
 
-    # Simple matchers
-    has_kal = bool(re.search(r'\b(kal|tomorrow|कल)\b', text))
-    has_aaj = bool(re.search(r'\b(aaj|today|आज)\b', text))
-    has_parso = bool(re.search(r'\b(parso|day after tomorrow|परसो)\b', text))
+    # Find all exact time matches
+    time_matches = list(re.finditer(r'(\d{1,2}:\d{2}(?:\s*(?:am|pm|baje|ke baad|after|बजे|pe|पे))?|\d{1,2}\s+(?:am|pm|baje|ke baad|after|बजे|pe|पे))', text))
+    
+    exact_time_match = time_matches[-1] if time_matches else None
+    first_time_match = time_matches[0] if time_matches else None
+
+    # Determine the day
+    date_str = None
+    has_kalle = False
+    
+    if exact_time_match: # Use the final time match to anchor the day
+        clock_start = exact_time_match.start()
+        # Find all day matches
+        days = list(re.finditer(r'\b(kal|kall|kalle|tomorrow|कल|aaj|today|आज|parso|day after tomorrow|परसो)\b', text))
+        if days:
+            # Find nearest day before or after the clock
+            # A simple heuristic: find the one closest to clock_start
+            closest_day = min(days, key=lambda d: abs(d.start() - clock_start))
+            day_text = closest_day.group(0)
+            
+            if re.search(r'\b(kal|kall|kalle|tomorrow|कल)\b', day_text):
+                date_str = tomorrow.strftime("%Y-%m-%d")
+                if re.search(r'\b(kall|kalle)\b', day_text):
+                    has_kalle = True
+            elif re.search(r'\b(aaj|today|आज)\b', day_text):
+                date_str = today.strftime("%Y-%m-%d")
+            elif re.search(r'\b(parso|day after tomorrow|परसो)\b', day_text):
+                date_str = day_after.strftime("%Y-%m-%d")
+    
+    if not date_str:
+        # Fallback to simple matching if no clock or day wasn't near clock
+        has_kalle = bool(re.search(r'\b(kall|kalle)\b', text)) and exact_time_match
+        has_kal = bool(re.search(r'\b(kal|tomorrow|कल)\b', text)) or has_kalle
+        has_aaj = bool(re.search(r'\b(aaj|today|आज)\b', text))
+        has_parso = bool(re.search(r'\b(parso|day after tomorrow|परसो)\b', text))
+        
+        if has_kal:
+            date_str = tomorrow.strftime("%Y-%m-%d")
+        elif has_aaj:
+            date_str = today.strftime("%Y-%m-%d")
+        elif has_parso:
+            date_str = day_after.strftime("%Y-%m-%d")
 
     has_subah = bool(re.search(r'\b(subah|morning|सुबह)\b', text))
     has_dopahar = bool(re.search(r'\b(dopahar|afternoon|दोपहर)\b', text))
     has_shaam = bool(re.search(r'\b(shaam|evening|शाम)\b', text))
     has_raat = bool(re.search(r'\b(raat|night|रात)\b', text))
-    
-    # Exact time matcher: Matches HH:MM with optional suffix, OR HH with mandatory suffix
-    exact_time_match = re.search(r'(\d{1,2}:\d{2}(?:\s*(?:am|pm|baje|ke baad|after|बजे|pe|पे))?|\d{1,2}\s+(?:am|pm|baje|ke baad|after|बजे|pe|पे))', text)
-
-    date_str = None
-    if has_kal:
-        date_str = tomorrow.strftime("%Y-%m-%d")
-    elif has_aaj:
-        date_str = today.strftime("%Y-%m-%d")
-    elif has_parso:
-        date_str = day_after.strftime("%Y-%m-%d")
 
     time_str = None
     if exact_time_match:
         time_str = exact_time_match.group(1)
         confidence = 0.9
+        if "am" not in time_str.lower() and "pm" not in time_str.lower() and not has_subah and not has_shaam and not has_raat and not has_dopahar:
+            warning = "AM/PM ambiguity detected. Please confirm."
     elif has_subah:
         time_str = "Morning"
         confidence = 0.8
@@ -117,15 +146,21 @@ def parse_delivery_time(raw_text: Optional[str], reference_datetime: Optional[da
     elif date_str:
         normalized = date_str
         confidence = 0.7
-        warning = "Time needs confirmation"
+        if not warning: warning = "Time needs confirmation"
     elif time_str:
-        normalized = f"{today.strftime('%Y-%m-%d')} {time_str}"
-        confidence = 0.7
-        warning = "Date not explicitly mentioned, assumed today"
+        normalized = None
+        confidence = 0.5
+        warning = "Missing specific day. Please confirm day."
     else:
         confidence = 0.2
         warning = "Uncertain delivery time, needs confirmation"
         normalized = None
+
+    if has_kalle and exact_time_match:
+        if warning:
+            warning += " | Interpreted 'kalle' as 'kal'"
+        else:
+            warning = "Interpreted 'kalle' as 'kal'"
 
     return {
         "raw": raw_text,

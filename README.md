@@ -140,6 +140,18 @@ http://localhost:3000
 
 ---
 
+## Deployment
+
+### Vercel Preview Deployments
+
+To ensure the backend accepts requests from dynamically generated Vercel preview URLs, set the following environment variable in your production/staging backend server (e.g., Render):
+
+```env
+CORS_ORIGIN_REGEX=https://.*\.vercel\.app
+```
+
+---
+
 ## Development Roadmap
 
 ### Current Phase

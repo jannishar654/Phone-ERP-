@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { authClient } from '@/lib/supabase/client';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -10,6 +11,13 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    if (onClose) onClose();
+    await authClient.signOut();
+    router.push('/');
+  };
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: DashboardIcon },
@@ -72,6 +80,16 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               </Link>
             );
           })}
+
+          <button
+            onClick={handleSignOut}
+            className="flex items-center space-x-3 w-full px-4 py-3 rounded-lg text-sm font-semibold text-red-655 hover:bg-red-50 hover:text-red-700 cursor-pointer transition-all duration-150"
+          >
+            <svg className="h-5 w-5 text-red-550 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            <span>Sign Out</span>
+          </button>
         </nav>
         <div className="p-4 border-t border-slate-200 text-xs text-slate-450 text-center font-medium">
           PhoneERP System v1.0.0

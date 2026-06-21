@@ -45,7 +45,8 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
             </button>
             <span className="hidden sm:inline text-sm font-semibold text-slate-400">Workspace</span>
             <span className="hidden sm:inline text-xs text-slate-300">/</span>
-            <span className="text-sm text-slate-700 font-semibold lg:font-medium">PhoneERP System</span>
+            <span className="text-sm text-slate-700 font-semibold lg:font-medium hidden sm:inline">PhoneERP System</span>
+            <span className="text-sm text-slate-700 font-semibold lg:font-medium inline sm:hidden">PhoneERP</span>
           </div>
           
           <div className="flex items-center space-x-4 sm:space-x-6 text-xs text-slate-500">
@@ -58,7 +59,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
             
             <button
               onClick={handleSignOut}
-              className="text-slate-550 hover:text-red-600 font-semibold transition-colors cursor-pointer text-sm"
+              className="text-slate-550 hover:text-red-600 font-semibold transition-colors cursor-pointer text-sm hidden lg:block"
             >
               Sign Out
             </button>

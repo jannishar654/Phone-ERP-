@@ -24,7 +24,7 @@ function LoginContent() {
         setError(authError);
       } else if (user) {
         const redirectTo = searchParams.get('redirectTo') || '/dashboard';
-        router.push(redirectTo);
+        router.replace(redirectTo);
         router.refresh();
       }
     } catch (err: any) {

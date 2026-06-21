@@ -3,6 +3,13 @@ export interface Item {
   unit?: string;
   quantity: number;
   price?: number;
+  raw_name?: string;
+  canonical_name?: string;
+  resolution_status?: string;
+  resolution_source?: string;
+  possible_matches?: string[];
+  resolution_confidence?: number;
+  alias_used?: boolean;
 }
 
 export type ActionCardStatus = 'pending' | 'processing' | 'completed';
@@ -25,6 +32,11 @@ export interface ActionCard {
   payment_method?: string;
   status: ActionCardStatus | string;
   source: 'audio' | 'text' | string;
+  message_type?: string;
+  confidence?: number;
+  stt_provider?: string;
+  extraction_provider?: string;
+  metadata?: Record<string, any>;
   transcript: string;
   created_at: string; // ISO datetime string
 }
