@@ -42,6 +42,9 @@ export default function CreateOrder() {
   const [riskFlags, setRiskFlags] = useState<string[]>([]);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<string>('Not Specified');
+  const [confidence, setConfidence] = useState<number | null>(null);
+  const [sttProvider, setSttProvider] = useState<string | null>(null);
+  const [extractionProvider, setExtractionProvider] = useState<string | null>(null);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -182,6 +185,9 @@ export default function CreateOrder() {
       setRiskFlags(card.risk_flags || []);
       setValidationWarnings(card.validation_warnings || []);
       setPaymentMethod(card.payment_method || 'Not Specified');
+      setConfidence(card.confidence !== undefined ? card.confidence : null);
+      setSttProvider(card.stt_provider || null);
+      setExtractionProvider(card.extraction_provider || null);
       setIsGenerated(true);
       setIsEditing(false);
       setExtractionError(null);
@@ -240,6 +246,9 @@ export default function CreateOrder() {
       setRiskFlags(card.risk_flags || []);
       setValidationWarnings(card.validation_warnings || []);
       setPaymentMethod(card.payment_method || 'Not Specified');
+      setConfidence(card.confidence !== undefined ? card.confidence : null);
+      setSttProvider(null);
+      setExtractionProvider(card.extraction_provider || null);
       setTranscript(manualTranscript);
       setIsGenerated(true);
       setIsEditing(false);
@@ -611,40 +620,38 @@ const s = (secs % 60).toString().padStart(2, '0');
                       </div>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <div className="space-y-3">
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Customer</span>
-                          <div className="text-sm font-bold text-slate-900 mt-0.5">{customerName || 'N/A'}</div>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Customer</span>
+                          <div className="text-sm font-bold text-slate-900 truncate">{customerName || 'N/A'}</div>
                         </div>
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Phone Contact</span>
-                          <div className="text-xs text-slate-700 font-semibold mt-0.5 flex items-center gap-1.5">
-                            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Phone Contact</span>
+                          <div className="text-xs text-slate-700 font-semibold flex items-center gap-1.5 truncate">
+                            <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                             </svg>
-                            {customerPhone || 'N/A'}
+                            <span className="truncate">{customerPhone || 'N/A'}</span>
                           </div>
                         </div>
-                      </div>
-                      <div className="space-y-3">
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Delivery Destination</span>
-                          <div className="text-sm font-bold text-slate-900 mt-0.5 flex items-start gap-1.5">
-                            <svg className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <div className="space-y-0.5 col-span-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Delivery Destination</span>
+                          <div className="text-xs text-slate-700 font-semibold flex items-start gap-1.5">
+                            <svg className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                               <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                             </svg>
-                            <span>{deliveryAddress || 'N/A'}</span>
+                            <span className="line-clamp-2 leading-tight">{deliveryAddress || 'N/A'}</span>
                           </div>
                         </div>
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scheduled Time</span>
-                          <div className="text-xs text-slate-700 font-semibold mt-0.5 flex items-center gap-1.5">
-                            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Scheduled Time</span>
+                          <div className="text-xs text-slate-700 font-semibold flex items-center gap-1.5">
+                            <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
-                            {deliveryTime || 'N/A'}
+                            <span className="line-clamp-2 leading-tight">{deliveryTime || 'N/A'}</span>
                           </div>
                         </div>
                       </div>
