@@ -362,17 +362,29 @@ export default function CreateOrder() {
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
-    const s = (secs % 60).toString().padStart(2, '0');
+const s = (secs % 60).toString().padStart(2, '0');
     return `${m}:${s}`;
   };
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto">
+    <div className={`${isGenerated ? 'space-y-4' : 'space-y-6'} max-w-5xl mx-auto`}>
+      {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-extrabold text-slate-900">Voice-to-Order Simulator</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Simulate the complete phone order workflow: record audio, trigger mock AI parsing, verify details, and register.
-        </p>
+        {isGenerated ? (
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-slate-900">Review & Confirm Order</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Verify the AI-extracted details below and submit to register the order.
+            </p>
+          </div>
+        ) : (
+          <div>
+            <h1 className="text-2xl font-extrabold text-slate-900">Voice-to-Order Simulator</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Simulate the complete phone order workflow: record audio, trigger mock AI parsing, verify details, and register.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Voice Recording Control Panel */}
@@ -530,360 +542,464 @@ export default function CreateOrder() {
 
       {/* Action Card Verification Panel */}
       {isGenerated && !isProcessing && (
-        <div className="space-y-6">
-          <div className="bg-indigo-50 border border-indigo-150 p-4 rounded-xl text-xs text-indigo-800 leading-relaxed font-semibold">
-            <span className="font-extrabold uppercase mr-1">[Mock Speech Result]</span>
-            A transcript has been processed and entities mapped. Please review details below before submitting.
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <h2 className="text-lg font-bold text-slate-900">Verify Action Card Details</h2>
-                <span className="text-xs bg-amber-50 text-amber-705 border border-amber-250 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
-                  Pending Review
-                </span>
-              </div>
-
-              {isEditing ? (
-                /* Editable Form Mode */
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Customer Name</label>
-                      <input
-                        type="text"
-                        required
-                        value={customerName}
-                        onChange={(e) => setCustomerName(e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-900"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Phone Number</label>
-                      <input
-                        type="text"
-                        required
-                        value={customerPhone}
-                        onChange={(e) => setCustomerPhone(e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-900"
-                      />
-                    </div>
+        <div className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+              {/* Left Column - Forms & Items (Span 2) */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* Customer & Delivery Card */}
+                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
+                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      Customer & Delivery Details
+                    </h3>
+                    {isEditing && (
+                      <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
+                        Editing Mode
+                      </span>
+                    )}
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Delivery Address</label>
-                      <input
-                        type="text"
-                        required
-                        value={deliveryAddress}
-                        onChange={(e) => setDeliveryAddress(e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-900"
-                      />
+                  {isEditing ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Customer Name</label>
+                          <input
+                            type="text"
+                            required
+                            value={customerName}
+                            onChange={(e) => setCustomerName(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Phone Number</label>
+                          <input
+                            type="text"
+                            required
+                            value={customerPhone}
+                            onChange={(e) => setCustomerPhone(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Delivery Address</label>
+                          <input
+                            type="text"
+                            required
+                            value={deliveryAddress}
+                            onChange={(e) => setDeliveryAddress(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Delivery Window</label>
+                          <input
+                            type="text"
+                            required
+                            value={deliveryTime}
+                            onChange={(e) => setDeliveryTime(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Requested Time</label>
-                      <input
-                        type="text"
-                        required
-                        value={deliveryTime}
-                        onChange={(e) => setDeliveryTime(e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-900"
-                      />
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <div className="space-y-3">
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Customer</span>
+                          <div className="text-sm font-bold text-slate-900 mt-0.5">{customerName || 'N/A'}</div>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Phone Contact</span>
+                          <div className="text-xs text-slate-700 font-semibold mt-0.5 flex items-center gap-1.5">
+                            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                            </svg>
+                            {customerPhone || 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Delivery Destination</span>
+                          <div className="text-sm font-bold text-slate-900 mt-0.5 flex items-start gap-1.5">
+                            <svg className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span>{deliveryAddress || 'N/A'}</span>
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scheduled Time</span>
+                          <div className="text-xs text-slate-700 font-semibold mt-0.5 flex items-center gap-1.5">
+                            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            {deliveryTime || 'N/A'}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  )}
+                </div>
 
-                  {/* Line Items Editor */}
-                  <div className="pt-4 border-t border-slate-100">
-                    <div className="flex justify-between items-center mb-3">
-                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Line Items</h3>
+                {/* Line Items Card */}
+                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
+                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 002-2h-2" />
+                      </svg>
+                      Extracted Line Items
+                    </h3>
+                    {isEditing && (
                       <button
                         type="button"
                         onClick={addEditItemRow}
-                        className="text-xs font-bold text-indigo-650 hover:text-indigo-800 cursor-pointer"
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-805 transition-colors cursor-pointer flex items-center gap-1"
                       >
-                        + Add Item Row
+                        <span>+ Add Row</span>
                       </button>
-                    </div>
+                    )}
+                  </div>
+
+                  {isEditing ? (
                     <div className="space-y-3">
                       {items.map((item, idx) => (
-                        <div key={idx} className="flex items-center gap-3">
+                        <div key={idx} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pb-2 sm:pb-0 border-b sm:border-b-0 border-slate-100 last:border-b-0">
                           <input
                             type="text"
                             required
                             placeholder="Item Name"
                             value={item.name}
                             onChange={(e) => handleItemChange(idx, 'name', e.target.value)}
-                            className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-900"
+                            className="flex-1 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-1.5 text-sm text-slate-900 focus:outline-none transition-colors"
                           />
-                          <input
-                            type="number"
-                            min="0.01"
-                            step="0.01"
-                            placeholder="Qty"
-                            value={item.quantity}
-                            onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
-                            className="w-20 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-900 text-center"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Unit"
-                            value={item.unit || ""}
-                            onChange={(e) => handleItemChange(idx, "unit", e.target.value)}
-                            className="w-24 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-900"
-                          />
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            placeholder="Price"
-                            value={item.price || ''}
-                            onChange={(e) => handleItemChange(idx, 'price', e.target.value)}
-                            className="w-24 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-900 text-right font-mono"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeEditItemRow(idx)}
-                            disabled={items.length === 1}
-                            className="text-slate-400 hover:text-red-650 disabled:opacity-35 cursor-pointer font-bold text-lg"
-                          >
-                            &times;
-                          </button>
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              placeholder="Qty"
+                              value={item.quantity}
+                              onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
+                              className="w-16 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-2 py-1.5 text-sm text-slate-900 focus:outline-none text-center transition-colors"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Unit"
+                              value={item.unit || ""}
+                              onChange={(e) => handleItemChange(idx, "unit", e.target.value)}
+                              className="w-20 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-2 py-1.5 text-sm text-slate-900 focus:outline-none transition-colors"
+                            />
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="Price"
+                              value={item.price || ''}
+                              onChange={(e) => handleItemChange(idx, 'price', e.target.value)}
+                              className="w-24 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-2 py-1.5 text-sm text-slate-900 focus:outline-none text-right font-mono transition-colors"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeEditItemRow(idx)}
+                              disabled={items.length === 1}
+                              className="text-slate-400 hover:text-red-650 disabled:opacity-35 cursor-pointer font-bold text-lg px-2"
+                            >
+                              &times;
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
-                  </div>
+                  ) : (
+                    <div className="overflow-hidden border border-slate-100 rounded-lg">
+                      <table className="min-w-full divide-y divide-slate-100 text-left text-xs sm:text-sm">
+                        <thead className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          <tr>
+                            <th className="py-2.5 px-4">Item Name</th>
+                            <th className="py-2.5 px-4 text-center w-24">Qty / Unit</th>
+                            <th className="py-2.5 px-4 text-right w-28">Est. Price</th>
+                            <th className="py-2.5 px-4 text-right w-28">Total Price</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {items.map((item, idx) => {
+                            const hasPrice = item.price !== undefined && item.price !== null && item.price > 0;
+                            const itemTotal = hasPrice ? item.quantity * (item.price || 0) : 0;
+                            return (
+                              <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="py-3 px-4 font-semibold text-slate-800">{item.name || 'Unnamed Item'}</td>
+                                <td className="py-3 px-4 text-center text-slate-650 font-medium">
+                                  {item.quantity} {item.unit || ''}
+                                </td>
+                                <td className="py-3 px-4 text-right font-mono font-medium text-slate-600">
+                                  {hasPrice ? `₹${(item.price || 0).toFixed(2)}` : <span className="text-[11px] text-slate-400 italic font-sans">Pending</span>}
+                                </td>
+                                <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
+                                  {hasPrice ? `₹${itemTotal.toFixed(2)}` : <span className="text-[11px] text-slate-400 italic font-sans">-</span>}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
 
-                  <div className="pt-3 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setIsEditing(false)}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-705 text-white font-bold rounded-lg text-xs cursor-pointer"
-                    >
-                      Done Editing
-                    </button>
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center text-sm font-semibold text-slate-600">
+                    <span className="text-slate-500">Calculated Grand Total:</span>
+                    {items.some(item => item.price === undefined || item.price === null || item.price <= 0) ? (
+                      <span className="text-amber-600 font-bold text-xs italic bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                        Pending Price Verification
+                      </span>
+                    ) : (
+                      <span className="text-base sm:text-lg font-black text-slate-900 font-mono bg-slate-50 border border-slate-150 px-3 py-1 rounded">
+                        ₹{orderTotal.toFixed(2)}
+                      </span>
+                    )}
                   </div>
                 </div>
-              ) : (
-                /* Static Review Mode */
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Customer Details</h4>
-                      <p className="text-sm font-bold text-slate-900 mt-1">{customerName}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">Phone: {customerPhone}</p>
-                    </div>
-                    <div>
-                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Delivery Details</h4>
-                      <p className="text-sm font-bold text-slate-900 mt-1">{deliveryAddress}</p>
-                      <p className="text-xs text-slate-500 mt-0.5 font-medium">Requested Window: {deliveryTime}</p>
-                    </div>
+              </div>
+
+              {/* Right Column - Status, Signals & Transcript (Span 1) */}
+              <div className="space-y-6">
+                {/* Context & Meta Card */}
+                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+                  <h3 className="text-sm font-bold text-slate-900 pb-2 border-b border-slate-100 flex items-center gap-2">
+                    <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Order Context
+                  </h3>
+
+                  {/* Status */}
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Verification Status</span>
+                    <span className="inline-flex items-center text-xs bg-amber-50 text-amber-705 border border-amber-200 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider">
+                      Pending Review
+                    </span>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-100">
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Payment Details</h4>
-                    <p className={`text-xs mt-1 font-bold ${
-                      paymentMethod === 'Credit (Udhaar)' ? 'text-red-650' :
-                      paymentMethod === 'Cash' || paymentMethod === 'Online' ? 'text-emerald-650' :
-                      'text-slate-600'
+                  {/* Payment Method */}
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Payment Type</span>
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wider border ${
+                      paymentMethod === 'Credit (Udhaar)'
+                        ? 'bg-red-50 text-red-700 border-red-200'
+                        : paymentMethod === 'Cash' || paymentMethod === 'Online'
+                        ? 'bg-emerald-50 text-emerald-750 border-emerald-200'
+                        : 'bg-slate-50 text-slate-600 border-slate-200'
                     }`}>
                       {paymentMethod}
-                    </p>
+                    </span>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-100">
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Extracted Order Line Items</h4>
-                    <div className="space-y-1.5">
-                      {items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-xs p-2 rounded bg-slate-50 border border-slate-100">
-                          <div className="text-slate-800 font-medium">
-                            <span className="font-bold text-slate-900">
-                              {item.quantity}
-                              {item.unit ? ` ${item.unit}` : ""}
-                            </span>{" "}
-                            {item.name}
+                  {/* Signals/Flags */}
+                  {(riskFlags.length > 0 || validationWarnings.length > 0) && (
+                    <div className="pt-2 space-y-2 border-t border-slate-100">
+                      {riskFlags.map((risk, index) => (
+                        <div key={index} className="bg-red-50 border border-red-200 p-2 rounded-lg text-xs text-red-800 font-semibold flex items-start gap-1.5">
+                          <svg className="h-4 w-4 text-red-650 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <div className="leading-tight">
+                            <span className="font-extrabold uppercase mr-1">Risk:</span>
+                            {risk}
                           </div>
-                          {item.price !== undefined && item.price !== null && item.price > 0 ? (
-                            <div className="text-right font-mono text-slate-550 font-bold">
-                              ₹{(item.price * item.quantity).toFixed(2)}
-                            </div>
-                          ) : (
-                            <div className="text-right text-slate-400 font-medium italic text-[11px]">
-                              Price not available
-                            </div>
-                          )}
                         </div>
                       ))}
-                    </div>
-                  </div>
 
-                  <div className="pt-4 border-t border-slate-100 space-y-2">
-                    {riskFlags.length > 0 && (
-                      <div className="bg-red-50 border border-red-200 p-3 rounded-lg text-[10px] text-red-800 font-semibold leading-relaxed flex items-start gap-2 my-2">
-                        <svg className="h-4 w-4 text-red-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
-                        <div>
-                          <span className="font-extrabold uppercase mr-1">Risk Detected:</span>
-                          {riskFlags.join(", ")}
+                      {validationWarnings.map((warn, index) => (
+                        <div key={index} className="bg-amber-50 border border-amber-250 p-2 rounded-lg text-xs text-amber-800 font-semibold flex items-start gap-1.5">
+                          <svg className="h-4 w-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <div className="leading-tight">
+                            <span className="font-extrabold uppercase mr-1">Warning:</span>
+                            {warn}
+                          </div>
                         </div>
-                      </div>
-                    )}
-
-                    {validationWarnings.length > 0 && (
-                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg text-[10px] text-slate-700 font-semibold leading-relaxed flex items-start gap-2 my-2">
-                        <svg className="h-4 w-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <div>
-                          <span className="font-extrabold uppercase mr-1">Validation Warnings:</span>
-                          {validationWarnings.join(" ")}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {transcript && (
-                    <div className="pt-4 border-t border-slate-100">
-                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Processed Speech Transcript</h4>
-                      <blockquote className="mt-2 text-xs text-slate-650 bg-slate-50 p-3 rounded border border-slate-150 italic leading-relaxed font-medium">
-                        "{transcript}"
-                      </blockquote>
+                      ))}
                     </div>
                   )}
                 </div>
-              )}
 
-              <div className="pt-4 border-t border-slate-100 flex justify-between items-center text-sm font-semibold text-slate-500">
-                <span>Calculated Total:</span>
-                {items.some(item => item.price === undefined || item.price === null || item.price <= 0) ? (
-                  <span className="text-amber-600 font-bold text-xs italic">Pending Price Verification</span>
-                ) : (
-                  <span className="text-lg font-extrabold text-slate-900 font-mono">₹{orderTotal.toFixed(2)}</span>
+                {/* Transcript Card */}
+                {transcript && (
+                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs space-y-3">
+                    <h3 className="text-sm font-bold text-slate-900 pb-2 border-b border-slate-100 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                      Speech Transcript
+                    </h3>
+                    <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-150 italic leading-relaxed font-medium">
+                      "{transcript}"
+                    </p>
+                  </div>
+                )}
+
+                {/* Audio Actions Evaluation Panel */}
+                {orderSource === 'audio' && (
+                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs space-y-3">
+                    <h3 className="text-sm font-bold text-slate-900 pb-2 border-b border-slate-100 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      Evaluation & QA
+                    </h3>
+                    {!audioSaved ? (
+                      <button
+                        type="button"
+                        disabled={isSavingAudio}
+                        onClick={async () => {
+                          if (!cardId) return;
+                          setIsSavingAudio(true);
+                          try {
+                            const mimeType = mediaRecorder?.mimeType || audioChunks[0]?.type || 'audio/mp4';
+                            const extension = mimeType.includes('webm') ? 'webm' : 'm4a';
+                            const audioBlob = new Blob(audioChunks, { type: mimeType });
+
+                            const res = await saveVoiceRecording(
+                              audioBlob,
+                              extension,
+                              recordingSeconds,
+                              cardId,
+                              true,
+                              pipeline,
+                              transcript
+                            );
+                            if (res.success && res.storagePath) {
+                              setAudioSaved(true);
+                              setAudioStoragePath(res.storagePath);
+                              alert('Audio saved successfully for evaluation!');
+                            } else {
+                              alert(`Failed to save audio: ${res.error}`);
+                            }
+                          } finally {
+                            setIsSavingAudio(false);
+                          }
+                        }}
+                        className="w-full px-3 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        {isSavingAudio ? 'Saving...' : '💾 Save Audio for AI Eval'}
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="text-xs font-bold text-emerald-705 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-250 flex items-center justify-between">
+                          <span>Audio Saved ✔</span>
+                          <button
+                            type="button"
+                            disabled={isSavingAudio}
+                            onClick={async () => {
+                              setIsSavingAudio(true);
+                              try {
+                                const { deleteVoiceRecording } = await import('@/lib/voice-recordings');
+                                const res = await deleteVoiceRecording(audioStoragePath!);
+                                if (res.success) {
+                                  setAudioSaved(false);
+                                  setAudioStoragePath(null);
+                                  alert('Recording deleted.');
+                                } else {
+                                  alert(`Failed to delete recording: ${res.error}`);
+                                }
+                              } finally {
+                                setIsSavingAudio(false);
+                              }
+                            }}
+                            className="text-[10px] font-extrabold text-red-650 hover:text-red-800 transition-colors uppercase"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
 
-            {getValidationWarning() && (
-              <div className="bg-amber-50 border border-amber-250 p-4 rounded-xl text-xs text-amber-805 font-semibold leading-relaxed flex items-start gap-2.5 my-4">
-                <svg className="h-5 w-5 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            {/* Global warning/error before submit */}
+            {validationError && (
+              <div className="bg-red-50 border border-red-200 p-3.5 rounded-xl text-xs text-red-800 font-semibold leading-relaxed flex items-start gap-2">
+                <svg className="h-4 w-4 text-red-650 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
                 <div>
                   <span className="font-extrabold uppercase mr-1">[Validation Warning]</span>
-                  {getValidationWarning()} Please edit the card details to complete the order fields before submitting.
+                  {validationError} Please correct the fields before submitting.
                 </div>
               </div>
             )}
 
-            {/* Verification Footer Action Controls */}
-            <div className="flex justify-between items-center mt-4">
-              <div className="flex items-center">
-                {orderSource === 'audio' && !audioSaved && (
-                  <button
-                    type="button"
-                    disabled={isSavingAudio}
-                    onClick={async () => {
-                      if (!cardId) return;
-                      setIsSavingAudio(true);
-                      try {
-                        const mimeType = mediaRecorder?.mimeType || audioChunks[0]?.type || 'audio/mp4';
-                        const extension = mimeType.includes('webm') ? 'webm' : 'm4a';
-                        const audioBlob = new Blob(audioChunks, { type: mimeType });
-
-                        const res = await saveVoiceRecording(
-                          audioBlob,
-                          extension,
-                          recordingSeconds,
-                          cardId,
-                          true, // Explicit consent granted by clicking this button
-                          pipeline,
-                          transcript
-                        );
-                        if (res.success && res.storagePath) {
-                          setAudioSaved(true);
-                          setAudioStoragePath(res.storagePath);
-                          alert('Audio saved successfully for evaluation!');
-                        } else {
-                          alert(`Failed to save audio: ${res.error}`);
-                        }
-                      } finally {
-                        setIsSavingAudio(false);
-                      }
-                    }}
-                    className="px-4 py-2.5 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer"
-                  >
-                    {isSavingAudio ? 'Saving...' : '💾 Save Audio for AI Eval'}
-                  </button>
-                )}
-                {audioSaved && audioStoragePath && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-2 rounded border border-emerald-200">
-                      Audio Saved ✔
-                    </span>
-                    <button
-                      type="button"
-                      disabled={isSavingAudio}
-                      onClick={async () => {
-                        setIsSavingAudio(true);
-                        try {
-                          const { deleteVoiceRecording } = await import('@/lib/voice-recordings');
-                          const res = await deleteVoiceRecording(audioStoragePath);
-                          if (res.success) {
-                            setAudioSaved(false);
-                            setAudioStoragePath(null);
-                            alert('Recording deleted.');
-                          } else {
-                            alert(`Failed to delete recording: ${res.error}`);
-                          }
-                        } finally {
-                          setIsSavingAudio(false);
-                        }
-                      }}
-                      className="px-2 py-2 text-xs font-bold text-red-600 hover:text-red-800 cursor-pointer"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                )}
+            {getValidationWarning() && (
+              <div className="bg-amber-50 border border-amber-250 p-3.5 rounded-xl text-xs text-amber-805 font-semibold leading-relaxed flex items-start gap-2">
+                <svg className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div>
+                  <span className="font-extrabold uppercase mr-1">[Form Warning]</span>
+                  {getValidationWarning()} Edit details to complete all fields.
+                </div>
               </div>
+            )}
 
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (cardId) {
-                      try {
-                        await deleteActionCard(cardId);
-                      } catch (err) {
-                        console.error("Failed to delete cancelled card:", err);
-                      }
-                      setCardId(null);
+            {/* Actions Footer Bar */}
+            <div className="pt-4 border-t border-slate-200 flex justify-between items-center gap-3">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (cardId) {
+                    try {
+                      await deleteActionCard(cardId);
+                    } catch (err) {
+                      console.error("Failed to delete cancelled card:", err);
                     }
-                    setIsGenerated(false);
-                    setRecordingState('idle');
-                    setAudioUrl(null);
-                  }}
-                  className="px-4 py-2.5 border border-slate-300 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
+                    setCardId(null);
+                  }
+                  setIsGenerated(false);
+                  setRecordingState('idle');
+                  setAudioUrl(null);
+                }}
+                className="px-4 py-2 border border-slate-255 hover:bg-slate-50 rounded-lg text-xs font-bold text-slate-650 hover:text-slate-900 transition-colors cursor-pointer"
+              >
+                Cancel Order
+              </button>
 
-                {!isEditing && (
+              <div className="flex items-center gap-2">
+                {!isEditing ? (
                   <button
                     type="button"
                     onClick={() => setIsEditing(true)}
-                    className="px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 transition-colors cursor-pointer"
+                    className="px-4 py-2 bg-slate-50 hover:bg-slate-105 border border-slate-255 rounded-lg text-xs font-bold text-slate-700 transition-colors cursor-pointer"
                   >
-                    Edit Card
+                    Edit Details
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(false)}
+                    className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Finish Editing
                   </button>
                 )}
 
                 <button
                   type="submit"
                   disabled={!!getValidationWarning()}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-705 disabled:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-lg text-sm transition-colors shadow-sm cursor-pointer"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-305 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer"
                 >
                   Submit Order
                 </button>
