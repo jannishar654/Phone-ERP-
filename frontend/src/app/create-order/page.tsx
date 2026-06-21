@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { createActionCard, extractActionCard, transcribeAudio, updateActionCard, deleteActionCard } from '@/lib/api';
+import { createActionCard, extractActionCard, extractActionCardFromAudio, transcribeAudio, updateActionCard, deleteActionCard } from '@/lib/api';
 import { saveVoiceRecording } from '@/lib/voice-recordings';
 import { Item } from '@/types';
 
@@ -141,7 +141,8 @@ export default function CreateOrder() {
     }
 
     setIsProcessing(true);
-    setProcessingStatus('Uploading audio...');
+    const isDirectAudioPipeline = pipeline === 'gemini_audio_extraction';
+    setProcessingStatus(isDirectAudioPipeline ? 'Running Gemini direct audio extraction...' : 'Transcribing speech logs...');
 
     try {
       const mimeType = mediaRecorder?.mimeType || audioChunks[0]?.type || 'audio/mp4';
@@ -150,6 +151,37 @@ export default function CreateOrder() {
       const audioFile = new File([audioBlob], `grocery-order.${extension}`, {
         type: mimeType,
       });
+
+      if (isDirectAudioPipeline) {
+        if (cardId) {
+          try {
+            await deleteActionCard(cardId);
+          } catch (err) {
+            console.error("Failed to delete previous action card:", err);
+          }
+        }
+
+        const card = await extractActionCardFromAudio(audioFile, pipeline);
+        setTranscript(card.transcript || '');
+        setCardId(card.id);
+        setOrderSource('audio');
+        setAudioSaved(false);
+        setAudioStoragePath(null);
+
+        setCustomerName(card.customer_name || '');
+        setCustomerPhone(card.customer_phone || '');
+        setDeliveryAddress(card.delivery_address || '');
+        setDeliveryTime(card.delivery_time || '');
+        setItems(card.items || []);
+        setRiskFlags(card.risk_flags || []);
+        setValidationWarnings(card.validation_warnings || []);
+        setPaymentMethod(card.payment_method || 'Not Specified');
+        setIsGenerated(true);
+        setIsEditing(false);
+        setExtractionError(null);
+        setIsQuotaError(false);
+        return;
+      }
 
       const sttProvider = pipeline.startsWith('sarvam') ? 'sarvam' : 'gemini';
       const extractProvider = pipeline.endsWith('ollama') ? 'ollama' : 'gemini';
@@ -232,9 +264,10 @@ export default function CreateOrder() {
         }
       }
 
-      const extractProvider = pipeline.endsWith('ollama') ? 'ollama' : 'gemini';
-      const sttProvider = pipeline.startsWith('sarvam') ? 'sarvam' : 'gemini';
-      const card = await extractActionCard(manualTranscript, 'text', extractProvider, sttProvider, pipeline, true);
+      const textPipeline = pipeline === 'gemini_audio_extraction' ? 'gemini_gemini' : pipeline;
+      const extractProvider = textPipeline.endsWith('ollama') ? 'ollama' : 'gemini';
+      const sttProvider = textPipeline.startsWith('sarvam') ? 'sarvam' : 'gemini';
+      const card = await extractActionCard(manualTranscript, 'text', extractProvider, sttProvider, textPipeline, true);
       setCardId(card.id);
       setOrderSource('text');
 
@@ -414,6 +447,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
               >
                 <option value="gemini_gemini">Gemini STT + Gemini Extraction</option>
+                <option value="gemini_audio_extraction">Gemini Direct Audio Extraction</option>
                 <option value="sarvam_gemini">Sarvam STT + Gemini Extraction</option>
                 <option value="sarvam_ollama">Sarvam STT + Ollama Extraction (Qwen 2.5)</option>
               </select>
