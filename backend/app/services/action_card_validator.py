@@ -19,9 +19,15 @@ def validate_action_card(extracted_data: Dict[str, Any], transcript: str) -> Dic
     else:
         for item in items:
             qty = item.get("quantity")
-            # Quantity must be a valid positive number. If it's a string (e.g. gibberish fallback) or None, mark missing
-            if qty is None or not isinstance(qty, (int, float)) or qty < 1:
+            # Quantity must be a valid positive number (>0). If it's a string (e.g. gibberish fallback), None, or <=0, mark missing
+            if qty is None or not isinstance(qty, (int, float)) or qty <= 0:
                 missing_fields.append("quantity")
+                
+            unit = item.get("unit")
+            if not unit or str(unit).strip().lower() in ("none", "null", ""):
+                if item.get("price") == 0.0:  # Only flag missing unit if it's not a price-based item
+                    missing_fields.append("unit")
+                    validation_warnings.append(f"Missing unit for '{item.get('name')}'.")
                 
             # If the product didn't match the catalog
             if not item.get("matched", True):
@@ -38,6 +44,6 @@ def validate_action_card(extracted_data: Dict[str, Any], transcript: str) -> Dic
     # We just need to merge any missing fields here
     
     return {
-        "missing_fields": missing_fields,
+        "missing_fields": list(dict.fromkeys(missing_fields)),
         "warnings": validation_warnings
     }

@@ -88,6 +88,7 @@ export async function getHealth(): Promise<{ status: string; timestamp: string; 
 export async function transcribeAudio(audioFile: File, provider: string = "gemini"): Promise<{ transcript: string; confidence: number | null }> {
   const formData = new FormData();
   formData.append('file', audioFile);
+  formData.append('provider', provider); // Send as Form Data
 
   const headers = await getAuthHeaders();
   const res = await fetch(`${API_BASE_URL}/transcribe?provider=${provider}`, {
@@ -104,11 +105,35 @@ export async function transcribeAudio(audioFile: File, provider: string = "gemin
   return res.json();
 }
 
+export async function extractActionCardFromAudio(
+  audioFile: File,
+  pipeline: string = "gemini_audio_extraction"
+): Promise<ActionCard> {
+  const formData = new FormData();
+  formData.append('file', audioFile);
+  formData.append('pipeline', pipeline);
+
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/extract-action-card-audio`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to extract order details from audio.');
+  }
+
+  return res.json();
+}
+
 export async function extractActionCard(
   transcript: string, 
   source: 'audio' | 'text' = 'text',
   provider: string = "gemini",
   stt_provider: string | null = null,
+  pipeline: string = "gemini_gemini",
   save_evaluation: boolean = false
 ): Promise<ActionCard> {
   const headers = await getAuthHeaders();
@@ -118,7 +143,7 @@ export async function extractActionCard(
       ...headers,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ transcript, source, provider, stt_provider, save_evaluation }),
+    body: JSON.stringify({ transcript, source, provider, stt_provider, pipeline, save_evaluation }),
   });
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);

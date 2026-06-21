@@ -30,7 +30,7 @@ export default function SignupPage() {
       if (authError) {
         setError(authError);
       } else if (user) {
-        router.push('/dashboard');
+        router.replace('/dashboard');
         router.refresh();
       }
     } catch (err: any) {
