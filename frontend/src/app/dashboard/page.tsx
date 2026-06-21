@@ -70,15 +70,12 @@ export default function Dashboard() {
         {/* Recent Cards Table */}
         <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-6 flex flex-col shadow-sm">
           <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Recent Orders</h2>
-              <p className="text-xs text-slate-500">The latest manual or voice-extracted orders in the system.</p>
-            </div>
+            <h2 className="text-xl font-bold text-slate-900">Recent Orders</h2>
             <Link
               href="/orders"
-              className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
+              className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors"
             >
-              View All Orders &rarr;
+              View All
             </Link>
           </div>
 

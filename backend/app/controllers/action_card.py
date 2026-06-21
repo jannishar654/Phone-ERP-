@@ -17,7 +17,8 @@ class ActionCardController:
     def get_card_by_id(card_id: str, user_id: Optional[str] = None) -> Optional[ActionCard]:
         if SupabaseService.is_available():
             data = SupabaseService.get_by_id(card_id, user_id)
-            return ActionCardController._parse_supabase_card(data) if data else None
+            if data:
+                return ActionCardController._parse_supabase_card(data)
         return store.get_by_id(card_id)
 
     @staticmethod
@@ -70,7 +71,8 @@ class ActionCardController:
             if "items" in update_data:
                 update_data["items"] = [i.model_dump() if hasattr(i, "model_dump") else i for i in update_data["items"]]
             result = SupabaseService.update(card_id, update_data, user_id)
-            return ActionCardController._parse_supabase_card(result) if result else None
+            if result:
+                return ActionCardController._parse_supabase_card(result)
             
         return store.update(card_id, card_data)
 
@@ -78,13 +80,16 @@ class ActionCardController:
     def update_card_status(card_id: str, status: str, user_id: Optional[str] = None) -> Optional[ActionCard]:
         if SupabaseService.is_available():
             result = SupabaseService.update(card_id, {"status": status}, user_id)
-            return ActionCardController._parse_supabase_card(result) if result else None
+            if result:
+                return ActionCardController._parse_supabase_card(result)
         return store.update_status(card_id, status)
 
     @staticmethod
     def delete_card(card_id: str, user_id: Optional[str] = None) -> bool:
         if SupabaseService.is_available():
-            return SupabaseService.delete(card_id, user_id)
+            success = SupabaseService.delete(card_id, user_id)
+            if success:
+                return True
         return store.delete(card_id)
 
     @staticmethod

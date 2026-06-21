@@ -79,22 +79,22 @@ function ActionCardContent() {
   const getCardValidationWarning = (card: ActionCard) => {
     const name = (card.customer_name || '').trim();
     if (!name || name.toLowerCase() === 'unknown') {
-      return "Customer Name is required and cannot be 'Unknown'.";
+      return "Customer name is missing.";
     }
     const address = (card.delivery_address || '').trim();
     if (!address) {
-      return "Delivery Address is required.";
+      return "Delivery address is missing.";
     }
     const validItems = card.items.filter(i => (i.name || '').trim() !== '');
     if (validItems.length === 0) {
-      return "At least one valid item name is required.";
+      return "At least one item is required in the order.";
     }
     for (const item of validItems) {
       if (!item.quantity || item.quantity <= 0) {
-        return `Item "${item.name}" must have a valid quantity greater than 0.`;
+        return `Quantity for "${item.name}" must be greater than 0.`;
       }
       if (item.price !== undefined && item.price !== null && item.price < 0) {
-        return `Item "${item.name}" cannot have a negative price.`;
+        return `Price for "${item.name}" cannot be negative.`;
       }
     }
     return null;
@@ -279,8 +279,9 @@ function ActionCardContent() {
                       ? 'bg-indigo-50 text-indigo-705 border-indigo-200'
                       : card.status === 'rejected'
                       ? 'bg-red-50 text-red-705 border-red-200'
-                      : 'bg-amber-50 text-amber-705 border-amber-250'
+                      : 'bg-amber-50 text-amber-700 border-amber-300 font-bold'
                   }`}>
+                    {card.status === 'pending' && <span className="h-1 w-1 rounded-full bg-amber-500 animate-pulse mr-1"></span>}
                     {card.status}
                   </span>
                 </div>
@@ -474,15 +475,16 @@ function ActionCardContent() {
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-mono text-slate-450 font-bold">{selectedCard.id}</span>
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border ${
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold border ${
                       selectedCard.status === 'completed' || selectedCard.status === 'delivered'
-                        ? 'bg-emerald-50 text-emerald-705 border-emerald-200'
+                        ? 'bg-emerald-50 text-emerald-705 border-emerald-200 uppercase tracking-wider'
                         : selectedCard.status === 'approved'
-                        ? 'bg-indigo-50 text-indigo-750 border-indigo-200'
+                        ? 'bg-indigo-50 text-indigo-750 border-indigo-200 uppercase tracking-wider'
                         : selectedCard.status === 'rejected'
-                        ? 'bg-red-50 text-red-705 border-red-200'
-                        : 'bg-amber-50 text-amber-705 border-amber-250'
+                        ? 'bg-red-50 text-red-705 border-red-200 uppercase tracking-wider'
+                        : 'bg-amber-50 text-amber-700 border-amber-300 font-bold uppercase tracking-wider shadow-3xs'
                     }`}>
+                      {selectedCard.status === 'pending' && <span className="h-1 w-1 rounded-full bg-amber-500 animate-pulse mr-1"></span>}
                       {selectedCard.status}
                     </span>
                   </div>
@@ -542,7 +544,7 @@ function ActionCardContent() {
                   </div>
 
                   <div className="pt-2 border-t border-slate-100">
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Order Line Items</h4>
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Order Items</h4>
                     <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
                       {selectedCard.items.map((item, idx) => (
                         <div key={idx} className="flex justify-between items-center text-xs p-2 rounded bg-slate-50 border border-slate-100 shadow-3xs">
@@ -733,14 +735,12 @@ function ActionCardContent() {
                     </div>
                   )}
                   {getCardValidationWarning(selectedCard) && (
-                    <div className="bg-amber-50 border border-amber-250 p-3 rounded-lg text-[10px] text-amber-850 font-semibold leading-relaxed flex items-start gap-2 my-2">
-                      <svg className="h-4 w-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                      <div>
-                        <span className="font-extrabold uppercase mr-1">[Warning]</span>
-                        {getCardValidationWarning(selectedCard)} Please edit order card to resolve.
-                      </div>
+                    <div className="text-sm text-amber-705 font-semibold flex items-center justify-start text-left gap-2 py-1 my-2">
+                      <span className="text-amber-500 text-base shrink-0">⚠</span>
+                      <span>
+                        <span className="font-bold">{getCardValidationWarning(selectedCard)}</span>{' '}
+                        <span className="text-amber-600 font-medium">Please edit the order card to resolve.</span>
+                      </span>
                     </div>
                   )}
 
