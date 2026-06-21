@@ -307,22 +307,22 @@ export default function CreateOrder() {
   const getValidationWarning = () => {
     const name = customerName.trim();
     if (!name || name.toLowerCase() === 'unknown') {
-      return "Customer Name is required and cannot be 'Unknown'.";
+      return "Customer name is missing.";
     }
     const address = deliveryAddress.trim();
     if (!address) {
-      return "Delivery Address is required.";
+      return "Delivery address is missing.";
     }
     const validItems = items.filter(i => i.name.trim() !== '');
     if (validItems.length === 0) {
-      return "At least one valid item name is required.";
+      return "At least one item is required in the order.";
     }
     for (const item of validItems) {
       if (item.quantity <= 0) {
-        return `Item "${item.name}" must have a valid quantity greater than 0.`;
+        return `Quantity for "${item.name}" must be greater than 0.`;
       }
       if (item.price !== undefined && item.price !== null && item.price < 0) {
-        return `Item "${item.name}" cannot have a negative price.`;
+        return `Price for "${item.name}" cannot be negative.`;
       }
     }
     return null;
@@ -378,18 +378,18 @@ const s = (secs % 60).toString().padStart(2, '0');
   return (
     <div className={`${isGenerated ? 'space-y-4' : 'space-y-6'} max-w-5xl mx-auto`}>
       {/* Page Header */}
-      <div>
+      <div className="text-center flex flex-col items-center justify-center pb-4">
         {isGenerated ? (
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">Review & Confirm Order</h1>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Review & Confirm Order</h1>
+            <p className="text-sm sm:text-base text-slate-500 mt-2 max-w-2xl">
               Verify the AI-extracted details below and submit to register the order.
             </p>
           </div>
         ) : (
           <div>
-            <h1 className="text-2xl font-extrabold text-slate-900">Voice-to-Order Simulator</h1>
-            <p className="mt-1 text-sm text-slate-500">
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Voice-to-Order Simulator</h1>
+            <p className="mt-2 text-sm sm:text-base text-slate-500 max-w-2xl">
               Simulate the complete phone order workflow: record audio, trigger mock AI parsing, verify details, and register.
             </p>
           </div>
@@ -553,6 +553,28 @@ const s = (secs % 60).toString().padStart(2, '0');
       {isGenerated && !isProcessing && (
         <div className="space-y-4">
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Global validation error */}
+            {validationError && (
+              <div className="text-base text-red-700 font-semibold flex items-center justify-start text-left gap-2 py-0">
+                <span className="text-red-500 text-lg shrink-0">⚠</span>
+                <span>
+                  <span className="font-bold">{validationError}</span>{' '}
+                  <span className="text-red-600/90 font-medium">Please edit the order before submission.</span>
+                </span>
+              </div>
+            )}
+
+            {/* Dynamic form warning */}
+            {getValidationWarning() && (
+              <div className="text-base text-amber-755 font-semibold flex items-center justify-start text-left gap-2 py-0">
+                <span className="text-amber-500 text-lg shrink-0">⚠</span>
+                <span>
+                  <span className="font-bold">{getValidationWarning()}</span>{' '}
+                  <span className="text-amber-605 font-medium">Please edit the order before submission.</span>
+                </span>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
               {/* Left Column - Forms & Items (Span 2) */}
               <div className="lg:col-span-2 space-y-6">
@@ -666,7 +688,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                       <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 002-2h-2" />
                       </svg>
-                      Extracted Line Items
+                      Extracted Order Items
                     </h3>
                     {isEditing && (
                       <button
@@ -781,66 +803,7 @@ const s = (secs % 60).toString().padStart(2, '0');
 
               {/* Right Column - Status, Signals & Transcript (Span 1) */}
               <div className="space-y-6">
-                {/* Context & Meta Card */}
-                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
-                  <h3 className="text-sm font-bold text-slate-900 pb-2 border-b border-slate-100 flex items-center gap-2">
-                    <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Order Context
-                  </h3>
 
-                  {/* Status */}
-                  <div>
-                    <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Verification Status</span>
-                    <span className="inline-flex items-center text-xs bg-amber-50 text-amber-705 border border-amber-200 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider">
-                      Pending Review
-                    </span>
-                  </div>
-
-                  {/* Payment Method */}
-                  <div>
-                    <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Payment Type</span>
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wider border ${
-                      paymentMethod === 'Credit (Udhaar)'
-                        ? 'bg-red-50 text-red-700 border-red-200'
-                        : paymentMethod === 'Cash' || paymentMethod === 'Online'
-                        ? 'bg-emerald-50 text-emerald-750 border-emerald-200'
-                        : 'bg-slate-50 text-slate-600 border-slate-200'
-                    }`}>
-                      {paymentMethod}
-                    </span>
-                  </div>
-
-                  {/* Signals/Flags */}
-                  {(riskFlags.length > 0 || validationWarnings.length > 0) && (
-                    <div className="pt-2 space-y-2 border-t border-slate-100">
-                      {riskFlags.map((risk, index) => (
-                        <div key={index} className="bg-red-50 border border-red-200 p-2 rounded-lg text-xs text-red-800 font-semibold flex items-start gap-1.5">
-                          <svg className="h-4 w-4 text-red-650 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          <div className="leading-tight">
-                            <span className="font-extrabold uppercase mr-1">Risk:</span>
-                            {risk}
-                          </div>
-                        </div>
-                      ))}
-
-                      {validationWarnings.map((warn, index) => (
-                        <div key={index} className="bg-amber-50 border border-amber-250 p-2 rounded-lg text-xs text-amber-800 font-semibold flex items-start gap-1.5">
-                          <svg className="h-4 w-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <div className="leading-tight">
-                            <span className="font-extrabold uppercase mr-1">Warning:</span>
-                            {warn}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
 
                 {/* Transcript Card */}
                 {transcript && (
@@ -938,30 +901,7 @@ const s = (secs % 60).toString().padStart(2, '0');
               </div>
             </div>
 
-            {/* Global warning/error before submit */}
-            {validationError && (
-              <div className="bg-red-50 border border-red-200 p-3.5 rounded-xl text-xs text-red-800 font-semibold leading-relaxed flex items-start gap-2">
-                <svg className="h-4 w-4 text-red-650 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                <div>
-                  <span className="font-extrabold uppercase mr-1">[Validation Warning]</span>
-                  {validationError} Please correct the fields before submitting.
-                </div>
-              </div>
-            )}
 
-            {getValidationWarning() && (
-              <div className="bg-amber-50 border border-amber-250 p-3.5 rounded-xl text-xs text-amber-805 font-semibold leading-relaxed flex items-start gap-2">
-                <svg className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                <div>
-                  <span className="font-extrabold uppercase mr-1">[Form Warning]</span>
-                  {getValidationWarning()} Edit details to complete all fields.
-                </div>
-              </div>
-            )}
 
             {/* Actions Footer Bar */}
             <div className="pt-4 border-t border-slate-200 flex justify-between items-center gap-3">
