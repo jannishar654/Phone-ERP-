@@ -6,6 +6,21 @@ import { createActionCard, extractActionCard, transcribeAudio, updateActionCard,
 import { saveVoiceRecording } from '@/lib/voice-recordings';
 import { Item } from '@/types';
 
+const isLargeQuantity = (qty: number | null | undefined, unit?: string | null) => {
+  if (qty === null || qty === undefined) return false;
+  const unitLower = (unit || '').toLowerCase().trim();
+  const thresholds: Record<string, number> = {
+    packet: 50,
+    kg: 25,
+    carton: 10,
+    dozen: 20,
+    litre: 20,
+    fallback: 20
+  };
+  const threshold = thresholds[unitLower] || thresholds['fallback'];
+  return qty > threshold;
+};
+
 export default function CreateOrder() {
   const router = useRouter();
 
@@ -42,6 +57,7 @@ export default function CreateOrder() {
   const [riskFlags, setRiskFlags] = useState<string[]>([]);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<string>('Not Specified');
+  const [missingFields, setMissingFields] = useState<string[]>([]);
   const [confidence, setConfidence] = useState<number | null>(null);
   const [sttProvider, setSttProvider] = useState<string | null>(null);
   const [extractionProvider, setExtractionProvider] = useState<string | null>(null);
@@ -185,6 +201,7 @@ export default function CreateOrder() {
       setRiskFlags(card.risk_flags || []);
       setValidationWarnings(card.validation_warnings || []);
       setPaymentMethod(card.payment_method || 'Not Specified');
+      setMissingFields(card.missing_fields || []);
       setConfidence(card.confidence !== undefined ? card.confidence : null);
       setSttProvider(card.stt_provider || null);
       setExtractionProvider(card.extraction_provider || null);
@@ -246,6 +263,7 @@ export default function CreateOrder() {
       setRiskFlags(card.risk_flags || []);
       setValidationWarnings(card.validation_warnings || []);
       setPaymentMethod(card.payment_method || 'Not Specified');
+      setMissingFields(card.missing_fields || []);
       setConfidence(card.confidence !== undefined ? card.confidence : null);
       setSttProvider(null);
       setExtractionProvider(card.extraction_provider || null);
@@ -352,7 +370,11 @@ export default function CreateOrder() {
       items: validItems,
       status: 'pending',
       source: orderSource,
-      transcript: transcript
+      transcript: transcript,
+      payment_method: paymentMethod,
+      risk_flags: riskFlags,
+      validation_warnings: validationWarnings,
+      missing_fields: missingFields
     };
 
     try {
@@ -575,6 +597,8 @@ const s = (secs % 60).toString().padStart(2, '0');
               </div>
             )}
 
+
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
               {/* Left Column - Forms & Items (Span 2) */}
               <div className="lg:col-span-2 space-y-6">
@@ -618,7 +642,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                           />
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Delivery Address</label>
                           <input
@@ -639,11 +663,24 @@ const s = (secs % 60).toString().padStart(2, '0');
                             className="w-full bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
                           />
                         </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Payment Method</label>
+                          <select
+                            value={paymentMethod}
+                            onChange={(e) => setPaymentMethod(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
+                          >
+                            <option value="Not Specified">Not Specified</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Online">Online</option>
+                            <option value="Credit (Udhaar)">Credit (Udhaar)</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                         <div className="space-y-0.5">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Customer</span>
                           <div className="text-sm font-bold text-slate-900 truncate">{customerName || 'N/A'}</div>
@@ -655,6 +692,16 @@ const s = (secs % 60).toString().padStart(2, '0');
                               <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                             </svg>
                             <span className="truncate">{customerPhone || 'N/A'}</span>
+                          </div>
+                        </div>
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Payment Method</span>
+                          <div className={`text-xs font-bold ${
+                            paymentMethod === 'Credit (Udhaar)' ? 'text-red-600' :
+                            paymentMethod === 'Cash' || paymentMethod === 'Online' ? 'text-emerald-600' :
+                            'text-slate-700'
+                          }`}>
+                            {paymentMethod || 'Not Specified'}
                           </div>
                         </div>
                         <div className="space-y-0.5 col-span-1">
@@ -757,7 +804,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                         <thead className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                           <tr>
                             <th className="py-2.5 px-4">Item Name</th>
-                            <th className="py-2.5 px-4 text-center w-24">Qty / Unit</th>
+                            <th className="py-2.5 px-4 text-center w-36 whitespace-nowrap">Qty / Unit</th>
                             <th className="py-2.5 px-4 text-right w-28">Est. Price</th>
                             <th className="py-2.5 px-4 text-right w-28">Total Price</th>
                           </tr>
@@ -769,8 +816,15 @@ const s = (secs % 60).toString().padStart(2, '0');
                             return (
                               <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
                                 <td className="py-3 px-4 font-semibold text-slate-800">{item.name || 'Unnamed Item'}</td>
-                                <td className="py-3 px-4 text-center text-slate-650 font-medium">
-                                  {item.quantity} {item.unit || ''}
+                                <td className="py-3 px-4 text-center text-slate-650 font-medium whitespace-nowrap">
+                                  <div className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap">
+                                    <span className="whitespace-nowrap">{item.quantity} {item.unit || ''}</span>
+                                    {isLargeQuantity(item.quantity, item.unit) && (
+                                      <span className="inline-flex items-center rounded bg-red-50 px-1.5 py-0.5 text-[9px] font-bold text-red-700 border border-red-200 uppercase tracking-wide shrink-0 whitespace-nowrap">
+                                        Large Qty
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="py-3 px-4 text-right font-mono font-medium text-slate-600">
                                   {hasPrice ? `₹${(item.price || 0).toFixed(2)}` : <span className="text-[11px] text-slate-400 italic font-sans">Pending</span>}
@@ -803,7 +857,6 @@ const s = (secs % 60).toString().padStart(2, '0');
 
               {/* Right Column - Status, Signals & Transcript (Span 1) */}
               <div className="space-y-6">
-
 
                 {/* Transcript Card */}
                 {transcript && (

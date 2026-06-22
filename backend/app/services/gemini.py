@@ -877,14 +877,19 @@ Return only the transcript text.
         if llm_payment.lower() not in ["", "not specified", "none", "null"] and llm_payment.lower() != det_payment.lower():
             validation_warnings.append(f"Payment method '{llm_payment}' overridden to '{det_payment}' based on transcript evidence.")
 
+        # Merge risk detector warnings to our main validation_warnings list
+        risk_warnings = risk_data.pop("validation_warnings", [])
+        validation_warnings.extend(risk_warnings)
+
         final_data.update(risk_data)
 
         validation_data = validate_action_card(final_data, transcript)
 
-        # Merge AI Fallback warnings into the main warnings list
-        if "warnings" not in validation_data:
-            validation_data["warnings"] = []
-        validation_data["warnings"].extend(final_data.pop("validation_warnings", []))
+        # Merge our local validation_warnings (AI Fallbacks, payment overrides, risk details)
+        # into the action card validation warnings
+        if "validation_warnings" not in validation_data:
+            validation_data["validation_warnings"] = []
+        validation_data["validation_warnings"].extend(final_data.pop("validation_warnings", []))
 
         final_data.update(validation_data)
 

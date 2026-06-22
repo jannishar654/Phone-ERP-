@@ -198,13 +198,20 @@ class OllamaService:
         # Apply deterministic action card validation
         from app.services.risk_detector import detect_risks
         risk_data = detect_risks(transcript, normalized_items)
+        
+        # Merge risk detector warnings to our main validation_warnings list
+        risk_warnings = risk_data.pop("validation_warnings", [])
+        validation_warnings.extend(risk_warnings)
+
         final_data.update(risk_data)
         
         validation_data = validate_action_card(final_data, transcript)
         
-        if "warnings" not in validation_data:
-            validation_data["warnings"] = []
-        validation_data["warnings"].extend(final_data.pop("validation_warnings", []))
+        # Merge our local validation_warnings (AI Fallbacks, payment overrides, risk details)
+        # into the action card validation warnings
+        if "validation_warnings" not in validation_data:
+            validation_data["validation_warnings"] = []
+        validation_data["validation_warnings"].extend(final_data.pop("validation_warnings", []))
         
         final_data.update(validation_data)
 
