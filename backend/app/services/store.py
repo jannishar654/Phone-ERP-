@@ -110,19 +110,34 @@ class InMemoryStore:
         return self._db.get(card_id)
 
     def create(self, card_data: Dict[str, Any]) -> ActionCard:
-        card_id = f"ac_{uuid.uuid4().hex[:8]}"
+        card_id = card_data.get("id") or f"ac_{uuid.uuid4().hex[:8]}"
         items_data = card_data.get("items", [])
         items = [Item(**item) if isinstance(item, dict) else item for item in items_data]
         
         new_card = ActionCard(
             id=card_id,
+            user_id=card_data.get("user_id"),
             customer_name=card_data.get("customer_name"),
             customer_phone=card_data.get("customer_phone"),
             items=items,
             delivery_address=card_data.get("delivery_address"),
             delivery_time=card_data.get("delivery_time"),
+            delivery_time_raw=card_data.get("delivery_time_raw"),
+            delivery_time_normalized=card_data.get("delivery_time_normalized"),
+            delivery_time_confidence=card_data.get("delivery_time_confidence"),
+            delivery_time_warning=card_data.get("delivery_time_warning"),
+            delivery_address_raw=card_data.get("delivery_address_raw"),
+            risk_flags=card_data.get("risk_flags", []),
+            missing_fields=card_data.get("missing_fields", []),
+            validation_warnings=card_data.get("validation_warnings", []),
+            payment_method=card_data.get("payment_method", "Not Specified"),
             status=card_data.get("status", "pending"),
             source=card_data.get("source", "text"),
+            message_type=card_data.get("message_type", "ORDER"),
+            confidence=card_data.get("confidence"),
+            stt_provider=card_data.get("stt_provider"),
+            extraction_provider=card_data.get("extraction_provider"),
+            metadata=card_data.get("metadata", {}),
             transcript=card_data.get("transcript", "Manual order entry"),
             created_at=datetime.utcnow()
         )
@@ -142,10 +157,38 @@ class InMemoryStore:
             card.delivery_address = card_data["delivery_address"]
         if "delivery_time" in card_data:
             card.delivery_time = card_data["delivery_time"]
+        if "delivery_time_raw" in card_data:
+            card.delivery_time_raw = card_data["delivery_time_raw"]
+        if "delivery_time_normalized" in card_data:
+            card.delivery_time_normalized = card_data["delivery_time_normalized"]
+        if "delivery_time_confidence" in card_data:
+            card.delivery_time_confidence = card_data["delivery_time_confidence"]
+        if "delivery_time_warning" in card_data:
+            card.delivery_time_warning = card_data["delivery_time_warning"]
+        if "delivery_address_raw" in card_data:
+            card.delivery_address_raw = card_data["delivery_address_raw"]
+        if "risk_flags" in card_data:
+            card.risk_flags = card_data["risk_flags"]
+        if "missing_fields" in card_data:
+            card.missing_fields = card_data["missing_fields"]
+        if "validation_warnings" in card_data:
+            card.validation_warnings = card_data["validation_warnings"]
+        if "payment_method" in card_data:
+            card.payment_method = card_data["payment_method"]
         if "status" in card_data:
             card.status = card_data["status"]
         if "source" in card_data:
             card.source = card_data["source"]
+        if "message_type" in card_data:
+            card.message_type = card_data["message_type"]
+        if "confidence" in card_data:
+            card.confidence = card_data["confidence"]
+        if "stt_provider" in card_data:
+            card.stt_provider = card_data["stt_provider"]
+        if "extraction_provider" in card_data:
+            card.extraction_provider = card_data["extraction_provider"]
+        if "metadata" in card_data:
+            card.metadata = card_data["metadata"]
         if "transcript" in card_data:
             card.transcript = card_data["transcript"]
         if "items" in card_data:

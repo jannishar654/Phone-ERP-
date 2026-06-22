@@ -45,5 +45,5 @@ def validate_action_card(extracted_data: Dict[str, Any], transcript: str) -> Dic
     
     return {
         "missing_fields": list(dict.fromkeys(missing_fields)),
-        "warnings": validation_warnings
+        "validation_warnings": validation_warnings
     }
