@@ -252,7 +252,7 @@ async def extract_action_card_audio(
     )
 # Entity extraction endpoint
 @router.post("/extract-action-card", response_model=ActionCard, status_code=status.HTTP_201_CREATED)
-async def extract_action_card(payload: ExtractRequest) -> ActionCard:
+async def extract_action_card(payload: ExtractRequest, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
     try:
         extracted = await GeminiService.extract_order_details(
             payload.transcript,
@@ -336,7 +336,7 @@ async def extract_action_card(payload: ExtractRequest) -> ActionCard:
         "transcript": payload.transcript,
     }
 
-    return ActionCardController.create_card(card_data)
+    return ActionCardController.create_card(card_data, user_id)
 
 # Get all orders/cards
 @router.get("/action-cards", response_model=List[ActionCard], status_code=status.HTTP_200_OK)
