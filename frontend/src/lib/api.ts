@@ -334,3 +334,13 @@ export async function updateCatalogItemStatus(itemId: string, updates: any): Pro
   }
   return res.json();
 }
+
+export async function getOrders(): Promise<any[]> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/orders/`, { headers });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to fetch orders.');
+  }
+  return res.json();
+}

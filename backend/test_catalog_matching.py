@@ -224,5 +224,19 @@ class TestCatalogMatchingAndOrder(unittest.TestCase):
         mock_supabase.table().select().eq.assert_not_called()
         mock_supabase.table().select().is_.assert_not_called()
 
+    @patch("app.routes.catalog.supabase_client")
+    @patch("app.config.settings.settings.REQUIRE_AUTH", True)
+    def test_get_user_shop_id_auth_enabled_valid_user(self, mock_supabase):
+        from app.routes.catalog import get_user_shop_id
+        
+        mock_res = MagicMock()
+        mock_res.data = [{"id": "shop_456"}]
+        mock_supabase.table().select().eq().execute.return_value = mock_res
+        
+        shop_id = get_user_shop_id("user_123")
+        self.assertEqual(shop_id, "shop_456")
+        
+        mock_supabase.table().select().eq.assert_called_with("owner_id", "user_123")
+
 if __name__ == '__main__':
     unittest.main()

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase/client";
+import { getOrders } from "@/lib/api";
 
 interface OrderItem {
   id: string;
@@ -31,21 +31,9 @@ export default function OrdersPage() {
   }, []);
 
   const fetchOrders = async () => {
-    if (!supabase) {
-      setError("Supabase client not initialized.");
-      setLoading(false);
-      return;
-    }
     try {
       setLoading(true);
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData?.user) throw new Error("Not authenticated");
-
-      const { data: shopData } = await supabase.from("shops").select("id").eq("owner_id", userData.user.id).single();
-      if (!shopData) throw new Error("Shop not found. Please create a shop to view final orders.");
-
-      const { data, error } = await supabase.from("orders").select("*, order_items(*)").eq("shop_id", shopData.id).order("created_at", { ascending: false });
-      if (error) throw error;
+      const data = await getOrders();
       setOrders(data || []);
     } catch (err: any) {
       setError(err.message);
