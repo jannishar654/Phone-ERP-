@@ -192,5 +192,36 @@ class TestCatalogMatchingAndOrder(unittest.TestCase):
         except Exception as e:
             self.fail(f"Conversion crashed with exception: {e}")
 
+    @patch("app.routes.catalog.supabase_client")
+    @patch("app.config.settings.settings.REQUIRE_AUTH", False)
+    def test_get_user_shop_id_auth_disabled_none_user(self, mock_supabase):
+        from app.routes.catalog import get_user_shop_id
+        
+        mock_res = MagicMock()
+        mock_res.data = [{"id": "shop_123"}]
+        mock_supabase.table().select().eq().execute.return_value = mock_res
+        
+        # When user_id is None and auth is False, it should use demo UUID
+        shop_id = get_user_shop_id(None)
+        self.assertEqual(shop_id, "shop_123")
+        
+        # Verify Supabase was called with demo UUID, not "None"
+        mock_supabase.table().select().eq.assert_called_with("owner_id", "00000000-0000-0000-0000-000000000001")
+
+    @patch("app.routes.catalog.supabase_client")
+    @patch("app.config.settings.settings.REQUIRE_AUTH", True)
+    def test_get_user_shop_id_auth_enabled_none_user(self, mock_supabase):
+        from app.routes.catalog import get_user_shop_id
+        from fastapi import HTTPException
+        
+        # When user_id is None and auth is True, it should raise 401
+        with self.assertRaises(HTTPException) as context:
+            get_user_shop_id(None)
+        
+        self.assertEqual(context.exception.status_code, 401)
+        self.assertEqual(context.exception.detail, "Authentication required")
+        # Ensure Supabase wasn't queried
+        mock_supabase.table().select().eq.assert_not_called()
+
 if __name__ == '__main__':
     unittest.main()

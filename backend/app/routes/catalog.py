@@ -8,6 +8,14 @@ from app.services.supabase import supabase_client
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
 
 def get_user_shop_id(user_id: str) -> str:
+    from app.config.settings import settings
+    
+    if settings.REQUIRE_AUTH and not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+        
+    if not user_id:
+        user_id = "00000000-0000-0000-0000-000000000001"
+        
     if supabase_client is None:
         return "mock-shop"
         
@@ -18,7 +26,7 @@ def get_user_shop_id(user_id: str) -> str:
         try:
             shop_data = {
                 "owner_id": user_id,
-                "name": "My Default Shop",
+                "name": "Default Shop",
                 "phone": "+910000000000"
             }
             new_shop = supabase_client.table("shops").insert(shop_data).execute()
