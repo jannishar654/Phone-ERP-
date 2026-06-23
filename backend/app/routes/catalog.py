@@ -13,11 +13,29 @@ def get_user_shop_id(user_id: str) -> str:
     if settings.REQUIRE_AUTH and not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
         
-    if not user_id:
-        user_id = "00000000-0000-0000-0000-000000000001"
-        
     if supabase_client is None:
         return "mock-shop"
+        
+    if not settings.REQUIRE_AUTH and not user_id:
+        # Demo mode: Use the shop where owner_id is NULL
+        res = supabase_client.table("shops").select("id").is_("owner_id", "null").execute()
+        if not res.data:
+            try:
+                shop_data = {
+                    "name": "Demo Shop",
+                    "phone": "+910000000000"
+                }
+                new_shop = supabase_client.table("shops").insert(shop_data).execute()
+                if new_shop.data:
+                    return new_shop.data[0]["id"]
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Demo shop creation failed: {e}")
+            raise HTTPException(status_code=500, detail="Demo shop creation failed. Make sure to run the 005_demo_mode_support.sql migration.")
+        return res.data[0]["id"]
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
         
     # Helper to get the first shop_id for the user
     res = supabase_client.table("shops").select("id").eq("owner_id", user_id).execute()

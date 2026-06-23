@@ -199,14 +199,14 @@ class TestCatalogMatchingAndOrder(unittest.TestCase):
         
         mock_res = MagicMock()
         mock_res.data = [{"id": "shop_123"}]
-        mock_supabase.table().select().eq().execute.return_value = mock_res
+        mock_supabase.table().select().is_().execute.return_value = mock_res
         
-        # When user_id is None and auth is False, it should use demo UUID
+        # When user_id is None and auth is False, it should use the demo shop where owner_id IS NULL
         shop_id = get_user_shop_id(None)
         self.assertEqual(shop_id, "shop_123")
         
-        # Verify Supabase was called with demo UUID, not "None"
-        mock_supabase.table().select().eq.assert_called_with("owner_id", "00000000-0000-0000-0000-000000000001")
+        # Verify Supabase was called to check owner_id IS NULL
+        mock_supabase.table().select().is_.assert_called_with("owner_id", "null")
 
     @patch("app.routes.catalog.supabase_client")
     @patch("app.config.settings.settings.REQUIRE_AUTH", True)
@@ -222,6 +222,7 @@ class TestCatalogMatchingAndOrder(unittest.TestCase):
         self.assertEqual(context.exception.detail, "Authentication required")
         # Ensure Supabase wasn't queried
         mock_supabase.table().select().eq.assert_not_called()
+        mock_supabase.table().select().is_.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main()
