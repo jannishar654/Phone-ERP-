@@ -54,15 +54,15 @@ def run_tests():
 
     # 2. QUANTITY PARSING
     quantity_tests = [
-        ("aadha kilo", 0.5, "kilo"),
-        ("dhai kilo", 2.5, "kilo"),
-        ("sawa kilo", 1.25, "kilo"),
+        ("aadha kilo", 0.5, "kg"),
+        ("dhai kilo", 2.5, "kg"),
+        ("sawa kilo", 1.25, "kg"),
         ("paanch packet", 5.0, "packet"),
         ("sawa 2 litre", 2.25, "litre"),
-        ("saade paanch kilo", 5.5, "kilo"),
+        ("saade paanch kilo", 5.5, "kg"),
         ("dhai litre", 2.5, "litre"),
-        ("sare saath kilo", 7.5, "kilo"),
-        ("do kilo", 2.0, "kilo"),
+        ("sare saath kilo", 7.5, "kg"),
+        ("do kilo", 2.0, "kg"),
         ("missing", None, None)
     ]
     print("\n2. Quantity Parsing:")

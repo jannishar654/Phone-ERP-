@@ -45,6 +45,9 @@ class ActionCard(BaseModel):
     extraction_provider: Optional[str] = None
     metadata: dict = Field(default_factory=dict)
     transcript: str
+    order_id: Optional[str] = None
+    shop_id: Optional[str] = None
+    customer_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
@@ -74,6 +77,8 @@ class ActionCardCreate(BaseModel):
     extraction_provider: Optional[str] = None
     metadata: dict = Field(default_factory=dict)
     transcript: str = "Manual order entry"
+    shop_id: Optional[str] = None
+    customer_id: Optional[str] = None
 
 
 class ActionCardUpdate(BaseModel):
@@ -98,6 +103,9 @@ class ActionCardUpdate(BaseModel):
     extraction_provider: Optional[str] = None
     metadata: Optional[dict] = None
     transcript: Optional[str] = None
+    order_id: Optional[str] = None
+    shop_id: Optional[str] = None
+    customer_id: Optional[str] = None
 
 
 class StatusUpdate(BaseModel):

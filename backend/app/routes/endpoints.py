@@ -11,8 +11,14 @@ from app.config.settings import settings
 
 import logging
 
+from app.routes import catalog, orders, telegram
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+router.include_router(catalog.router)
+router.include_router(orders.router)
+router.include_router(telegram.router)
 
 class ExtractRequest(BaseModel):
     transcript: str

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { getActionCards, updateActionCardStatus, updateActionCard } from '@/lib/api';
+import { getActionCards, updateActionCardStatus, updateActionCard, convertActionCardToOrder } from '@/lib/api';
 import { ActionCard, Item } from '@/types';
 
 // Main content wrapping the search params logic
@@ -139,6 +139,17 @@ function ActionCardContent() {
       setCards(cards.map(c => c.id === selectedCard.id ? updated : c));
     } catch (err) {
       alert('Failed to update item resolution on the backend.');
+    }
+  };
+
+  const handleConvertToOrder = async () => {
+    if (!selectedCard) return;
+    try {
+      await convertActionCardToOrder(selectedCard.id);
+      alert('Order successfully generated!');
+      router.push('/orders');
+    } catch (err: any) {
+      alert('Failed to convert to order: ' + err.message);
     }
   };
 
@@ -766,6 +777,17 @@ function ActionCardContent() {
                   >
                     Edit Order Card
                   </button>
+                  
+                  {selectedCard.status === 'approved' && (
+                    <div className="pt-2">
+                      <button
+                        onClick={handleConvertToOrder}
+                        className="w-full px-3 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold cursor-pointer transition-colors shadow-md"
+                      >
+                        Generate Final Bill / Order
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )
