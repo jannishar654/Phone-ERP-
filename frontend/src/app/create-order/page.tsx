@@ -416,7 +416,7 @@ export default function CreateOrder() {
       } else {
         await createActionCard(payload);
       }
-      router.push('/orders');
+      router.push('/action-card');
       router.refresh();
     } catch (err) {
       alert("Failed to submit order. Falling back to local storage.");

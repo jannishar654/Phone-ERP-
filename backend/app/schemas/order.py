@@ -38,7 +38,7 @@ class OrderResponse(OrderBase):
     id: str
     created_at: datetime
     updated_at: datetime
-    items: List[OrderItemResponse] = Field(default_factory=list)
+    order_items: List[OrderItemResponse] = Field(default_factory=list)
 
     class Config:
         from_attributes = True

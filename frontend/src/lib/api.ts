@@ -318,7 +318,7 @@ export async function createCatalogItem(itemData: any): Promise<any> {
   return res.json();
 }
 
-export async function updateCatalogItemStatus(itemId: string, updates: any): Promise<any> {
+export async function updateCatalogItem(itemId: string, updates: any): Promise<any> {
   const headers = await getAuthHeaders();
   const res = await fetch(`${API_BASE_URL}/catalog/${itemId}`, {
     method: 'PUT',
@@ -331,6 +331,19 @@ export async function updateCatalogItemStatus(itemId: string, updates: any): Pro
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
     throw new Error(errorBody?.detail || 'Failed to update catalog item.');
+  }
+  return res.json();
+}
+
+export async function deleteCatalogItem(itemId: string): Promise<any> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/catalog/${itemId}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to delete catalog item.');
   }
   return res.json();
 }
