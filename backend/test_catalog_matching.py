@@ -86,7 +86,8 @@ class TestCatalogMatchingAndOrder(unittest.TestCase):
     def test_catalog_item_price_match(self, mock_get_items):
         # Mock catalog items response
         mock_get_items.return_value = [
-            {"id": "item1", "canonical_name": "surf excel", "display_name": "Surf Excel Easy Wash", "base_price": 50.0, "unit": "packet", "aliases": ["lal surf"]}
+            {"id": "item1", "canonical_name": "surf excel", "display_name": "Surf Excel Easy Wash", "base_price": 50.0, "unit": "packet", "aliases": ["lal surf"]},
+            {"id": "item2", "canonical_name": "Aashirvaad Atta", "display_name": "Aashirvaad Atta", "base_price": 40.0, "unit": "kg", "aliases": ["aata", "atta"]}
         ]
         
         # Test exact match
@@ -98,6 +99,12 @@ class TestCatalogMatchingAndOrder(unittest.TestCase):
         res = matching_service.match_product("lal surf", "shop1")
         self.assertEqual(res["resolution_status"], "matched")
         self.assertEqual(res["unit_price"], 50.0)
+
+        # Test aata alias match
+        res = matching_service.match_product("aata", "shop1")
+        self.assertEqual(res["resolution_status"], "matched")
+        self.assertEqual(res["unit_price"], 40.0)
+        self.assertEqual(res["canonical_name"], "Aashirvaad Atta")
 
     @patch.object(catalog_service, "get_items_by_shop")
     def test_unmatched_product_returns_review_required(self, mock_get_items):

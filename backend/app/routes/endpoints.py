@@ -27,9 +27,12 @@ class ExtractRequest(BaseModel):
     extraction_provider: Optional[str] = "gemini"
     pipeline: Optional[str] = "gemini_gemini"
 
-def _safe_items_from_extracted(extracted: Dict[str, Any]) -> List[Item]:
+def _safe_items_from_extracted(extracted: Dict[str, Any], shop_id: Optional[str] = None) -> List[Item]:
     raw_items = extracted.get("items", []) or []
     safe_items = []
+    
+    from app.services.matching_service import matching_service
+    
     for it in raw_items:
         try:
             name = (it.get("name") or "").strip() if isinstance(it, dict) else str(it)
@@ -50,13 +53,41 @@ def _safe_items_from_extracted(extracted: Dict[str, Any]) -> List[Item]:
                 unit = ""
 
             price = None
-            if isinstance(it, dict) and it.get("price") is not None:
+            price_status = "Pending Price Verification"
+            canonical_name = None
+            resolution_status = "unmatched"
+            possible_matches = []
+
+            # 1. Real Catalog Matching using shop_id
+            if shop_id:
+                matched = matching_service.match_product(name, shop_id)
+                resolution_status = matched.get("resolution_status", "unmatched")
+                canonical_name = matched.get("canonical_name")
+                possible_matches = matched.get("possible_matches", [])
+                if resolution_status in ["matched", "suggested"]:
+                    price = matched.get("unit_price")
+                    if matched.get("unit"):
+                        unit = matched.get("unit")
+                    price_status = "Verified"
+
+            # 2. Fallback if not matched but AI provided a price (not trusted, but kept)
+            if price is None and isinstance(it, dict) and it.get("price") is not None:
                 try:
                     price = float(it.get("price"))
                 except Exception:
-                    price = None
+                    pass
 
-            safe_items.append({"name": name, "quantity": qty if qty is not None else None, "unit": unit, "price": price})
+            safe_items.append({
+                "name": canonical_name or name,
+                "raw_name": name,
+                "quantity": qty if qty is not None else None,
+                "unit": unit,
+                "price": price,
+                "price_status": price_status,
+                "canonical_name": canonical_name,
+                "resolution_status": resolution_status,
+                "possible_matches": possible_matches
+            })
         except Exception:
             safe_items.append({"name": "Unknown Item", "quantity": None, "unit": "", "price": None})
 
@@ -74,10 +105,22 @@ def _create_card_from_extracted(
     transcript: str,
     user_id: Optional[str] = None,
 ) -> ActionCard:
+    shop_id = None
+    if user_id:
+        from app.services.supabase import supabase_client
+        if supabase_client is not None:
+            try:
+                res = supabase_client.table("shops").select("id").eq("owner_id", user_id).execute()
+                if res.data:
+                    shop_id = res.data[0]["id"]
+            except Exception:
+                pass
+
     card_data = {
+        "shop_id": shop_id,
         "customer_name": extracted.get("customer_name", "Unknown"),
         "customer_phone": extracted.get("customer_phone", ""),
-        "items": _safe_items_from_extracted(extracted),
+        "items": _safe_items_from_extracted(extracted, shop_id),
         "delivery_address": extracted.get("delivery_address", ""),
         "delivery_time": extracted.get("delivery_time", ""),
         "delivery_time_raw": extracted.get("delivery_time_raw"),
@@ -267,76 +310,20 @@ async def extract_action_card(payload: ExtractRequest, user_id: Optional[str] = 
             detail=str(error),
         ) from error
 
-    # Sanitize items to ensure types/constraints (Pydantic will enforce quantity > 0)
-    raw_items = extracted.get("items", []) or []
-    safe_items = []
-    for it in raw_items:
-        try:
-            name = (it.get("name") or "").strip() if isinstance(it, dict) else str(it)
-            if not name:
-                name = "Unknown Item"
-
-            # Allow missing/invalid quantity to pass through as missing/None so validators catch it
-            qty_raw = it.get("quantity")
-            if qty_raw is not None:
-                try:
-                    qty = float(qty_raw)
-                except Exception:
-                    qty = None
-            else:
-                qty = None
-
-            unit = (it.get("unit") or "") if isinstance(it, dict) else ""
-            if str(unit).strip().lower() in ["none", "null", "missing", "unknown"]:
-                unit = ""
-            price = None
-            if isinstance(it, dict) and it.get("price") is not None:
-                try:
-                    price = float(it.get("price"))
-                except Exception:
-                    price = None
-
-            safe_items.append({"name": name, "quantity": qty if qty is not None else None, "unit": unit, "price": price})
-        except Exception:
-            # On any unexpected structure, fall back to a single unknown item
-            safe_items.append({"name": "Unknown Item", "quantity": None, "unit": "", "price": None})
-
-    # Create Pydantic Item models (this will still validate and raise if something unexpected remains)
-    try:
-        items_models = [Item(**item) for item in safe_items]
-    except Exception as e:
-        # If validation still fails, fallback to a minimal item list but mark qty invalid
-        items_models = [Item(name="Unknown Item", quantity=None, price=None)]
-
-    card_data = {
-        "customer_name": extracted.get("customer_name", "Unknown"),
-        "customer_phone": extracted.get("customer_phone", ""),
-        "items": items_models,
-        "delivery_address": extracted.get("delivery_address", ""),
-        "delivery_time": extracted.get("delivery_time", ""),
-        "delivery_time_raw": extracted.get("delivery_time_raw"),
-        "delivery_time_normalized": extracted.get("delivery_time_normalized"),
-        "delivery_time_confidence": extracted.get("delivery_time_confidence"),
-        "delivery_time_warning": extracted.get("delivery_time_warning"),
-        "risk_flags": extracted.get("risk_flags", []),
-        "missing_fields": extracted.get("missing_fields", []),
-        "validation_warnings": extracted.get("validation_warnings", []),
-        "payment_method": extracted.get("payment_method"),
-        "status": "pending",
-        "source": payload.source,
-        "message_type": extracted.get("type", "ORDER"),
-        "confidence": extracted.get("confidence", 0.0),
-        "stt_provider": payload.stt_provider,
-        "extraction_provider": payload.extraction_provider,
-        "metadata": {
-            "pipeline": payload.pipeline,
-            "extraction_notes": extracted.get("extraction_notes", ""),
-            "multi_card_notes": "Multiple cards returned but currently only using the first card in UI." if extracted.get("_multi_card_flag") else ""
-        },
-        "transcript": payload.transcript,
-    }
-
-    return ActionCardController.create_card(card_data, user_id)
+    transcript = str(
+        extracted.get("transcript")
+        or extracted.get("metadata", {}).get("transcript_original", "")
+        or payload.transcript
+    )
+    return _create_card_from_extracted(
+        extracted,
+        source=payload.source,
+        stt_provider=payload.stt_provider,
+        extraction_provider=payload.extraction_provider,
+        pipeline=payload.pipeline,
+        transcript=transcript,
+        user_id=user_id,
+    )
 
 # Get all orders/cards
 @router.get("/action-cards", response_model=List[ActionCard], status_code=status.HTTP_200_OK)

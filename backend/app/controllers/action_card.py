@@ -28,12 +28,23 @@ class ActionCardController:
             
         if SupabaseService.is_available():
             card_id = card_data.get("id") or f"ac_{uuid.uuid4().hex[:8]}"
+            
+            # Fetch and attach shop_id to ensure catalog matching works for this card
+            if user_id and not card_data.get("shop_id"):
+                try:
+                    res = SupabaseService.supabase.table("shops").select("id").eq("owner_id", user_id).execute()
+                    if res.data:
+                        card_data["shop_id"] = res.data[0]["id"]
+                except Exception as e:
+                    pass
+
             items = card_data.get("items", [])
             items_dict = [i.model_dump() if hasattr(i, "model_dump") else i for i in items]
             
             insert_data = {
                 "id": card_id,
                 "user_id": card_data.get("user_id"),
+                "shop_id": card_data.get("shop_id"),
                 "customer_name": card_data.get("customer_name"),
                 "customer_phone": card_data.get("customer_phone"),
                 "items": items_dict,
