@@ -174,3 +174,9 @@ Before or immediately after deploying to production (e.g., Render for Backend, V
    - Speak/type an order via **Create Order** or the Telegram bot.
    - Verify the Action Card matches the catalog deterministically and calculates the correct price.
    - Approve the card and verify the final `Order` is securely committed to the database.
+
+## 14. Migration Notes for Production Auth
+With the enforcement of `REQUIRE_AUTH=true`, all old records (action cards, orders, catalog items) created previously under "demo mode" (where `user_id` or `owner_id` was `NULL`) are intentionally isolated and will **not** appear for authenticated production users.
+- **Do not automatically merge** old NULL records into real users unless explicitly requested by the shop owner.
+- These records are safe to ignore or manually delete, as they were generated during unauthenticated testing.
+- To use the system going forward, simply sign up/login to create a pristine, production-ready, fully isolated shop profile.

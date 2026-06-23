@@ -23,6 +23,11 @@ class CatalogService:
             return new_item
 
         try:
+            # Check for duplicate canonical_name
+            existing = self.supabase.table("catalog_items").select("id").eq("shop_id", item_data.shop_id).eq("canonical_name", item_data.canonical_name).execute()
+            if existing.data:
+                raise ValueError("This catalog item already exists")
+
             # Insert into catalog_items
             data = item_data.model_dump(exclude={"aliases"})
             res = self.supabase.table("catalog_items").insert(data).execute()
@@ -32,6 +37,11 @@ class CatalogService:
             
             # Insert aliases
             if item_data.aliases:
+                # Check for duplicate aliases
+                existing_aliases = self.supabase.table("product_aliases").select("alias").eq("shop_id", item_data.shop_id).in_("alias", item_data.aliases).execute()
+                if existing_aliases.data:
+                    raise ValueError("This catalog item already exists")
+
                 aliases_data = [
                     {"catalog_item_id": item["id"], "shop_id": item["shop_id"], "alias": a}
                     for a in item_data.aliases
@@ -40,6 +50,8 @@ class CatalogService:
             
             item["aliases"] = item_data.aliases
             return item
+        except ValueError as e:
+            raise e
         except Exception as e:
             logger.error(f"Error creating catalog item: {e}")
             return None

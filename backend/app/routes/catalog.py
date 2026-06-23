@@ -63,10 +63,15 @@ def create_catalog_item(item: CatalogItemCreate, user_id: str = Depends(get_curr
         raise HTTPException(status_code=403, detail="Not authorized to add items to this shop")
     item.shop_id = shop_id
     
-    created = catalog_service.create_item(item)
-    if not created:
-        raise HTTPException(status_code=500, detail="Failed to create catalog item")
-    return created
+    try:
+        created = catalog_service.create_item(item)
+        if not created:
+            raise HTTPException(status_code=500, detail="Failed to create catalog item")
+        return created
+    except ValueError as e:
+        if str(e) == "This catalog item already exists":
+            raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/", response_model=List[CatalogItemResponse])
 def get_catalog_items(user_id: str = Depends(get_current_user_id)):
