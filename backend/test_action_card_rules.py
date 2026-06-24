@@ -798,9 +798,27 @@ def run_tests():
     
     # Simulate the logic in endpoints.py
     def clean_warnings(extracted, items):
+        def _item_get(item, key, default=None):
+            if isinstance(item, dict):
+                return item.get(key, default)
+            return getattr(item, key, default)
+
         validation_warnings = extracted.get("validation_warnings", [])
         final_warnings = []
-        matched_names = [i.get("raw_name", i.get("name")) for i in items if i.get("resolution_status") in ("matched", "suggested") or (i.get("price") is not None and i.get("price") > 0)]
+        
+        matched_names = []
+        for i in items:
+            res_status = _item_get(i, "resolution_status")
+            price = _item_get(i, "price")
+            try:
+                price_val = float(price or 0)
+            except (TypeError, ValueError):
+                price_val = 0
+                
+            if res_status in ("matched", "suggested") or price_val > 0:
+                name_val = _item_get(i, "raw_name", _item_get(i, "name"))
+                if name_val:
+                    matched_names.append(name_val)
         for w in validation_warnings:
             if "No catalog match found" in w or "Ambiguous product" in w:
                 is_stale = False
@@ -813,8 +831,15 @@ def run_tests():
             final_warnings.append(w)
         return final_warnings
 
+    from pydantic import BaseModel
+    class MockItem(BaseModel):
+        name: str
+        raw_name: str
+        price: float
+        resolution_status: str
+
     items_mock = [
-        {"name": "atta", "raw_name": "atta", "price": 50, "resolution_status": "matched"}
+        MockItem(name="atta", raw_name="atta", price=50.0, resolution_status="matched")
     ]
     cleaned = clean_warnings(extracted_mock, items_mock)
     if "Ambiguous product 'atta'. No catalog match found." not in cleaned and "Missing quantity for sugar" in cleaned:

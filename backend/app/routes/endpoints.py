@@ -129,10 +129,28 @@ def _create_card_from_extracted(
 
     items = _safe_items_from_extracted(extracted, shop_id)
     
+    def _item_get(item, key, default=None):
+        if isinstance(item, dict):
+            return item.get(key, default)
+        return getattr(item, key, default)
+
     # Clean up stale catalog warnings if items are now matched
     validation_warnings = extracted.get("validation_warnings", [])
     final_warnings = []
-    matched_names = [i.get("raw_name", i.get("name")) for i in items if i.get("resolution_status") in ("matched", "suggested") or (i.get("price") is not None and i.get("price") > 0)]
+    
+    matched_names = []
+    for i in items:
+        res_status = _item_get(i, "resolution_status")
+        price = _item_get(i, "price")
+        try:
+            price_val = float(price or 0)
+        except (TypeError, ValueError):
+            price_val = 0
+            
+        if res_status in ("matched", "suggested") or price_val > 0:
+            name_val = _item_get(i, "raw_name", _item_get(i, "name"))
+            if name_val:
+                matched_names.append(name_val)
     for w in validation_warnings:
         if "No catalog match found" in w or "Ambiguous product" in w:
             is_stale = False
