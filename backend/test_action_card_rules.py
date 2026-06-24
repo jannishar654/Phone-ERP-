@@ -253,6 +253,29 @@ def run_tests():
             print(f"  [FAIL] '{raw_addr}' -> '{cleaned}' (Expected '{expected}')")
         total += 1
 
+    # 8c. PRODUCT NAME CLEANUP PARSING
+    print("\n8c. Product Name Cleanup Parsing:")
+    from app.services.gemini import GeminiService
+
+    product_cleanup_tests = [
+        ("sarf ka", "sarf"),
+        ("surf ka packet", "surf"),
+        ("doodh ki theli", "doodh"),
+        ("chai patti ka packet", "chai patti"),
+        ("parle g ka packet", "parle g"),
+        ("lal sarf wala", "lal sarf"),
+        ("10 rupiya wala parle g", "10 rupiya wala parle g"),
+        ("surf ka packet wala", "surf")
+    ]
+    for raw_prod, expected in product_cleanup_tests:
+        cleaned = GeminiService.clean_product_name(raw_prod)
+        if cleaned == expected:
+            print(f"  [PASS] '{raw_prod}' -> '{cleaned}'")
+            passed += 1
+        else:
+            print(f"  [FAIL] '{raw_prod}' -> '{cleaned}' (Expected '{expected}')")
+        total += 1
+
     # 9. DETERMINISTIC AGGREGATION
     print("\n9. Deterministic Aggregation:")
     from app.services.gemini import aggregate_items_deterministically

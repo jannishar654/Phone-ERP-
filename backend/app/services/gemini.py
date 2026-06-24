@@ -98,6 +98,28 @@ class GeminiService:
         return re.sub(r"\s+", " ", transcript).strip()
 
     @staticmethod
+    def clean_product_name(raw_name: str) -> str:
+        safe_name = str(raw_name).strip()
+        if not safe_name:
+            return safe_name
+
+        # Longer phrases must come first
+        filler_regex = r'(?:\s+(?:ka\s+packet|ki\s+packet|ke\s+packet|ka\s+dabba|ki\s+dabbi|ki\s+theli|ka\s+pouch|ka\s+pack|ka|ki|ke|wala|wali|wale))+$'
+        
+        # Apply repeatedly to handle nested cases like 'surf ka packet wala'
+        clean_name = safe_name
+        while True:
+            new_name = re.sub(filler_regex, '', clean_name, flags=re.IGNORECASE).strip()
+            if new_name == clean_name or not new_name:
+                break
+            clean_name = new_name
+            
+        if not clean_name:
+            clean_name = safe_name
+            
+        return clean_name
+
+    @staticmethod
     async def transcribe_audio_file(file_content: bytes, filename: str) -> str:
         """Upload audio to Gemini and return its transcript."""
 
@@ -494,9 +516,14 @@ Return only the transcript text.
                         qty = None
                         break
 
+                raw_name_original = safe_name
+                clean_name = GeminiService.clean_product_name(safe_name)
+                safe_name = clean_name
+
                 res = business_memory.resolve_product_detailed(safe_name, customer_id=cust_phone)
                 normalized_items.append({
                     "name": res["name"],
+                    "raw_name_original": raw_name_original,
                     "raw_name": res.get("raw_name", safe_name),
                     "canonical_name": res.get("canonical_name"),
                     "resolution_status": res.get("resolution_status", "unresolved"),
