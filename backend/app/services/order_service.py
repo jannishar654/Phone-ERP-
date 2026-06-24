@@ -117,7 +117,7 @@ class OrderService:
                 
             res = self.supabase.table("orders").insert(order_data).execute()
             if not res.data:
-                return None
+                raise Exception("Failed to insert order into database.")
             order = res.data[0]
             
             # 4. Insert order items
@@ -125,17 +125,21 @@ class OrderService:
                 oi["order_id"] = order["id"]
             
             if order_items_data:
-                self.supabase.table("order_items").insert(order_items_data).execute()
+                item_res = self.supabase.table("order_items").insert(order_items_data).execute()
+                if not item_res.data:
+                    raise Exception("Failed to insert order items into database.")
             
             # 5. Link back to action card
             self.supabase.table("action_cards").update({"order_id": order["id"], "status": "converted"}).eq("id", action_card_id).execute()
             
             # Fetch complete order
             res = self.supabase.table("orders").select("*, order_items(*)").eq("id", order["id"]).execute()
-            return res.data[0] if res.data else None
+            if not res.data:
+                raise Exception("Failed to fetch newly created order from database.")
+            return res.data[0]
             
         except Exception as e:
             logger.error(f"Error converting action card to order: {e}")
-            return None
+            raise Exception(f"Order conversion failed: {str(e)}")
 
 order_service = OrderService()

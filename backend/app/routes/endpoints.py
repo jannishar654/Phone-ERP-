@@ -208,7 +208,11 @@ def _create_card_from_extracted(
     card_data["confidence_label"] = label
     card_data["confidence_reasons"] = reasons
 
-    return ActionCardController.create_card(card_data, user_id)
+    try:
+        return ActionCardController.create_card(card_data, user_id)
+    except Exception as e:
+        logger.error(f"Failed to create Action Card: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Health check endpoint
 @router.get("/health", status_code=status.HTTP_200_OK, response_model=Dict[str, str])
@@ -406,37 +410,59 @@ async def get_action_card(card_id: str, user_id: Optional[str] = Depends(get_cur
 # Create manual card
 @router.post("/action-cards", response_model=ActionCard, status_code=status.HTTP_201_CREATED)
 async def create_action_card(payload: ActionCardCreate, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
-    return ActionCardController.create_card(payload.model_dump(), user_id)
+    try:
+        return ActionCardController.create_card(payload.model_dump(), user_id)
+    except Exception as e:
+        logger.error(f"Failed to create manual card: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Edit card
 @router.put("/action-cards/{card_id}", response_model=ActionCard, status_code=status.HTTP_200_OK)
 async def update_action_card(card_id: str, payload: ActionCardUpdate, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
-    updated_card = ActionCardController.update_card(card_id, payload.model_dump(exclude_unset=True), user_id)
-    if not updated_card:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"ActionCard with ID {card_id} not found"
-        )
-    return updated_card
+    try:
+        updated_card = ActionCardController.update_card(card_id, payload.model_dump(exclude_unset=True), user_id)
+        if not updated_card:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"ActionCard with ID {card_id} not found"
+            )
+        return updated_card
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update card: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Quick status update
 @router.patch("/action-cards/{card_id}/status", response_model=ActionCard, status_code=status.HTTP_200_OK)
 async def update_action_card_status(card_id: str, payload: StatusUpdate, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
-    updated_card = ActionCardController.update_card_status(card_id, payload.status, user_id)
-    if not updated_card:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"ActionCard with ID {card_id} not found"
-        )
-    return updated_card
+    try:
+        updated_card = ActionCardController.update_card_status(card_id, payload.status, user_id)
+        if not updated_card:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"ActionCard with ID {card_id} not found"
+            )
+        return updated_card
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update card status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Delete card
 @router.delete("/action-cards/{card_id}", status_code=status.HTTP_200_OK)
 async def delete_action_card(card_id: str, user_id: Optional[str] = Depends(get_current_user_id)):
-    success = ActionCardController.delete_card(card_id, user_id)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"ActionCard with ID {card_id} not found"
-        )
-    return {"message": f"ActionCard {card_id} deleted successfully"}
+    try:
+        success = ActionCardController.delete_card(card_id, user_id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"ActionCard with ID {card_id} not found"
+            )
+        return {"detail": "ActionCard deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete card: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

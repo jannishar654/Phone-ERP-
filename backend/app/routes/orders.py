@@ -11,10 +11,11 @@ from app.routes.catalog import get_user_shop_id
 
 @router.post("/action-cards/{action_card_id}/convert", response_model=OrderResponse)
 def convert_action_card(action_card_id: str, user_id: str = Depends(get_current_user_id)):
-    order = order_service.convert_action_card_to_order(action_card_id, user_id)
-    if not order:
-        raise HTTPException(status_code=400, detail="Failed to convert action card to order")
-    return order
+    try:
+        order = order_service.convert_action_card_to_order(action_card_id, user_id)
+        return order
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/", response_model=List[OrderResponse])
 def get_orders(user_id: str = Depends(get_current_user_id)):
