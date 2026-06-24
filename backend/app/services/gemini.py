@@ -390,6 +390,7 @@ Return only the transcript text.
     "## EXAMPLES\n"
     "'lal Surf dena' → name:'lal Surf'\n"
     "'dus wala Parle' → name:'dus wala Parle'\n"
+    "'paanch rupaye wala toffee ka packet das dabba' → name:'5 rupaye wala toffee', quantity:10, unit:'dabba'\n"
     "'udhaar mein likh dena' → payment_method:'Credit (Udhaar)'\n"
     "'kal 5:30 baje Guptastore... unka naam Shayam hai' "
     "→ customer_name:'Shayam', delivery_time_raw:'kal 5:30 baje', delivery_address:'Guptastore'\n"
@@ -611,7 +612,12 @@ Return only the transcript text.
                     "Shainbag": "Shaheen Bagh",
                     "Batla House": "Batla House",
                     "Okhla": "Okhla",
-                    "Jamia Nagar": "Jamia Nagar"
+                    "Jamia Nagar": "Jamia Nagar",
+                    "Defence Colony": "Defence Colony",
+                    "Delhi": "Delhi",
+                    "New Delhi": "New Delhi",
+                    "Kalkaji": "Kalkaji",
+                    "Zakir Nagar": "Zakir Nagar"
                 }
                 for k, v in locality_map.items():
                     # Replace with proper casing if found, optionally add a comma if it's appended at the end without one
@@ -619,8 +625,9 @@ Return only the transcript text.
                         # Standardize spelling
                         clean_address = re.sub(re.escape(k), v, clean_address, flags=re.IGNORECASE)
                         # Add a comma before the locality if there isn't one and it's not the first word
-                        if not re.search(r',\s*' + re.escape(v), clean_address, flags=re.IGNORECASE):
-                            clean_address = re.sub(r'\s+' + re.escape(v), f", {v}", clean_address, flags=re.IGNORECASE)
+                        # To prevent matching "New Delhi" when "Delhi" is processed, ensure it matches whole words
+                        if not re.search(r',\s*' + re.escape(v) + r'\b', clean_address, flags=re.IGNORECASE):
+                            clean_address = re.sub(r'(?<!,\s)\b' + re.escape(v) + r'\b', f", {v}", clean_address, flags=re.IGNORECASE)
                 
                 # Cleanup double commas and weird spacing
                 clean_address = re.sub(r'\s*,\s*', ', ', clean_address).strip(', ')
@@ -988,6 +995,7 @@ Return only the transcript text.
             "## EXAMPLES\n"
             "- Local alias: 'lal Surf dena' -> name: 'lal Surf'\n"
             "- Pack variant: 'dus wala Parle' -> name: 'dus wala Parle'\n"
+            "- Numeric variant: 'paanch rupaye wala toffee ka packet das dabba' -> name: '5 rupaye wala toffee', quantity: 10, unit: 'dabba'\n"
             "- Credit: 'udhaar mein likh dena' -> payment_method: 'Credit/Udhaar', extraction_notes: 'User requested udhaar/credit'\n"
             "- Time & Name: 'kal aisa karna 5:30 baje Guptastore... unka naam Shayam hai' -> customer_name: 'Shayam', delivery_time_raw: 'kal 5:30 baje', delivery_address: 'Guptastore'\n"
             "- Cancellation: 'kal wala chips cancel kar do' -> type: 'CANCEL', extraction_notes: 'Cancelling previous chips order'\n"

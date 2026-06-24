@@ -127,11 +127,28 @@ def _create_card_from_extracted(
             except Exception:
                 pass
 
+    items = _safe_items_from_extracted(extracted, shop_id)
+    
+    # Clean up stale catalog warnings if items are now matched
+    validation_warnings = extracted.get("validation_warnings", [])
+    final_warnings = []
+    matched_names = [i.get("raw_name", i.get("name")) for i in items if i.get("resolution_status") in ("matched", "suggested") or (i.get("price") is not None and i.get("price") > 0)]
+    for w in validation_warnings:
+        if "No catalog match found" in w or "Ambiguous product" in w:
+            is_stale = False
+            for mn in matched_names:
+                if mn and (f"'{mn}'" in w or f"'{mn.lower()}'" in w.lower()):
+                    is_stale = True
+                    break
+            if is_stale:
+                continue
+        final_warnings.append(w)
+
     card_data = {
         "shop_id": shop_id,
         "customer_name": extracted.get("customer_name", "Unknown"),
         "customer_phone": extracted.get("customer_phone", ""),
-        "items": _safe_items_from_extracted(extracted, shop_id),
+        "items": items,
         "delivery_address": extracted.get("delivery_address", ""),
         "delivery_time": extracted.get("delivery_time", ""),
         "delivery_time_raw": extracted.get("delivery_time_raw"),
@@ -140,7 +157,7 @@ def _create_card_from_extracted(
         "delivery_time_warning": extracted.get("delivery_time_warning"),
         "risk_flags": extracted.get("risk_flags", []),
         "missing_fields": extracted.get("missing_fields", []),
-        "validation_warnings": extracted.get("validation_warnings", []),
+        "validation_warnings": final_warnings,
         "payment_method": extracted.get("payment_method"),
         "status": "pending",
         "source": source,
@@ -156,6 +173,12 @@ def _create_card_from_extracted(
         },
         "transcript": transcript,
     }
+
+    from app.services.confidence_scorer import ConfidenceScorer
+    score, label, reasons = ConfidenceScorer.calculate_confidence(card_data)
+    card_data["confidence_score"] = score
+    card_data["confidence_label"] = label
+    card_data["confidence_reasons"] = reasons
 
     return ActionCardController.create_card(card_data, user_id)
 

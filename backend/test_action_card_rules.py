@@ -778,5 +778,61 @@ def run_tests():
     # 100 - 20 - 20 - 12 - 12 = 36 (Low)
     test_scorer("Combined Risk -> Low", combined_card, "Low", 36)
 
+    # 10. Mixed Priced and Unpriced Items
+    mixed_card = dict(perfect_card)
+    mixed_card["items"] = [
+        {"name": "atta", "quantity": 5, "unit": "kg", "price": 50},
+        {"name": "sugar", "quantity": 5, "unit": "kg", "price": 40},
+        {"name": "chawal", "quantity": 5, "unit": "kg", "price": 0},
+        {"name": "surf", "quantity": 5, "unit": "kg", "price": 0}
+    ]
+    # 100 - 12 - 12 = 76 (Medium)
+    test_scorer("Mixed Priced/Unpriced -> Medium", mixed_card, "Medium", 76)
+
+    print("\n--- Testing Stale Warning Cleanup (Endpoints Logic) ---")
+    extracted_mock = {
+        "validation_warnings": ["Ambiguous product 'atta'. No catalog match found.", "Missing quantity for sugar"],
+        "customer_name": "Danish",
+        "items": []
+    }
+    
+    # Simulate the logic in endpoints.py
+    def clean_warnings(extracted, items):
+        validation_warnings = extracted.get("validation_warnings", [])
+        final_warnings = []
+        matched_names = [i.get("raw_name", i.get("name")) for i in items if i.get("resolution_status") in ("matched", "suggested") or (i.get("price") is not None and i.get("price") > 0)]
+        for w in validation_warnings:
+            if "No catalog match found" in w or "Ambiguous product" in w:
+                is_stale = False
+                for mn in matched_names:
+                    if mn and (f"'{mn}'" in w or f"'{mn.lower()}'" in w.lower()):
+                        is_stale = True
+                        break
+                if is_stale:
+                    continue
+            final_warnings.append(w)
+        return final_warnings
+
+    items_mock = [
+        {"name": "atta", "raw_name": "atta", "price": 50, "resolution_status": "matched"}
+    ]
+    cleaned = clean_warnings(extracted_mock, items_mock)
+    if "Ambiguous product 'atta'. No catalog match found." not in cleaned and "Missing quantity for sugar" in cleaned:
+        print("  [PASS] Stale catalog warning cleaned up for matched item")
+        passed += 1
+    else:
+        print(f"  [FAIL] Warning cleanup failed: {cleaned}")
+    total += 1
+
+    print("\n--- Testing Name Cleanup Numeric Phrase Preservation ---")
+    from app.services.gemini import GeminiService
+    cleaned_name = GeminiService.clean_product_name("5 rupaye wala toffee ka")
+    if cleaned_name == "5 rupaye wala toffee":
+        print(f"  [PASS] Numeric variant phrase preserved: {cleaned_name}")
+        passed += 1
+    else:
+        print(f"  [FAIL] Numeric variant phrase not preserved: {cleaned_name}")
+    total += 1
+
 if __name__ == "__main__":
     run_tests()
