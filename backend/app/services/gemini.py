@@ -14,6 +14,7 @@ from app.utils.aliases import BUSINESS_ALIASES, normalize_alias
 from app.services.business_memory import business_memory
 from app.services.time_parser import parse_delivery_time
 from app.services.action_card_validator import validate_action_card
+from app.services.confidence_scorer import ConfidenceScorer
 
 logger = logging.getLogger(__name__)
 
@@ -681,6 +682,11 @@ Return only the transcript text.
                 validation_data["warnings"] = []
             validation_data["warnings"].extend(final_data.pop("validation_warnings", []))
             final_data.update(validation_data)
+
+            c_score, c_label, c_reasons = ConfidenceScorer.calculate_confidence(final_data)
+            final_data["confidence_score"] = c_score
+            final_data["confidence_label"] = c_label
+            final_data["confidence_reasons"] = c_reasons
 
             return final_data
 
@@ -1372,5 +1378,10 @@ Return only the transcript text.
         validation_data["validation_warnings"].extend(final_data.pop("validation_warnings", []))
 
         final_data.update(validation_data)
+
+        c_score, c_label, c_reasons = ConfidenceScorer.calculate_confidence(final_data)
+        final_data["confidence_score"] = c_score
+        final_data["confidence_label"] = c_label
+        final_data["confidence_reasons"] = c_reasons
 
         return final_data

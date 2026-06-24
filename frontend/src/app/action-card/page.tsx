@@ -515,13 +515,40 @@ function ActionCardContent() {
                   </h2>
                   <p className="text-sm text-indigo-650 font-bold mt-0.5 flex justify-between items-center">
                     <span>{selectedCard.customer_phone || 'No phone number provided'}</span>
-                    {selectedCard.confidence !== undefined && (
+                    {selectedCard.confidence_score !== undefined && selectedCard.confidence_label ? (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                        selectedCard.confidence_label === 'High' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                        selectedCard.confidence_label === 'Medium' ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                        'bg-red-100 text-red-800 border-red-300'
+                      }`}>
+                        Confidence: {selectedCard.confidence_score}% {selectedCard.confidence_label}
+                      </span>
+                    ) : selectedCard.confidence !== undefined && (
                       <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded">
                         Confidence: {(selectedCard.confidence * 100).toFixed(0)}%
                       </span>
                     )}
                   </p>
                 </div>
+                
+                {selectedCard.confidence_reasons && selectedCard.confidence_reasons.length > 0 && (
+                  <div className={`p-2 rounded mt-2 border ${
+                    selectedCard.confidence_label === 'High' ? 'bg-emerald-50 border-emerald-200' :
+                    selectedCard.confidence_label === 'Medium' ? 'bg-amber-50 border-amber-200' :
+                    'bg-red-50 border-red-200'
+                  }`}>
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Review Reasons:</h4>
+                    <ul className="text-xs space-y-0.5 pl-3 list-disc">
+                      {selectedCard.confidence_reasons.map((reason, idx) => (
+                        <li key={idx} className={
+                          selectedCard.confidence_label === 'High' ? 'text-emerald-700' :
+                          selectedCard.confidence_label === 'Medium' ? 'text-amber-700' : 
+                          'text-red-700'
+                        }>{reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 <div className="space-y-3">
                   <div>

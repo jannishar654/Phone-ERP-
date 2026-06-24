@@ -41,6 +41,9 @@ class ActionCard(BaseModel):
     source: str
     message_type: str = "ORDER"
     confidence: Optional[float] = None
+    confidence_score: Optional[int] = None
+    confidence_label: Optional[str] = None
+    confidence_reasons: Optional[List[str]] = Field(default_factory=list)
     stt_provider: Optional[str] = None
     extraction_provider: Optional[str] = None
     metadata: dict = Field(default_factory=dict)
@@ -73,6 +76,9 @@ class ActionCardCreate(BaseModel):
     source: str = "text"
     message_type: str = "ORDER"
     confidence: Optional[float] = None
+    confidence_score: Optional[int] = None
+    confidence_label: Optional[str] = None
+    confidence_reasons: Optional[List[str]] = Field(default_factory=list)
     stt_provider: Optional[str] = None
     extraction_provider: Optional[str] = None
     metadata: dict = Field(default_factory=dict)
@@ -99,6 +105,9 @@ class ActionCardUpdate(BaseModel):
     source: Optional[str] = None
     message_type: Optional[str] = None
     confidence: Optional[float] = None
+    confidence_score: Optional[int] = None
+    confidence_label: Optional[str] = None
+    confidence_reasons: Optional[List[str]] = None
     stt_provider: Optional[str] = None
     extraction_provider: Optional[str] = None
     metadata: Optional[dict] = None
