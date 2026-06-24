@@ -39,7 +39,7 @@ class ConfidenceScorer:
                 price = item.get("price")
                 if not price or float(price) <= 0:
                     score -= 12
-                    reasons.append(f"Price missing or unmatched catalog for: {name}")
+                    reasons.append(f"Price missing for {name}")
 
         # 4. Warnings and Risks
         validation_warnings = card_data.get("validation_warnings", [])
@@ -47,13 +47,13 @@ class ConfidenceScorer:
             w_lower = warning.lower()
             if "product_variant_unclear" in w_lower:
                 score -= 10
-                reasons.append("Product variant unclear warning present.")
+                reasons.append("Product variant needs review.")
             elif "am/pm ambiguity" in w_lower:
                 score -= 12
                 reasons.append("AM/PM ambiguity in delivery time.")
             elif "large_quantity" in w_lower:
-                score -= 4
-                reasons.append("Large quantity risk detected.")
+                score -= 2
+                reasons.append("Large quantity detected, verify before approval.")
             elif "cancellation" in w_lower or "return" in w_lower or "previous order" in w_lower:
                 score -= 8
                 reasons.append(f"Operation risk: {warning}")

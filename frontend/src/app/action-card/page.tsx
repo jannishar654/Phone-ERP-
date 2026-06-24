@@ -521,11 +521,11 @@ function ActionCardContent() {
                         selectedCard.confidence_label === 'Medium' ? 'bg-amber-100 text-amber-800 border-amber-300' :
                         'bg-red-100 text-red-800 border-red-300'
                       }`}>
-                        Confidence: {selectedCard.confidence_score}% {selectedCard.confidence_label}
+                        Review Readiness: {selectedCard.confidence_score}% {selectedCard.confidence_label}
                       </span>
                     ) : selectedCard.confidence !== undefined && (
                       <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded">
-                        Confidence: {(selectedCard.confidence * 100).toFixed(0)}%
+                        Review Readiness: {(selectedCard.confidence * 100).toFixed(0)}%
                       </span>
                     )}
                   </p>

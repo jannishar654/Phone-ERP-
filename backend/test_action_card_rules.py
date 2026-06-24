@@ -761,7 +761,13 @@ def run_tests():
     # 100 - 10 = 90
     test_scorer("Low LLM Confidence -> score drops", low_llm, "High", 90)
 
-    # 8. Combined Risk -> Low
+    # 8. Large quantity only -> High
+    large_qty_card = dict(perfect_card)
+    large_qty_card["validation_warnings"] = ["large_quantity for atta"]
+    # 100 - 2 = 98 (High)
+    test_scorer("Large Quantity Only -> High", large_qty_card, "High", 98)
+
+    # 9. Combined Risk -> Low
     combined_card = dict(perfect_card)
     combined_card["customer_name"] = "unknown" # -20
     combined_card["delivery_address"] = "" # -20

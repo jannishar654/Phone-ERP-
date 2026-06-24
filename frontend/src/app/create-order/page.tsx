@@ -659,7 +659,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                         confidenceLabel === 'Medium' ? 'bg-amber-100 text-amber-800 border-amber-300' :
                         'bg-red-100 text-red-800 border-red-300'
                       }`}>
-                        Confidence: {confidenceScore}% {confidenceLabel}
+                        Review Readiness: {confidenceScore}% {confidenceLabel}
                       </span>
                       <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Review Status</span>
                     </div>
