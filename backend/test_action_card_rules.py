@@ -248,6 +248,16 @@ def run_tests():
         (
             [{"name": "atta", "quantity": 65, "unit": "kg"}],
             [{"name": "atta", "quantity": 65, "unit": "kg"}]
+        ),
+        # 5 kg atta + 15 kg atta aur jod dena = 20 kg atta
+        (
+            [{"name": "atta", "quantity": 5, "unit": "kg"}, {"name": "atta", "quantity": 15, "unit": "kg"}],
+            [{"name": "atta", "quantity": 20, "unit": "kg"}]
+        ),
+        # 5 kg cheeni + 10 kg cheeni aur jod dena = 15 kg sugar
+        (
+            [{"name": "cheeni", "quantity": 5, "unit": "kg"}, {"name": "cheeni", "quantity": 10, "unit": "kg"}],
+            [{"name": "cheeni", "quantity": 15, "unit": "kg"}]
         )
     ]
 

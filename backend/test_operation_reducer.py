@@ -118,6 +118,17 @@ def run_tests():
                 {"operation_id": None, "name": "Surf Excel", "raw_name": "Surf Excel", "quantity": None, "unit": None},
                 {"operation_id": None, "name": "Parle-G Rs 10 pack", "raw_name": "Parle-G Rs 10 pack", "quantity": None, "unit": None}
             ]
+        },
+        {
+            "name": "12. Add more of same item (aur jod dena)",
+            "operations": [
+                {"sequence": 1, "type": "ADD", "raw_product": "aata", "quantity": 5, "unit": "kilo", "evidence": "5 kilo aata bhej dena"},
+                {"sequence": 2, "type": "ADD", "raw_product": "aata", "quantity": 15, "unit": "kilo", "evidence": "aata mein bhi 15 kilo aata aur jod dena"}
+            ],
+            "expected_items": [
+                {"operation_id": None, "name": "aata", "raw_name": "aata", "quantity": 5.0, "unit": "kilo"},
+                {"operation_id": None, "name": "aata", "raw_name": "aata", "quantity": 15.0, "unit": "kilo"}
+            ]
         }
     ]
 

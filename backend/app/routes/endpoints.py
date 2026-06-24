@@ -29,7 +29,7 @@ class ExtractRequest(BaseModel):
 
 def _safe_items_from_extracted(extracted: Dict[str, Any], shop_id: Optional[str] = None) -> List[Item]:
     raw_items = extracted.get("items", []) or []
-    safe_items = []
+    aggregated_items = {}
     
     from app.services.matching_service import matching_service
     
@@ -77,22 +77,33 @@ def _safe_items_from_extracted(extracted: Dict[str, Any], shop_id: Optional[str]
                 except Exception:
                     pass
 
-            safe_items.append({
-                "name": canonical_name or name,
-                "raw_name": name,
-                "quantity": qty if qty is not None else None,
-                "unit": unit,
-                "price": price,
-                "price_status": price_status,
-                "canonical_name": canonical_name,
-                "resolution_status": resolution_status,
-                "possible_matches": possible_matches
-            })
+            final_name = canonical_name or name
+            
+            if final_name in aggregated_items:
+                existing = aggregated_items[final_name]
+                if existing["quantity"] is not None and qty is not None:
+                    existing["quantity"] += qty
+                elif qty is not None:
+                    existing["quantity"] = qty
+            else:
+                aggregated_items[final_name] = {
+                    "name": final_name,
+                    "raw_name": name,
+                    "quantity": qty if qty is not None else None,
+                    "unit": unit,
+                    "price": price,
+                    "price_status": price_status,
+                    "canonical_name": canonical_name,
+                    "resolution_status": resolution_status,
+                    "possible_matches": possible_matches
+                }
         except Exception:
-            safe_items.append({"name": "Unknown Item", "quantity": None, "unit": "", "price": None})
+            if "Unknown Item" not in aggregated_items:
+                aggregated_items["Unknown Item"] = {"name": "Unknown Item", "quantity": None, "unit": "", "price": None}
+            pass
 
     try:
-        return [Item(**item) for item in safe_items]
+        return [Item(**item) for item in aggregated_items.values()]
     except Exception:
         return [Item(name="Unknown Item", quantity=None, price=None)]
 

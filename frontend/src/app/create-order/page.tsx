@@ -874,17 +874,18 @@ const s = (secs % 60).toString().padStart(2, '0');
                     </div>
                   )}
 
-                  <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center text-sm font-semibold text-slate-600">
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-2 text-sm font-semibold text-slate-600">
                     <span className="text-slate-500">Calculated Grand Total:</span>
-                    {items.some(item => item.price === undefined || item.price === null || item.price <= 0) ? (
-                      <span className="text-amber-600 font-bold text-xs italic bg-amber-50 px-2 py-1 rounded border border-amber-200">
-                        Pending Price Verification
-                      </span>
-                    ) : (
+                    <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
                       <span className="text-base sm:text-lg font-black text-slate-900 font-mono bg-slate-50 border border-slate-150 px-3 py-1 rounded">
                         ₹{orderTotal.toFixed(2)}
                       </span>
-                    )}
+                      {items.some(item => item.price === undefined || item.price === null || item.price <= 0) && (
+                        <span className="text-amber-600 font-bold text-xs italic bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                          + Pending Price Verification
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

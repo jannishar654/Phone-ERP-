@@ -343,6 +343,8 @@ Return only the transcript text.
     "Do NOT resolve corrections. Do NOT compute final state. Return every step.\n\n"
     "Self-correction: '5 kilo sugar... nahi 2 kilo sugar' "
     "→ ADD(sugar,5) then SET_QUANTITY(sugar,2). Return both.\n"
+    "Add more: '5 kilo sugar... 10 kilo aur jod dena' "
+    "→ ADD(sugar,5) then ADD(sugar,10). Do NOT use SET_QUANTITY for adding more.\n"
     "Cancel spoken: 'chips cancel kar do' → CANCEL operation. No ADD for chips.\n"
     "Return: 'kal ke biscuits wapas lo' → RETURN(biscuits).\n"
     "Substitute: 'Parle nahi toh Britannia' → SUBSTITUTE(Parle→Britannia). Not a normal ADD.\n"

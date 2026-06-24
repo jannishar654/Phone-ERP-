@@ -601,6 +601,25 @@ function ActionCardContent() {
                         </div>
                       ))}
                     </div>
+                    {(() => {
+                      const orderTotal = selectedCard.items.reduce((sum, item) => sum + ((item.quantity || 0) * (item.price || 0)), 0);
+                      const hasMissingPrice = selectedCard.items.some(item => item.price === undefined || item.price === null || item.price <= 0);
+                      return (
+                        <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-2 text-sm font-semibold text-slate-600">
+                          <span className="text-slate-500 text-xs uppercase tracking-wider">Calculated Grand Total</span>
+                          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
+                            <span className="text-base sm:text-lg font-black text-slate-900 font-mono bg-slate-50 border border-slate-150 px-3 py-1 rounded">
+                              ₹{orderTotal.toFixed(2)}
+                            </span>
+                            {hasMissingPrice && (
+                              <span className="text-amber-600 font-bold text-[10px] sm:text-xs italic bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                                + Pending Price Verification
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {selectedCard.metadata?.cancelled_items?.length > 0 && (
