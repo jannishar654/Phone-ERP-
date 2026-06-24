@@ -552,7 +552,35 @@ Return only the transcript text.
 
             raw_cust_name = primary_card.get("customer_name", "")
             cust_name = raw_cust_name.strip() if isinstance(raw_cust_name, str) else ""
+            # Clean filler words and format customer name
+            if cust_name:
+                cust_name = re.sub(r'(?:\s+(?:rahega|likhna|likh\s*dena|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
+                cust_name = cust_name.title()
+            
             normalized_cust = normalize_alias(cust_name, BUSINESS_ALIASES["customer_aliases"])
+
+            raw_delivery_address = str(primary_card.get("delivery_address") or "").strip()
+            clean_address = raw_delivery_address
+            if clean_address:
+                # Title case and common locality mappings
+                clean_address = clean_address.title()
+                locality_map = {
+                    "Shahin Bagh": "Shaheen Bagh",
+                    "Batla House": "Batla House",
+                    "Okhla": "Okhla",
+                    "Jamia Nagar": "Jamia Nagar"
+                }
+                for k, v in locality_map.items():
+                    # Replace with proper casing if found, optionally add a comma if it's appended at the end without one
+                    if k.lower() in clean_address.lower():
+                        # Standardize spelling
+                        clean_address = re.sub(re.escape(k), v, clean_address, flags=re.IGNORECASE)
+                        # Add a comma before the locality if there isn't one and it's not the first word
+                        if not re.search(r',\s*' + re.escape(v), clean_address, flags=re.IGNORECASE):
+                            clean_address = re.sub(r'\s+' + re.escape(v), f", {v}", clean_address, flags=re.IGNORECASE)
+                
+                # Cleanup double commas and weird spacing
+                clean_address = re.sub(r'\s*,\s*', ', ', clean_address).strip(', ')
 
             raw_delivery_time = primary_card.get("delivery_time_raw", primary_card.get("delivery_time", ""))
             safe_delivery_time = raw_delivery_time.strip() if isinstance(raw_delivery_time, str) else ""
@@ -562,7 +590,7 @@ Return only the transcript text.
             final_data = {
                 "customer_name": normalized_cust,
                 "customer_phone": cust_phone,
-                "delivery_address": str(primary_card.get("delivery_address") or "").strip(),
+                "delivery_address": clean_address,
                 "delivery_time_raw": raw_delivery_time,
                 "delivery_time_normalized": time_data["normalized"],
                 "delivery_time_confidence": time_data["confidence"],
@@ -589,6 +617,7 @@ Return only the transcript text.
                     "invalid_operations": normalization_metadata.get("invalid_operations", []),
                     "operation_warnings": normalization_metadata.get("operation_warnings", []),
                     "operations": operations,
+                    "raw_delivery_address": raw_delivery_address,
                     "stt_provider": "gemini_audio",
                     "extraction_provider": "gemini",
                     "pipeline": pipeline,

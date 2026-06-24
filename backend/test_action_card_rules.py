@@ -22,18 +22,19 @@ def run_tests():
     tomorrow_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
     today_date = datetime.now().strftime('%Y-%m-%d')
     time_tests = [
-        ("kal 5 baje, nahi aaj 8 baje", f"{today_date} 8 baje", "AM/PM ambiguity detected. Please confirm."),
-        ("kal sade 8", f"{tomorrow_date} 8:30", None),
+        ("kal 5 baje, nahi aaj 8 baje", f"{today_date} 8:00", "AM/PM ambiguity detected. Please confirm."),
+        ("kal sade 8", f"{tomorrow_date} 8:30", "AM/PM ambiguity detected. Please confirm."),
         ("sawa chhe", None, "Missing specific day"),
         ("paune 5", None, "Missing specific day"),
         ("dhai baje", None, "Missing specific day"),
-        ("kal 10:15 pe", f"{tomorrow_date} 10:15 pe", None),
-        ("kal 5:30 baje", f"{tomorrow_date} 5:30 baje", None),
-        ("kal aisa karna 8:30 baje", f"{tomorrow_date} 8:30 baje", None),
-        ("kalle esa karna 5:30 baje", f"{tomorrow_date} 5:30 baje", "Interpreted 'kalle' as 'kal'"),
-        ("kal ka order cancel karo, aaj 5 baje naya bhejna", f"{today_date} 5 baje", None),
+        ("kal 10:15 pe", f"{tomorrow_date} 10:15", "AM/PM ambiguity detected. Please confirm."),
+        ("kal 5:30 baje", f"{tomorrow_date} 5:30", "AM/PM ambiguity detected. Please confirm."),
+        ("kal aisa karna 8:30 baje", f"{tomorrow_date} 8:30", "AM/PM ambiguity detected. Please confirm."),
+        ("kalle esa karna 5:30 baje", f"{tomorrow_date} 5:30", "Interpreted 'kalle' as 'kal'"),
+        ("kal ka order cancel karo, aaj 5 baje naya bhejna", f"{today_date} 5:00", "AM/PM ambiguity detected. Please confirm."),
         ("5:30 baje bhejna", None, "Missing specific day"),
         ("kalle", None, "Uncertain delivery time"), # unrelated kalle without clock
+        ("kal 5:30 raat ko", f"{tomorrow_date} 5:30 PM", None),
     ]
     print("1. Time Parsing:")
     for raw, expected_time, expected_warning in time_tests:
@@ -195,15 +196,17 @@ def run_tests():
         if not cust_name or cust_name.lower() == "unknown":
             name_match = re.search(r'(?:unka naam|naam|customer ka naam|party ka naam)\s+(.*?)(?:\s+hai|\s+tha|\s+aur|$)', t_lower)
             if name_match:
-                cust_name = name_match.group(1).strip().title()
+                cust_name = name_match.group(1).strip()
         if cust_name and cust_name != "Unknown":
-            cust_name = re.sub(r'(?:\s+(?:likhna|likh\s*dena|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
+            cust_name = re.sub(r'(?:\s+(?:rahega|likhna|likh\s*dena|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
+            cust_name = cust_name.title()
         return cust_name
 
     name_cleanup_tests = [
         ("unka naam Danish Likhna", "Danish"),
         ("naam danish likhna", "Danish"),
-        ("party ka naam Ram hai theek hai", "Ram")
+        ("party ka naam Ram hai theek hai", "Ram"),
+        ("naam danish rahega", "Danish")
     ]
     for transcript, expected in name_cleanup_tests:
         cleaned = mock_extract_name(transcript)
@@ -212,6 +215,42 @@ def run_tests():
             passed += 1
         else:
             print(f"  [FAIL] '{transcript}' -> '{cleaned}' (Expected '{expected}')")
+        total += 1
+
+    # 8b. ADDRESS FORMATTING PARSING
+    print("\n8b. Address Formatting Parsing:")
+    def mock_format_address(raw_delivery_address):
+        clean_address = str(raw_delivery_address).strip()
+        if clean_address:
+            clean_address = clean_address.title()
+            locality_map = {
+                "Shahin Bagh": "Shaheen Bagh",
+                "Batla House": "Batla House",
+                "Okhla": "Okhla",
+                "Jamia Nagar": "Jamia Nagar"
+            }
+            for k, v in locality_map.items():
+                if k.lower() in clean_address.lower():
+                    clean_address = re.sub(re.escape(k), v, clean_address, flags=re.IGNORECASE)
+                    if not re.search(r',\s*' + re.escape(v), clean_address, flags=re.IGNORECASE):
+                        clean_address = re.sub(r'\s+' + re.escape(v), f", {v}", clean_address, flags=re.IGNORECASE)
+            
+            clean_address = re.sub(r'\s*,\s*', ', ', clean_address).strip(', ')
+        return clean_address
+
+    address_format_tests = [
+        ("gupta house shahin bagh", "Gupta House, Shaheen Bagh"),
+        ("gupta house, shahin bagh", "Gupta House, Shaheen Bagh"),
+        ("okhla", "Okhla"),
+        ("milan kalyan mandap jamia nagar", "Milan Kalyan Mandap, Jamia Nagar")
+    ]
+    for raw_addr, expected in address_format_tests:
+        cleaned = mock_format_address(raw_addr)
+        if cleaned == expected:
+            print(f"  [PASS] '{raw_addr}' -> '{cleaned}'")
+            passed += 1
+        else:
+            print(f"  [FAIL] '{raw_addr}' -> '{cleaned}' (Expected '{expected}')")
         total += 1
 
     # 9. DETERMINISTIC AGGREGATION
