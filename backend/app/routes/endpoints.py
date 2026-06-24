@@ -162,12 +162,22 @@ def _create_card_from_extracted(
                 continue
         final_warnings.append(w)
 
+    raw_address = extracted.get("delivery_address", "")
+    clean_address, address_meta = GeminiService.normalize_delivery_address(raw_address)
+    
+    # ensure raw address gets persisted in metadata
+    extracted_metadata = extracted.get("metadata", {})
+    if isinstance(extracted_metadata, dict):
+        extracted_metadata.update(address_meta)
+    else:
+        extracted_metadata = address_meta
+
     card_data = {
         "shop_id": shop_id,
         "customer_name": extracted.get("customer_name", "Unknown"),
         "customer_phone": extracted.get("customer_phone", ""),
         "items": items,
-        "delivery_address": extracted.get("delivery_address", ""),
+        "delivery_address": clean_address,
         "delivery_time": extracted.get("delivery_time", ""),
         "delivery_time_raw": extracted.get("delivery_time_raw"),
         "delivery_time_normalized": extracted.get("delivery_time_normalized"),
@@ -187,7 +197,7 @@ def _create_card_from_extracted(
             "pipeline": pipeline,
             "extraction_notes": extracted.get("extraction_notes", ""),
             "multi_card_notes": "Multiple cards returned but currently only using the first card in UI." if extracted.get("_multi_card_flag") else "",
-            **(extracted.get("metadata", {}) if isinstance(extracted.get("metadata"), dict) else {}),
+            **extracted_metadata,
         },
         "transcript": transcript,
     }

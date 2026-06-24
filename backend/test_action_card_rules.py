@@ -211,6 +211,8 @@ def run_tests():
     # 8b. ADDRESS FORMATTING PARSING
     print("\n8b. Address Formatting Parsing:")
     address_format_tests = [
+        ("defense colony gol chakkar ke paas new delhi", "Defence Colony, Gol Chakkar Ke Paas, New Delhi"),
+        ("defense colony gol chakkar ke paas new delhi mein", "Defence Colony, Gol Chakkar Ke Paas, New Delhi"),
         ("gupta house shahin bagh jamia nagar okhla", "Gupta House, Shaheen Bagh, Jamia Nagar, Okhla"),
         ("bhatla house kalkaji mandir ke paas", "Batla House, Kalkaji Mandir Ke Paas"),
         ("gupta ji ke yahan shahine bagh okhla new delhi", "Gupta Ji Ke Yahan, Shaheen Bagh, Okhla, New Delhi"),

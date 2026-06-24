@@ -152,12 +152,16 @@ class GeminiService:
             "Okhla": "Okhla"
         }
         
-        for k, v in locality_map.items():
-            if k.lower() in clean_address.lower():
-                # Replace with standard variant
-                clean_address = re.sub(re.escape(k), v, clean_address, flags=re.IGNORECASE)
-                # Add comma before locality if it doesn't already have one
-                clean_address = re.sub(r'(?<!,\s)(?<!,)\b' + re.escape(v) + r'\b', f", {v}", clean_address, flags=re.IGNORECASE)
+        # Build case-insensitive lookup
+        lookup_map = {k.lower(): v for k, v in locality_map.items()}
+        keys_sorted = sorted(locality_map.keys(), key=len, reverse=True)
+        
+        # Replace occurrences with comma-wrapped standard variants
+        pattern = re.compile(r'\b(' + '|'.join(map(re.escape, keys_sorted)) + r')\b', flags=re.IGNORECASE)
+        clean_address = pattern.sub(lambda m: f", {lookup_map[m.group(1).lower()]}, ", clean_address)
+                
+        # Remove trailing particles
+        clean_address = re.sub(r'\b(?:mein|me|pe)\s*$', '', clean_address, flags=re.IGNORECASE).strip()
                 
         # Cleanup double commas, leading commas, and weird spacing
         clean_address = re.sub(r'\s*,\s*', ', ', clean_address)
