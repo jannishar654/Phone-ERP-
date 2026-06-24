@@ -99,6 +99,74 @@ class GeminiService:
         return re.sub(r"\s+", " ", transcript).strip()
 
     @staticmethod
+    def clean_customer_name(raw_name: str) -> str:
+        cust_name = str(raw_name).strip()
+        if not cust_name or cust_name.upper() == "UNKNOWN":
+            return cust_name
+            
+        # Strip trailing filler words
+        cust_name = re.sub(r'(?:\s+(?:rahega|likhna|likh\s*dena|likh\s*do|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
+        
+        # Strip leading filler words
+        cust_name = re.sub(r'^(?:naam\s+|unka\s+naam\s+|party\s+ka\s+naam\s+|naam\s+jo\s+rahega\s+)', '', cust_name, flags=re.IGNORECASE).strip()
+        
+        return cust_name.title()
+
+    @staticmethod
+    def normalize_delivery_address(raw_address: str) -> tuple[str, dict]:
+        clean_address = str(raw_address).strip()
+        if not clean_address:
+            return "", {"raw_delivery_address": raw_address}
+            
+        # Basic cleanup: remove extraction filler phrases
+        filler_phrases = [
+            r'\baddress\s+rahega\b', r'\baddress\s+likh\s*lo\b', 
+            r'\blocation\s+rahega\b', r'\bpahuncha\s+dena\b', r'\bbhej\s+dena\b'
+        ]
+        for phrase in filler_phrases:
+            clean_address = re.sub(phrase, '', clean_address, flags=re.IGNORECASE)
+            
+        # trim spaces and collapse repeated spaces
+        clean_address = re.sub(r'\s+', ' ', clean_address).strip()
+        clean_address = clean_address.title()
+        
+        # Known locality mapping (longest phrases first)
+        locality_map = {
+            "Shahine Bagh": "Shaheen Bagh",
+            "Shahin Bagh": "Shaheen Bagh",
+            "Shain Bagh": "Shaheen Bagh",
+            "Shainbag": "Shaheen Bagh",
+            "Shaheen Bagh": "Shaheen Bagh",
+            "Batla House": "Batla House",
+            "Bhatla House": "Batla House",
+            "Kalkaji Mandir": "Kalkaji Mandir",
+            "Kalka Ji Mandir": "Kalkaji Mandir",
+            "Kalkaji": "Kalkaji",
+            "Kalka Ji": "Kalkaji",
+            "New Delhi": "New Delhi",
+            "Delhi": "Delhi",
+            "Defence Colony": "Defence Colony",
+            "Defense Colony": "Defence Colony",
+            "Jamia Nagar": "Jamia Nagar",
+            "Zakir Nagar": "Zakir Nagar",
+            "Okhla": "Okhla"
+        }
+        
+        for k, v in locality_map.items():
+            if k.lower() in clean_address.lower():
+                # Replace with standard variant
+                clean_address = re.sub(re.escape(k), v, clean_address, flags=re.IGNORECASE)
+                # Add comma before locality if it doesn't already have one
+                clean_address = re.sub(r'(?<!,\s)(?<!,)\b' + re.escape(v) + r'\b', f", {v}", clean_address, flags=re.IGNORECASE)
+                
+        # Cleanup double commas, leading commas, and weird spacing
+        clean_address = re.sub(r'\s*,\s*', ', ', clean_address)
+        clean_address = re.sub(r'(?:,\s*)+', ', ', clean_address)
+        clean_address = clean_address.strip(', ')
+        
+        return clean_address, {"raw_delivery_address": raw_address}
+
+    @staticmethod
     def clean_product_name(raw_name: str) -> str:
         safe_name = str(raw_name).strip()
         if not safe_name:
@@ -594,42 +662,14 @@ Return only the transcript text.
                     normalized_items = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
 
             raw_cust_name = primary_card.get("customer_name", "")
-            cust_name = raw_cust_name.strip() if isinstance(raw_cust_name, str) else ""
-            # Clean filler words and format customer name
-            if cust_name:
-                cust_name = re.sub(r'(?:\s+(?:rahega|likhna|likh\s*dena|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
-                cust_name = re.sub(r'^(?:naam\s+|unka\s+naam\s+|party\s+ka\s+naam\s+|naam\s+jo\s+rahega\s+)', '', cust_name, flags=re.IGNORECASE).strip()
-                cust_name = cust_name.title()
-            
+            cust_name = GeminiService.clean_customer_name(raw_cust_name)
             normalized_cust = normalize_alias(cust_name, BUSINESS_ALIASES["customer_aliases"])
 
             raw_delivery_address = str(primary_card.get("delivery_address") or "").strip()
-            clean_address = raw_delivery_address
-            if clean_address:
-                clean_address = clean_address.title()
-                locality_map = {
-                    "Shahine Bagh": "Shaheen Bagh",
-                    "Shahin Bagh": "Shaheen Bagh",
-                    "Shainbag": "Shaheen Bagh",
-                    "Batla House": "Batla House",
-                    "New Delhi": "New Delhi",
-                    "Delhi": "Delhi",
-                    "Defence Colony": "Defence Colony",
-                    "Jamia Nagar": "Jamia Nagar",
-                    "Zakir Nagar": "Zakir Nagar",
-                    "Kalkaji": "Kalkaji",
-                    "Okhla": "Okhla"
-                }
-                for k, v in locality_map.items():
-                    if k.lower() in clean_address.lower():
-                        clean_address = re.sub(re.escape(k), v, clean_address, flags=re.IGNORECASE)
-                        # Add comma before locality if it doesn't already have one
-                        clean_address = re.sub(r'(?<!,\s)(?<!,)\b' + re.escape(v) + r'\b', f", {v}", clean_address, flags=re.IGNORECASE)
-                
-                # Cleanup double commas, leading commas, and weird spacing
-                clean_address = re.sub(r'\s*,\s*', ', ', clean_address)
-                clean_address = re.sub(r'(?:,\s*)+', ', ', clean_address)
-                clean_address = clean_address.strip(', ')
+            clean_address, address_meta = GeminiService.normalize_delivery_address(raw_delivery_address)
+            
+            # Merge address metadata into normalization metadata
+            normalization_metadata.update(address_meta)
 
             raw_delivery_time = primary_card.get("delivery_time_raw", primary_card.get("delivery_time", ""))
             safe_delivery_time = raw_delivery_time.strip() if isinstance(raw_delivery_time, str) else ""

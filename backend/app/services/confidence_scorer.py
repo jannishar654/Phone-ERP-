@@ -59,15 +59,23 @@ class ConfidenceScorer:
             if "product_variant_unclear" in w_lower:
                 score -= 10
                 reasons.append("Product variant needs review.")
-            elif "am/pm ambiguity" in w_lower:
-                score -= 12
-                reasons.append("AM/PM ambiguity in delivery time.")
             elif "large_quantity" in w_lower:
                 score -= 2
                 reasons.append("Large quantity detected, verify before approval.")
             elif "cancellation" in w_lower or "return" in w_lower or "previous order" in w_lower:
                 score -= 8
                 reasons.append(f"Operation risk: {warning}")
+
+        missing_fields = ConfidenceScorer._get(card_data, "missing_fields", [])
+        for field in missing_fields:
+            if "product_variant_unclear" in str(field).lower() and "Product variant needs review." not in reasons:
+                score -= 10
+                reasons.append("Product variant needs review.")
+
+        delivery_time_warning = str(ConfidenceScorer._get(card_data, "delivery_time_warning") or "").lower()
+        if any(w in delivery_time_warning for w in ["time needs confirmation", "am/pm ambiguity", "missing specific day"]):
+            score -= 12
+            reasons.append("Delivery time needs confirmation")
 
         # Unmapped cancellations/returns from metadata
         metadata = ConfidenceScorer._get(card_data, "metadata", {})

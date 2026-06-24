@@ -189,24 +189,18 @@ def run_tests():
 
     # 8. NAME CLEANUP PARSING
     print("\n8. Name Cleanup Parsing:")
-    import re
-    def mock_extract_name(transcript):
-        cust_name = str(transcript).strip()
-        if cust_name:
-            cust_name = re.sub(r'(?:\s+(?:rahega|likhna|likh\s*dena|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
-            cust_name = re.sub(r'^(?:naam\s+|unka\s+naam\s+|party\s+ka\s+naam\s+|naam\s+jo\s+rahega\s+)', '', cust_name, flags=re.IGNORECASE).strip()
-            cust_name = cust_name.title()
-        return cust_name
+    from app.services.gemini import GeminiService
 
     name_cleanup_tests = [
+        ("mohan", "Mohan"),
+        ("naam likhna mohan", "Mohan"),
+        ("naam jo rahega danish rahega", "Danish"),
+        ("UNKNOWN", "UNKNOWN"),
         ("unka naam Danish Likhna", "Danish"),
-        ("naam danish likhna", "Danish"),
-        ("party ka naam Ram hai theek hai", "Ram"),
-        ("naam danish rahega", "Danish"),
-        ("mohan", "Mohan")
+        ("party ka naam Ram hai theek hai", "Ram")
     ]
     for transcript, expected in name_cleanup_tests:
-        cleaned = mock_extract_name(transcript)
+        cleaned = GeminiService.clean_customer_name(transcript)
         if cleaned == expected:
             print(f"  [PASS] '{transcript}' -> '{cleaned}'")
             passed += 1
@@ -216,43 +210,18 @@ def run_tests():
 
     # 8b. ADDRESS FORMATTING PARSING
     print("\n8b. Address Formatting Parsing:")
-    def mock_format_address(raw_delivery_address):
-        clean_address = str(raw_delivery_address).strip()
-        if clean_address:
-            clean_address = clean_address.title()
-            locality_map = {
-                "Shahine Bagh": "Shaheen Bagh",
-                "Shahin Bagh": "Shaheen Bagh",
-                "Shainbag": "Shaheen Bagh",
-                "Batla House": "Batla House",
-                "New Delhi": "New Delhi",
-                "Delhi": "Delhi",
-                "Defence Colony": "Defence Colony",
-                "Jamia Nagar": "Jamia Nagar",
-                "Zakir Nagar": "Zakir Nagar",
-                "Kalkaji": "Kalkaji",
-                "Okhla": "Okhla"
-            }
-            for k, v in locality_map.items():
-                if k.lower() in clean_address.lower():
-                    clean_address = re.sub(re.escape(k), v, clean_address, flags=re.IGNORECASE)
-                    clean_address = re.sub(r'(?<!,\s)(?<!,)\b' + re.escape(v) + r'\b', f", {v}", clean_address, flags=re.IGNORECASE)
-            
-            clean_address = re.sub(r'\s*,\s*', ', ', clean_address)
-            clean_address = re.sub(r'(?:,\s*)+', ', ', clean_address)
-            clean_address = clean_address.strip(', ')
-        return clean_address
-
     address_format_tests = [
-        ("gupta house shahin bagh", "Gupta House, Shaheen Bagh"),
-        ("gupta house, shahin bagh", "Gupta House, Shaheen Bagh"),
+        ("gupta house shahin bagh jamia nagar okhla", "Gupta House, Shaheen Bagh, Jamia Nagar, Okhla"),
+        ("bhatla house kalkaji mandir ke paas", "Batla House, Kalkaji Mandir Ke Paas"),
+        ("gupta ji ke yahan shahine bagh okhla new delhi", "Gupta Ji Ke Yahan, Shaheen Bagh, Okhla, New Delhi"),
+        ("batla house bishruddin masjid ke paas", "Batla House, Bishruddin Masjid Ke Paas"),
         ("okhla", "Okhla"),
+        ("random gali no 5 near metro", "Random Gali No 5 Near Metro"),
+        ("gupta house, shahin bagh", "Gupta House, Shaheen Bagh"),
         ("milan kalyan mandap jamia nagar", "Milan Kalyan Mandap, Jamia Nagar"),
-        ("Gupta House Shainbag Batla House", "Gupta House, Shaheen Bagh, Batla House"),
-        ("gupta ji ke yahan shahine bagh okhla new delhi", "Gupta Ji Ke Yahan, Shaheen Bagh, Okhla, New Delhi")
     ]
     for raw_addr, expected in address_format_tests:
-        cleaned = mock_format_address(raw_addr)
+        cleaned, _ = GeminiService.normalize_delivery_address(raw_addr)
         if cleaned == expected:
             print(f"  [PASS] '{raw_addr}' -> '{cleaned}'")
             passed += 1
@@ -921,6 +890,20 @@ def run_tests():
         passed += 1
     else:
         print(f"  [FAIL] ConfidenceScorer failed with mixed items: {s4}")
+    total += 1
+
+    # 5. Review readiness reasons
+    reason_card = dict(perfect_card)
+    reason_card["delivery_time_warning"] = "Time needs confirmation"
+    reason_card["missing_fields"] = ["product_variant_unclear"]
+    reason_card["items"] = [{"name": "sugar", "quantity": 10, "unit": "kg", "price": 0}]
+    
+    s5, l5, reasons = ConfidenceScorer.calculate_confidence(reason_card)
+    if "Delivery time needs confirmation" in reasons and "Product variant needs review." in reasons and "Price missing for sugar" in reasons:
+        print("  [PASS] ConfidenceScorer reason tests passed")
+        passed += 1
+    else:
+        print(f"  [FAIL] ConfidenceScorer reason tests failed. Got reasons: {reasons}")
     total += 1
 
 if __name__ == "__main__":
