@@ -191,14 +191,10 @@ def run_tests():
     print("\n8. Name Cleanup Parsing:")
     import re
     def mock_extract_name(transcript):
-        cust_name = "Unknown"
-        t_lower = transcript.lower()
-        if not cust_name or cust_name.lower() == "unknown":
-            name_match = re.search(r'(?:unka naam|naam|customer ka naam|party ka naam)\s+(.*?)(?:\s+hai|\s+tha|\s+aur|$)', t_lower)
-            if name_match:
-                cust_name = name_match.group(1).strip()
-        if cust_name and cust_name != "Unknown":
+        cust_name = str(transcript).strip()
+        if cust_name:
             cust_name = re.sub(r'(?:\s+(?:rahega|likhna|likh\s*dena|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
+            cust_name = re.sub(r'^(?:naam\s+|unka\s+naam\s+|party\s+ka\s+naam\s+|naam\s+jo\s+rahega\s+)', '', cust_name, flags=re.IGNORECASE).strip()
             cust_name = cust_name.title()
         return cust_name
 
@@ -206,7 +202,8 @@ def run_tests():
         ("unka naam Danish Likhna", "Danish"),
         ("naam danish likhna", "Danish"),
         ("party ka naam Ram hai theek hai", "Ram"),
-        ("naam danish rahega", "Danish")
+        ("naam danish rahega", "Danish"),
+        ("mohan", "Mohan")
     ]
     for transcript, expected in name_cleanup_tests:
         cleaned = mock_extract_name(transcript)
@@ -224,19 +221,26 @@ def run_tests():
         if clean_address:
             clean_address = clean_address.title()
             locality_map = {
+                "Shahine Bagh": "Shaheen Bagh",
                 "Shahin Bagh": "Shaheen Bagh",
                 "Shainbag": "Shaheen Bagh",
                 "Batla House": "Batla House",
-                "Okhla": "Okhla",
-                "Jamia Nagar": "Jamia Nagar"
+                "New Delhi": "New Delhi",
+                "Delhi": "Delhi",
+                "Defence Colony": "Defence Colony",
+                "Jamia Nagar": "Jamia Nagar",
+                "Zakir Nagar": "Zakir Nagar",
+                "Kalkaji": "Kalkaji",
+                "Okhla": "Okhla"
             }
             for k, v in locality_map.items():
                 if k.lower() in clean_address.lower():
                     clean_address = re.sub(re.escape(k), v, clean_address, flags=re.IGNORECASE)
-                    if not re.search(r',\s*' + re.escape(v), clean_address, flags=re.IGNORECASE):
-                        clean_address = re.sub(r'\s+' + re.escape(v), f", {v}", clean_address, flags=re.IGNORECASE)
+                    clean_address = re.sub(r'(?<!,\s)(?<!,)\b' + re.escape(v) + r'\b', f", {v}", clean_address, flags=re.IGNORECASE)
             
-            clean_address = re.sub(r'\s*,\s*', ', ', clean_address).strip(', ')
+            clean_address = re.sub(r'\s*,\s*', ', ', clean_address)
+            clean_address = re.sub(r'(?:,\s*)+', ', ', clean_address)
+            clean_address = clean_address.strip(', ')
         return clean_address
 
     address_format_tests = [
@@ -244,7 +248,8 @@ def run_tests():
         ("gupta house, shahin bagh", "Gupta House, Shaheen Bagh"),
         ("okhla", "Okhla"),
         ("milan kalyan mandap jamia nagar", "Milan Kalyan Mandap, Jamia Nagar"),
-        ("Gupta House Shainbag Batla House", "Gupta House, Shaheen Bagh, Batla House")
+        ("Gupta House Shainbag Batla House", "Gupta House, Shaheen Bagh, Batla House"),
+        ("gupta ji ke yahan shahine bagh okhla new delhi", "Gupta Ji Ke Yahan, Shaheen Bagh, Okhla, New Delhi")
     ]
     for raw_addr, expected in address_format_tests:
         cleaned = mock_format_address(raw_addr)

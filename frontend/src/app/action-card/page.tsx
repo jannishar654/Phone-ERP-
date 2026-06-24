@@ -525,7 +525,7 @@ function ActionCardContent() {
                       </span>
                     ) : selectedCard.confidence !== undefined && (
                       <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded">
-                        Review Readiness: {(selectedCard.confidence * 100).toFixed(0)}%
+                        Model Confidence: {(selectedCard.confidence * 100).toFixed(0)}%
                       </span>
                     )}
                   </p>

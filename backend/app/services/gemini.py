@@ -598,6 +598,7 @@ Return only the transcript text.
             # Clean filler words and format customer name
             if cust_name:
                 cust_name = re.sub(r'(?:\s+(?:rahega|likhna|likh\s*dena|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
+                cust_name = re.sub(r'^(?:naam\s+|unka\s+naam\s+|party\s+ka\s+naam\s+|naam\s+jo\s+rahega\s+)', '', cust_name, flags=re.IGNORECASE).strip()
                 cust_name = cust_name.title()
             
             normalized_cust = normalize_alias(cust_name, BUSINESS_ALIASES["customer_aliases"])
@@ -605,32 +606,30 @@ Return only the transcript text.
             raw_delivery_address = str(primary_card.get("delivery_address") or "").strip()
             clean_address = raw_delivery_address
             if clean_address:
-                # Title case and common locality mappings
                 clean_address = clean_address.title()
                 locality_map = {
+                    "Shahine Bagh": "Shaheen Bagh",
                     "Shahin Bagh": "Shaheen Bagh",
                     "Shainbag": "Shaheen Bagh",
                     "Batla House": "Batla House",
-                    "Okhla": "Okhla",
-                    "Jamia Nagar": "Jamia Nagar",
-                    "Defence Colony": "Defence Colony",
-                    "Delhi": "Delhi",
                     "New Delhi": "New Delhi",
+                    "Delhi": "Delhi",
+                    "Defence Colony": "Defence Colony",
+                    "Jamia Nagar": "Jamia Nagar",
+                    "Zakir Nagar": "Zakir Nagar",
                     "Kalkaji": "Kalkaji",
-                    "Zakir Nagar": "Zakir Nagar"
+                    "Okhla": "Okhla"
                 }
                 for k, v in locality_map.items():
-                    # Replace with proper casing if found, optionally add a comma if it's appended at the end without one
                     if k.lower() in clean_address.lower():
-                        # Standardize spelling
                         clean_address = re.sub(re.escape(k), v, clean_address, flags=re.IGNORECASE)
-                        # Add a comma before the locality if there isn't one and it's not the first word
-                        # To prevent matching "New Delhi" when "Delhi" is processed, ensure it matches whole words
-                        if not re.search(r',\s*' + re.escape(v) + r'\b', clean_address, flags=re.IGNORECASE):
-                            clean_address = re.sub(r'(?<!,\s)\b' + re.escape(v) + r'\b', f", {v}", clean_address, flags=re.IGNORECASE)
+                        # Add comma before locality if it doesn't already have one
+                        clean_address = re.sub(r'(?<!,\s)(?<!,)\b' + re.escape(v) + r'\b', f", {v}", clean_address, flags=re.IGNORECASE)
                 
-                # Cleanup double commas and weird spacing
-                clean_address = re.sub(r'\s*,\s*', ', ', clean_address).strip(', ')
+                # Cleanup double commas, leading commas, and weird spacing
+                clean_address = re.sub(r'\s*,\s*', ', ', clean_address)
+                clean_address = re.sub(r'(?:,\s*)+', ', ', clean_address)
+                clean_address = clean_address.strip(', ')
 
             raw_delivery_time = primary_card.get("delivery_time_raw", primary_card.get("delivery_time", ""))
             safe_delivery_time = raw_delivery_time.strip() if isinstance(raw_delivery_time, str) else ""

@@ -682,7 +682,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                   <div className="rounded-xl border p-4 shadow-xs bg-slate-50 border-slate-200">
                     <div className="flex items-center gap-3">
                       <span className="text-sm font-extrabold px-2.5 py-1 rounded-md border bg-slate-100 text-slate-700 border-slate-300">
-                        Review Readiness: {(confidence * 100).toFixed(0)}%
+                        Model Confidence: {(confidence * 100).toFixed(0)}%
                       </span>
                       <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Review Status</span>
                     </div>
