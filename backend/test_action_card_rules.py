@@ -859,5 +859,64 @@ def run_tests():
         print(f"  [FAIL] Numeric variant phrase not preserved: {cleaned_name}")
     total += 1
 
+    print("\n--- Testing ConfidenceScorer with Pydantic and Mixed Items ---")
+    from app.services.confidence_scorer import ConfidenceScorer
+    class ScorerMockItem(BaseModel):
+        name: str
+        quantity: float | None = None
+        unit: str | None = None
+        price: float | None = None
+
+    # 1. Dict only
+    dict_card = dict(perfect_card)
+    s1, l1, _ = ConfidenceScorer.calculate_confidence(dict_card)
+    if s1 == 100 and l1 == "High":
+        print("  [PASS] ConfidenceScorer works with dict items")
+        passed += 1
+    else:
+        print(f"  [FAIL] ConfidenceScorer failed with dict items: {s1}")
+    total += 1
+
+    # 2. Pydantic only
+    pydantic_card = dict(perfect_card)
+    pydantic_card["items"] = [
+        ScorerMockItem(name="atta", quantity=5, unit="kg", price=50),
+        ScorerMockItem(name="sugar", quantity=10, unit="kg", price=40)
+    ]
+    s2, l2, _ = ConfidenceScorer.calculate_confidence(pydantic_card)
+    if s2 == 100 and l2 == "High":
+        print("  [PASS] ConfidenceScorer works with Pydantic items")
+        passed += 1
+    else:
+        print(f"  [FAIL] ConfidenceScorer failed with Pydantic items: {s2}")
+    total += 1
+
+    # 3. Pydantic missing price
+    pydantic_missing_card = dict(perfect_card)
+    pydantic_missing_card["items"] = [
+        ScorerMockItem(name="atta", quantity=5, unit="kg", price=None)
+    ]
+    s3, l3, _ = ConfidenceScorer.calculate_confidence(pydantic_missing_card)
+    if s3 == 88:
+        print("  [PASS] ConfidenceScorer handles Pydantic item with missing price (Score drops)")
+        passed += 1
+    else:
+        print(f"  [FAIL] ConfidenceScorer failed on missing price Pydantic item: {s3}")
+    total += 1
+
+    # 4. Mixed dict + Pydantic
+    mixed_type_card = dict(perfect_card)
+    mixed_type_card["items"] = [
+        ScorerMockItem(name="atta", quantity=5, unit="kg", price=50),
+        {"name": "sugar", "quantity": 10, "unit": "kg", "price": 40}
+    ]
+    s4, l4, _ = ConfidenceScorer.calculate_confidence(mixed_type_card)
+    if s4 == 100:
+        print("  [PASS] ConfidenceScorer works with mixed dict + Pydantic items")
+        passed += 1
+    else:
+        print(f"  [FAIL] ConfidenceScorer failed with mixed items: {s4}")
+    total += 1
+
 if __name__ == "__main__":
     run_tests()
