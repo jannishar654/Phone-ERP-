@@ -684,6 +684,93 @@ def run_tests():
     else:
         print(f"  [FAIL] 'Online' not overridden to 'Cash': {res_pay4['payment_method']}")
     total += 1
+    # ---------------------------------------------------------
+    # CONFIDENCE SCORER TESTS
+    # ---------------------------------------------------------
+    print("\n--- Testing Confidence Scorer ---")
+    from app.services.confidence_scorer import ConfidenceScorer
+
+    def test_scorer(scenario_name, card_data, expected_label, expected_min_score=None):
+        nonlocal passed, total
+        score, label, reasons = ConfidenceScorer.calculate_confidence(card_data)
+        
+        success = True
+        if label != expected_label:
+            print(f"  [FAIL] {scenario_name}: Expected label '{expected_label}', got '{label}' (Score: {score})")
+            success = False
+        elif expected_min_score is not None and score < expected_min_score:
+            print(f"  [FAIL] {scenario_name}: Expected score >= {expected_min_score}, got {score}")
+            success = False
+            
+        if success:
+            print(f"  [PASS] {scenario_name} (Score: {score}, Label: {label})")
+            passed += 1
+        total += 1
+
+    # 1. Perfect card
+    perfect_card = {
+        "customer_name": "Danish",
+        "delivery_address": "Batla House",
+        "delivery_time": "2026-06-25 10:00",
+        "items": [
+            {"name": "atta", "quantity": 5, "unit": "kg", "price": 50},
+            {"name": "sugar", "quantity": 2, "unit": "kg", "price": 45}
+        ],
+        "validation_warnings": [],
+        "confidence": 0.95
+    }
+    test_scorer("Perfect Card -> High", perfect_card, "High", 100)
+
+    # 2. Missing customer
+    missing_cust = dict(perfect_card)
+    missing_cust["customer_name"] = "unknown"
+    test_scorer("Missing Customer -> drops score", missing_cust, "Medium", 80)
+
+    # 3. Missing catalog price
+    missing_price = dict(perfect_card)
+    missing_price["items"] = [
+        {"name": "atta", "quantity": 5, "unit": "kg", "price": 0.0},
+        {"name": "sugar", "quantity": 2, "unit": "kg", "price": 45}
+    ]
+    # -12 for missing price -> 88
+    test_scorer("Missing Catalog Price -> drops score", missing_price, "Medium", 88)
+
+    # 4. AM/PM ambiguity
+    ampm_card = dict(perfect_card)
+    ampm_card["validation_warnings"] = ["AM/PM ambiguity in delivery time surfaced"]
+    # -12 for AM/PM -> 88
+    test_scorer("AM/PM Ambiguity -> drops score", ampm_card, "Medium", 88)
+
+    # 5. Missing quantity/unit
+    missing_qty = dict(perfect_card)
+    missing_qty["items"] = [
+        {"name": "atta", "unit": "kg", "price": 50}, # no quantity (-20)
+    ]
+    test_scorer("Missing Quantity -> drops score", missing_qty, "Medium", 80)
+
+    # 6. Empty items -> Low confidence
+    empty_items = dict(perfect_card)
+    empty_items["items"] = []
+    # -40 for empty items -> 60 (Low)
+    test_scorer("Empty Items -> Low", empty_items, "Low", 60)
+    
+    # 7. Low raw LLM confidence (0.5 -> penalty 10)
+    low_llm = dict(perfect_card)
+    low_llm["confidence"] = 0.5
+    # penalty = int((0.8 - 0.5) * 35) = int(10.5) = 10
+    # 100 - 10 = 90
+    test_scorer("Low LLM Confidence -> score drops", low_llm, "High", 90)
+
+    # 8. Combined Risk -> Low
+    combined_card = dict(perfect_card)
+    combined_card["customer_name"] = "unknown" # -20
+    combined_card["delivery_address"] = "" # -20
+    combined_card["validation_warnings"] = ["AM/PM ambiguity in delivery time surfaced"] # -12
+    combined_card["items"] = [
+        {"name": "atta", "quantity": 5, "unit": "kg", "price": 0.0}, # -12
+    ]
+    # 100 - 20 - 20 - 12 - 12 = 36 (Low)
+    test_scorer("Combined Risk -> Low", combined_card, "Low", 36)
+
 if __name__ == "__main__":
     run_tests()
-
