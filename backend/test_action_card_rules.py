@@ -225,6 +225,7 @@ def run_tests():
             clean_address = clean_address.title()
             locality_map = {
                 "Shahin Bagh": "Shaheen Bagh",
+                "Shainbag": "Shaheen Bagh",
                 "Batla House": "Batla House",
                 "Okhla": "Okhla",
                 "Jamia Nagar": "Jamia Nagar"
@@ -242,7 +243,8 @@ def run_tests():
         ("gupta house shahin bagh", "Gupta House, Shaheen Bagh"),
         ("gupta house, shahin bagh", "Gupta House, Shaheen Bagh"),
         ("okhla", "Okhla"),
-        ("milan kalyan mandap jamia nagar", "Milan Kalyan Mandap, Jamia Nagar")
+        ("milan kalyan mandap jamia nagar", "Milan Kalyan Mandap, Jamia Nagar"),
+        ("Gupta House Shainbag Batla House", "Gupta House, Shaheen Bagh, Batla House")
     ]
     for raw_addr, expected in address_format_tests:
         cleaned = mock_format_address(raw_addr)
@@ -265,7 +267,8 @@ def run_tests():
         ("parle g ka packet", "parle g"),
         ("lal sarf wala", "lal sarf"),
         ("10 rupiya wala parle g", "10 rupiya wala parle g"),
-        ("surf ka packet wala", "surf")
+        ("surf ka packet wala", "surf"),
+        ("parle ji ka packet 10 wala", "parle ji 10 wala")
     ]
     for raw_prod, expected in product_cleanup_tests:
         cleaned = GeminiService.clean_product_name(raw_prod)
@@ -311,10 +314,20 @@ def run_tests():
             [{"name": "atta", "quantity": 65, "unit": "kg"}],
             [{"name": "atta", "quantity": 65, "unit": "kg"}]
         ),
-        # 5 kg atta + 15 kg atta aur jod dena = 20 kg atta
+        # 5 kg aata + 5 kg aata aur jod dena = 10 kg
         (
-            [{"name": "atta", "quantity": 5, "unit": "kg"}, {"name": "atta", "quantity": 15, "unit": "kg"}],
-            [{"name": "atta", "quantity": 20, "unit": "kg"}]
+            [{"name": "aata", "quantity": 5, "unit": "kg"}, {"name": "aata", "quantity": 5, "unit": "kg"}],
+            [{"name": "aata", "quantity": 10, "unit": "kg"}]
+        ),
+        # 5 kg chini + 10 kg chini aur jod dena + 10 kg sugar aur jod dena = 25 kg sugar
+        # (Assuming canonical resolution mapped "chini" and "sugar" to "sugar")
+        (
+            [
+                {"name": "sugar", "quantity": 5, "unit": "kg", "raw_name": "chini"},
+                {"name": "sugar", "quantity": 10, "unit": "kg", "raw_name": "chini"},
+                {"name": "sugar", "quantity": 10, "unit": "kg", "raw_name": "sugar"}
+            ],
+            [{"name": "sugar", "quantity": 25, "unit": "kg", "raw_name": "chini"}] # uses raw_name of the first one
         ),
         # 5 kg cheeni + 10 kg cheeni aur jod dena = 15 kg sugar
         (

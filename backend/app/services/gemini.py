@@ -103,16 +103,30 @@ class GeminiService:
         if not safe_name:
             return safe_name
 
-        # Longer phrases must come first
-        filler_regex = r'(?:\s+(?:ka\s+packet|ki\s+packet|ke\s+packet|ka\s+dabba|ki\s+dabbi|ki\s+theli|ka\s+pouch|ka\s+pack|ka|ki|ke|wala|wali|wale))+$'
-        
-        # Apply repeatedly to handle nested cases like 'surf ka packet wala'
-        clean_name = safe_name
+        # 1. Remove intermediate or trailing container phrases (ka packet, ki theli, etc.)
+        container_regex = r'\b(?:ka|ki|ke)\s+(?:packet|dabba|dabbi|theli|pouch|pack)\b'
+        clean_name = re.sub(container_regex, ' ', safe_name, flags=re.IGNORECASE).strip()
+
+        # 2. Remove trailing connector words (ka, ki, ke)
+        connector_regex = r'(?:\s+(?:ka|ki|ke))+$'
         while True:
-            new_name = re.sub(filler_regex, '', clean_name, flags=re.IGNORECASE).strip()
+            new_name = re.sub(connector_regex, '', clean_name, flags=re.IGNORECASE).strip()
             if new_name == clean_name or not new_name:
                 break
             clean_name = new_name
+
+        # 3. Remove trailing wala/wali/wale ONLY IF NOT preceded by a number (e.g. preserve '10 wala')
+        wala_regex = r'(?:\s+(?:wala|wali|wale))+$'
+        wala_match = re.search(wala_regex, clean_name, flags=re.IGNORECASE)
+        if wala_match:
+            # Check the string before wala
+            prefix = clean_name[:wala_match.start()].strip()
+            # If prefix ends with a number or "rupiya", do not strip
+            if not re.search(r'(\d+|rupi[y]a|rs\.?)$', prefix, flags=re.IGNORECASE):
+                clean_name = prefix
+
+        # Cleanup extra spaces
+        clean_name = re.sub(r'\s+', ' ', clean_name).strip()
             
         if not clean_name:
             clean_name = safe_name
@@ -593,6 +607,7 @@ Return only the transcript text.
                 clean_address = clean_address.title()
                 locality_map = {
                     "Shahin Bagh": "Shaheen Bagh",
+                    "Shainbag": "Shaheen Bagh",
                     "Batla House": "Batla House",
                     "Okhla": "Okhla",
                     "Jamia Nagar": "Jamia Nagar"
@@ -929,7 +944,9 @@ Return only the transcript text.
             "12. DETECT PAYMENT METHOD/UDHAAR: If the user says 'udhaar', 'paisa udhaar rahega', 'baad mein denge', 'credit', or 'khata mein likh do', set `payment_method` to 'Credit/Udhaar' and add a note in `extraction_notes`.\n"
             "13. FLAG UNKNOWN/AMBIGUOUS FIELDS: Add warnings to extraction_notes if product/quantity is ambiguous.\n"
             "14. IN-FLIGHT CANCELLATIONS: If an item is added but later cancelled in the same transcript (e.g. 'ek tight surf add karo... nahi surf cancel kar dena'), DO NOT include it in `items`. Place it in `metadata.cancelled_items` instead.\n"
-            "15. EXTRACT OPERATIONS: Extract an ordered sequence of events from the transcript into the `operations` array using ADD, SET_QUANTITY, CANCEL, RETURN, SUBSTITUTE, or PREVIOUS_ORDER_REFERENCE.\n\n"
+            "15. EXTRACT OPERATIONS: Extract an ordered sequence of events from the transcript into the `operations` array using ADD, SET_QUANTITY, CANCEL, RETURN, SUBSTITUTE, or PREVIOUS_ORDER_REFERENCE.\n"
+            "    - MUST USE ADD for 'aur jod dena' or 'add more'. If a product is mentioned twice with quantities to be added, output multiple ADD operations. Do NOT do math and do NOT use SET_QUANTITY for 'aur jod dena'.\n"
+            "    - Example: '5 kilo aata... 5 kilo aata aur jod dena' -> ADD(atta, 5) then ADD(atta, 5).\n\n"
             "## OUTPUT FORMAT\n"
             "Return ONLY a JSON object containing `transcript_normalized` and a `cards` array. No markdown, no explanation.\n"
             "{\n"
