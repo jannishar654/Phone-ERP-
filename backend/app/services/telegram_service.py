@@ -443,8 +443,12 @@ class TelegramService:
             extracted["delivery_address"] = customer.get("default_address") or customer.get("address")
         
         # Phone fallback
-        if not extracted.get("phone") and customer.get("phone"):
-            extracted["phone"] = customer.get("phone")
+        if not extracted.get("customer_phone") and customer.get("phone"):
+            extracted["customer_phone"] = customer.get("phone")
+        
+        # Fallback for old pipeline that might extract 'phone'
+        if not extracted.get("customer_phone") and extracted.get("phone"):
+            extracted["customer_phone"] = extracted.get("phone")
         
         # Prepare card data
         from app.routes.endpoints import _safe_items_from_extracted
@@ -464,7 +468,7 @@ class TelegramService:
             "shop_id": shop_id,
             "customer_id": customer["id"],
             "customer_name": extracted.get("customer_name"),
-            "phone": extracted.get("phone"),
+            "customer_phone": extracted.get("customer_phone"),
             "delivery_address": extracted.get("delivery_address"),
             "delivery_time": final_delivery_time,
             "delivery_time_raw": raw_dt,

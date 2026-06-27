@@ -100,7 +100,7 @@ async def test_telegram_ready_order_text(mock_supabase, mock_gemini, mock_action
     created_card = mock_action_card.create_card.call_args[0][0]
     assert created_card["customer_name"] == "John Doe"
     assert created_card["delivery_address"] == "123 Main St"
-    assert created_card["phone"] == "+919999999999"
+    assert created_card["customer_phone"] == "+919999999999"
     assert created_card["metadata"]["input_type"] == "text"
     assert created_card["metadata"]["pipeline"] == "gemini_gemini"
 
