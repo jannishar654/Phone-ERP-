@@ -229,7 +229,7 @@ class TelegramService:
                     
                 extracted = await GeminiService.extract_order_details(transcript)
                 self._create_order_card(extracted, transcript, shop_id, owner_id, customer, user_id, chat_id, input_type="voice", message_id=message.get("message_id"))
-                self.send_message(chat_id, "Voice order received. Shopkeeper will review.")
+                self.send_message(chat_id, "Order received. Shopkeeper will review.\nYou can check recent orders with /orders.")
             except Exception as e:
                 # Sanitize error message in case it contains the URL
                 err_str = str(e).replace(bot_token, "***TOKEN***") if bot_token else str(e)
@@ -272,6 +272,43 @@ class TelegramService:
         if text.startswith("/edit_phone"):
             self.update_customer(customer["id"], {"telegram_state": "editing_phone"})
             self.send_message(chat_id, "Please reply with your new 10-digit phone number, or type 'skip'.")
+            return
+
+        if text.startswith("/orders"):
+            try:
+                if not supabase_client:
+                    self.send_message(chat_id, "Could not fetch orders right now. Database unavailable.")
+                    return
+                    
+                resp = supabase_client.table("action_cards").select("id, status, created_at, items").eq("customer_id", customer["id"]).order("created_at", desc=True).limit(5).execute()
+                cards = resp.data or []
+                if not cards:
+                    self.send_message(chat_id, "No orders found yet.")
+                    return
+                
+                msg_lines = ["Your recent orders:\n"]
+                for c in cards:
+                    short_id = c["id"][:8] if c.get("id") else "unknown"
+                    dt = c.get("created_at", "").split("T")[0]
+                    status = (c.get("status") or "pending").title()
+                    
+                    items = c.get("items") or []
+                    item_summary = f"{len(items)} items"
+                    if items:
+                        names = [it.get("name", "Item") for it in items[:2] if isinstance(it, dict)]
+                        item_summary = ", ".join(names) if names else f"{len(items)} items"
+                        if len(items) > 2:
+                            item_summary += f" + {len(items) - 2} more"
+                            
+                    msg_lines.append(f"• ID: {short_id}")
+                    msg_lines.append(f"  Date: {dt}")
+                    msg_lines.append(f"  Status: {status}")
+                    msg_lines.append(f"  Items: {item_summary}\n")
+                    
+                self.send_message(chat_id, "\n".join(msg_lines))
+            except Exception as e:
+                logger.error(f"Failed to fetch telegram orders: {e}")
+                self.send_message(chat_id, "Could not fetch orders right now.")
             return
 
         # State machine handling
@@ -344,7 +381,7 @@ class TelegramService:
             from app.services.gemini import GeminiService
             extracted = await GeminiService.extract_order_details(text)
             self._create_order_card(extracted, text, shop_id, owner_id, customer, user_id, chat_id, input_type="text", message_id=message.get("message_id"))
-            self.send_message(chat_id, "Order received. Shopkeeper will review.")
+            self.send_message(chat_id, "Order received. Shopkeeper will review.\nYou can check recent orders with /orders.")
         except Exception as e:
             logger.error(f"Failed to process telegram text order: {e}")
             self.send_message(chat_id, "Order could not be created. Please try again.")
@@ -361,6 +398,9 @@ class TelegramService:
             extracted["phone"] = customer.get("phone")
         
         # Prepare card data
+        from app.routes.endpoints import _safe_items_from_extracted
+        safe_items = _safe_items_from_extracted(extracted, shop_id)
+        
         card_data = {
             "shop_id": shop_id,
             "customer_id": customer["id"],
@@ -368,7 +408,7 @@ class TelegramService:
             "phone": extracted.get("phone"),
             "delivery_address": extracted.get("delivery_address"),
             "payment_method": extracted.get("payment_method", "UNKNOWN"),
-            "items": extracted.get("items", []),
+            "items": [item.model_dump() for item in safe_items],
             "operations": extracted.get("operations", []),
             "status": "pending",
             "source": "telegram",

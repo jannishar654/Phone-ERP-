@@ -95,6 +95,7 @@ async def test_telegram_ready_order_text(mock_supabase, mock_gemini, mock_action
     mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "default_address": "123 Main St", "phone": "+919999999999", "telegram_state": "ready", "profile_completed": True}]
     mock_gemini.extract_order_details.return_value = {"customer_name": None, "delivery_address": None, "phone": None, "items": [], "operations": []}
     await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "text": "5 kg sugar"}})
+    
     mock_action_card.create_card.assert_called_once()
     created_card = mock_action_card.create_card.call_args[0][0]
     assert created_card["customer_name"] == "John Doe"
@@ -102,6 +103,8 @@ async def test_telegram_ready_order_text(mock_supabase, mock_gemini, mock_action
     assert created_card["phone"] == "+919999999999"
     assert created_card["metadata"]["input_type"] == "text"
     assert created_card["metadata"]["pipeline"] == "gemini_gemini"
+
+    mock_send_message.assert_called_with("123", "Order received. Shopkeeper will review.\nYou can check recent orders with /orders.")
 
 @pytest.mark.asyncio
 async def test_telegram_voice_order(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
@@ -131,7 +134,7 @@ async def test_telegram_voice_order(mock_supabase, mock_gemini, mock_requests, m
     assert created_card["metadata"]["telegram_message_id"] == 999
     assert created_card["transcript"] == "5 kg sugar voice"
     
-    mock_send_message.assert_called_with("123", "Voice order received. Shopkeeper will review.")
+    mock_send_message.assert_called_with("123", "Order received. Shopkeeper will review.\nYou can check recent orders with /orders.")
 
 @pytest.mark.asyncio
 async def test_telegram_voice_order_wav(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
@@ -178,6 +181,65 @@ async def test_telegram_voice_ffmpeg_fallback(mock_supabase, mock_gemini, mock_r
     assert mock_gemini.transcribe_audio_file.call_count == 2
     mock_gemini.transcribe_audio_file.assert_any_call(b"audio_data", "file_12.ogg", "audio/ogg")
     mock_gemini.transcribe_audio_file.assert_any_call(b"wav_data", "fallback.wav", "audio/wav")
+
+@pytest.mark.asyncio
+async def test_telegram_catalog_pricing(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    
+    mock_gemini.extract_order_details.return_value = {
+        "items": [
+            {"name": "sugar", "quantity": 5},
+            {"name": "unknown_item", "quantity": 1}
+        ]
+    }
+    
+    with patch("app.services.matching_service.matching_service.match_product") as mock_match:
+        # Match sugar, fail unknown_item
+        def side_effect(name, shop_id):
+            if name == "sugar":
+                return {"canonical_name": "Sugar 1kg", "unit_price": 50.0, "resolution_status": "matched"}
+            return {"resolution_status": "unmatched"}
+        mock_match.side_effect = side_effect
+        
+        await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "text": "5 kg sugar and 1 unknown item"}})
+        
+        created_card = mock_action_card.create_card.call_args[0][0]
+        
+        assert created_card["shop_id"] == "shop_123"
+        assert created_card["metadata"]["telegram_user_id"] == "456"
+        
+        items = created_card["items"]
+        assert len(items) == 2
+        
+        sugar_item = next(i for i in items if i["raw_name"] == "sugar")
+        assert sugar_item["price"] == 50.0
+        assert sugar_item["resolution_status"] == "matched"
+        assert sugar_item["canonical_name"] == "Sugar 1kg"
+        
+        unknown_item = next(i for i in items if i["raw_name"] == "unknown_item")
+        assert unknown_item["price"] is None
+        assert unknown_item["resolution_status"] == "unmatched"
+
+@pytest.mark.asyncio
+async def test_telegram_orders_command(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    
+    # Mock orders fetch
+    mock_supabase.table().select().eq().order().limit().execute.return_value.data = [
+        {
+            "id": "card_12345",
+            "status": "pending",
+            "created_at": "2023-01-01T12:00:00Z",
+            "items": [{"name": "Sugar"}]
+        }
+    ]
+    
+    await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "text": "/orders"}})
+    
+    assert mock_send_message.call_args[0][1].startswith("Your recent orders:")
+    assert "ID: card_123" in mock_send_message.call_args[0][1]
+    assert "Status: Pending" in mock_send_message.call_args[0][1]
+    assert "Sugar" in mock_send_message.call_args[0][1]
 
 @pytest.mark.asyncio
 async def test_telegram_voice_failure_network(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
