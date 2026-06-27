@@ -251,6 +251,25 @@ class TelegramService:
                 self.send_message(chat_id, "Welcome to PhoneERP. Please tell me your name.")
             return
             
+        if text.startswith("/help"):
+            msg = "Send your grocery order as text or voice.\nCommands:\n/profile - view your saved details\n/edit - update name, address, or phone\n/orders - view recent orders\n/cancel - cancel current profile edit"
+            self.send_message(chat_id, msg)
+            return
+            
+        if text.startswith("/cancel"):
+            if state.startswith("editing_") or state.startswith("awaiting_"):
+                new_state = "ready" if customer.get("profile_completed") else "awaiting_name"
+                self.update_customer(customer["id"], {"telegram_state": new_state})
+                self.send_message(chat_id, "Cancelled.")
+            else:
+                self.send_message(chat_id, "Nothing to cancel.")
+            return
+            
+        if text.startswith("/edit") and not text.startswith("/edit_"):
+            msg = "What do you want to edit?\n/edit_name\n/edit_address\n/edit_phone"
+            self.send_message(chat_id, msg)
+            return
+            
         if text.startswith("/profile"):
             msg = f"Name: {customer.get('name')}\nAddress: {customer.get('default_address') or customer.get('address')}"
             if customer.get("phone"):
@@ -282,6 +301,15 @@ class TelegramService:
                     
                 resp = supabase_client.table("action_cards").select("id, status, created_at, items").eq("customer_id", customer["id"]).order("created_at", desc=True).limit(5).execute()
                 cards = resp.data or []
+                
+                if not cards:
+                    resp = supabase_client.table("action_cards").select("id, status, created_at, items").eq("metadata->>telegram_user_id", str(user_id)).order("created_at", desc=True).limit(5).execute()
+                    cards = resp.data or []
+                    
+                if not cards:
+                    resp = supabase_client.table("action_cards").select("id, status, created_at, items").eq("metadata->>telegram_chat_id", str(chat_id)).order("created_at", desc=True).limit(5).execute()
+                    cards = resp.data or []
+                    
                 if not cards:
                     self.send_message(chat_id, "No orders found yet.")
                     return
@@ -309,6 +337,10 @@ class TelegramService:
             except Exception as e:
                 logger.error(f"Failed to fetch telegram orders: {e}")
                 self.send_message(chat_id, "Could not fetch orders right now.")
+            return
+
+        if text.startswith("/"):
+            self.send_message(chat_id, "Unknown command. Use /help to see options.")
             return
 
         # State machine handling
@@ -375,6 +407,23 @@ class TelegramService:
             self.send_message(chat_id, "Please complete your profile setup first.")
             return
             
+        import re
+        def looks_like_order(msg: str) -> bool:
+            t = msg.lower()
+            qty_words = ["kilo", "kg", "litre", "liter", "packet", "dabba", "bottle", "gram", "pcs", "piece"]
+            hindi_nums = ["ek", "do", "teen", "char", "paanch", "chhe", "saat", "aath", "nau", "das", "gyarah", "barah", "pandrah", "bees", "pachas"]
+            verbs = ["bhej dena", "bhejna", "chahiye", "order", "de dena", "deliver", "pahuncha dena", "bhej do", "dedo", "de do"]
+            
+            if any(char.isdigit() for char in t): return True
+            if any(re.search(r'\b' + w + r'\b', t) for w in qty_words + hindi_nums): return True
+            if any(v in t for v in verbs): return True
+            
+            return False
+
+        if not looks_like_order(text):
+            self.send_message(chat_id, "Please send a grocery order, or use /help for options.")
+            return
+            
         # Extract order using existing pipeline
         # Extract order using existing pipeline
         try:
@@ -401,12 +450,27 @@ class TelegramService:
         from app.routes.endpoints import _safe_items_from_extracted
         safe_items = _safe_items_from_extracted(extracted, shop_id)
         
+        from app.services.time_parser import parse_delivery_time
+        raw_dt = extracted.get("delivery_time_raw") or extracted.get("delivery_time") or ""
+        time_text = transcript if not raw_dt else raw_dt
+        time_data = parse_delivery_time(time_text)
+        
+        delivery_time_normalized = time_data.get("normalized")
+        delivery_time_confidence = time_data.get("confidence", 0.0)
+        delivery_time_warning = time_data.get("warning")
+        final_delivery_time = delivery_time_normalized or raw_dt
+        
         card_data = {
             "shop_id": shop_id,
             "customer_id": customer["id"],
             "customer_name": extracted.get("customer_name"),
             "phone": extracted.get("phone"),
             "delivery_address": extracted.get("delivery_address"),
+            "delivery_time": final_delivery_time,
+            "delivery_time_raw": raw_dt,
+            "delivery_time_normalized": delivery_time_normalized,
+            "delivery_time_confidence": delivery_time_confidence,
+            "delivery_time_warning": delivery_time_warning,
             "payment_method": extracted.get("payment_method", "UNKNOWN"),
             "items": [item.model_dump() for item in safe_items],
             "operations": extracted.get("operations", []),
@@ -421,7 +485,8 @@ class TelegramService:
                 "customer_id": customer["id"],
                 "input_type": input_type,
                 "pipeline": "gemini_gemini",
-                "extraction_notes": extracted.get("extraction_notes", "")
+                "extraction_notes": extracted.get("extraction_notes", ""),
+                "original_delivery_time": raw_dt
             },
             "transcript": transcript
         }

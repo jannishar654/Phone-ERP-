@@ -242,6 +242,69 @@ async def test_telegram_orders_command(mock_supabase, mock_gemini, mock_requests
     assert "Sugar" in mock_send_message.call_args[0][1]
 
 @pytest.mark.asyncio
+async def test_telegram_orders_command_fallback(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    
+    mock_resp_empty = MagicMock()
+    mock_resp_empty.data = []
+    
+    mock_resp_found = MagicMock()
+    mock_resp_found.data = [
+        {
+            "id": "card_fallback",
+            "status": "pending",
+            "created_at": "2023-01-01T12:00:00Z",
+            "items": [{"name": "Rice"}]
+        }
+    ]
+    
+    mock_supabase.table().select().eq().order().limit().execute.side_effect = [mock_resp_empty, mock_resp_found]
+    
+    await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "text": "/orders"}})
+    
+    assert "card_fal" in mock_send_message.call_args[0][1]
+    assert "Rice" in mock_send_message.call_args[0][1]
+
+@pytest.mark.asyncio
+async def test_telegram_delivery_time_parsing_success(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    
+    # Gemini extracted empty delivery time, but we fallback to transcript
+    mock_gemini.extract_order_details.return_value = {
+        "items": [{"name": "sugar", "quantity": 1}],
+        "delivery_time": "",
+        "delivery_time_raw": ""
+    }
+    
+    text = "kal 5:30 baje raat ko 50 kilo aata bhej dena"
+    await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "text": text}})
+    
+    created_card = mock_action_card.create_card.call_args[0][0]
+    
+    assert created_card["delivery_time_warning"] is None
+    assert "17:30" in str(created_card.get("delivery_time_normalized")) or "5:30" in str(created_card.get("delivery_time_normalized"))
+    assert "Delivery time is missing" not in str(created_card.get("confidence_reasons", []))
+    assert str(created_card.get("delivery_time")).strip() != ""
+    assert str(created_card.get("delivery_time")).strip().lower() != "immediate"
+
+@pytest.mark.asyncio
+async def test_telegram_delivery_time_parsing_partial(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    
+    # Gemini extracted "kal"
+    mock_gemini.extract_order_details.return_value = {
+        "items": [{"name": "sugar", "quantity": 1}],
+        "delivery_time_raw": "kal"
+    }
+    
+    await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "text": "kal 50 kilo aata"}})
+    
+    created_card = mock_action_card.create_card.call_args[0][0]
+    
+    assert created_card["delivery_time_warning"] == "Time needs confirmation"
+    assert any("Delivery time needs confirmation" in r for r in created_card.get("confidence_reasons", []))
+
+@pytest.mark.asyncio
 async def test_telegram_voice_failure_network(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
     mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
     mock_requests.get.side_effect = Exception("Network error fake_token_123")
@@ -289,3 +352,37 @@ async def test_telegram_voice_download_non_200(mock_supabase, mock_gemini, mock_
     
     await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "voice": {"file_id": "file123"}}})
     mock_send_message.assert_called_with("123", "Sorry, I could not download the voice message. Please try again or send text.")
+
+@pytest.mark.asyncio
+async def test_telegram_unknown_command(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "text": "/randomcmd"}})
+    mock_send_message.assert_called_with("123", "Unknown command. Use /help to see options.")
+    mock_action_card.create_card.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_telegram_edit_menu(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "text": "/edit"}})
+    assert "What do you want to edit?" in mock_send_message.call_args[0][1]
+    mock_action_card.create_card.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_telegram_cancel_command(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "editing_name", "profile_completed": True}]
+    await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "text": "/cancel"}})
+    mock_send_message.assert_called_with("123", "Cancelled.")
+
+@pytest.mark.asyncio
+async def test_telegram_looks_like_order_rejection(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "text": "hi"}})
+    assert "Please send a grocery order" in mock_send_message.call_args[0][1]
+    mock_action_card.create_card.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_telegram_looks_like_order_acceptance(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    mock_gemini.extract_order_details.return_value = {"items": [], "delivery_time_raw": ""}
+    await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "text": "kal 5 kilo aata bhej dena"}})
+    mock_action_card.create_card.assert_called_once()
