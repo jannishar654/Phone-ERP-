@@ -20,6 +20,33 @@ def run_tests():
             "expected_cancelled": []
         },
         {
+            "name": "Unit correction only (15 kilo oil nahi 15 litre oil)",
+            "operations": [
+                {"sequence": 1, "operation_id": "op2", "type": "ADD", "raw_product": "oil", "quantity": 15, "unit": "kilo", "evidence": "15 kilo oil"},
+                {"sequence": 2, "target_operation_id": "op2", "type": "SET_QUANTITY", "raw_product": "oil", "unit": "litre", "evidence": "nahi 15 litre oil"}
+            ],
+            "expected_items": [{"operation_id": "op2", "name": "oil", "raw_name": "oil", "quantity": 15.0, "unit": "litre"}],
+            "expected_cancelled": []
+        },
+        {
+            "name": "Quantity correction only (5 kilo chawal nahi 10 kilo chawal)",
+            "operations": [
+                {"sequence": 1, "operation_id": "op3", "type": "ADD", "raw_product": "chawal", "quantity": 5, "unit": "kilo", "evidence": "5 kilo chawal"},
+                {"sequence": 2, "target_operation_id": "op3", "type": "SET_QUANTITY", "raw_product": "chawal", "quantity": 10, "evidence": "nahi 10 kilo chawal"}
+            ],
+            "expected_items": [{"operation_id": "op3", "name": "chawal", "raw_name": "chawal", "quantity": 10.0, "unit": "kg"}],
+            "expected_cancelled": []
+        },
+        {
+            "name": "Unit correction with different name (2 packet surf nahi 2 carton surf)",
+            "operations": [
+                {"sequence": 1, "type": "ADD", "raw_product": "surf", "quantity": 2, "unit": "packet", "evidence": "2 packet surf"},
+                {"sequence": 2, "type": "SET_QUANTITY", "raw_product": "surf", "unit": "carton", "evidence": "nahi 2 carton surf"}
+            ],
+            "expected_items": [{"operation_id": None, "name": "surf", "raw_name": "surf", "quantity": 2.0, "unit": "carton"}],
+            "expected_cancelled": []
+        },
+        {
             "name": "2. Return plus new order",
             "operations": [
                 {"sequence": 1, "type": "RETURN", "raw_product": "biscuits", "quantity": 2, "unit": "packet", "evidence": "2 packet biscuits wapas le lo"},
