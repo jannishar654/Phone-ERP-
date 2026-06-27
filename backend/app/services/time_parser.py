@@ -120,6 +120,7 @@ def parse_delivery_time(raw_text: Optional[str], reference_datetime: Optional[da
     has_dopahar = bool(re.search(r'\b(dopahar|afternoon|दोपहर)\b', text))
     has_shaam = bool(re.search(r'\b(shaam|evening|शाम)\b', text))
     has_raat = bool(re.search(r'\b(raat|night|रात)\b', text))
+    has_din_mein = bool(re.search(r'\b(din me|din mein|din mai|दिन में)\b', text))
 
     time_str = None
     if exact_time_match:
@@ -137,10 +138,18 @@ def parse_delivery_time(raw_text: Optional[str], reference_datetime: Optional[da
         clean_time = " ".join(time_parts)
 
         if "am" not in time_lower and "pm" not in time_lower:
+            hour = None
+            try:
+                hour = int(clean_time.split(":")[0])
+            except ValueError:
+                pass
+
             if has_raat or has_shaam or has_dopahar:
                 time_str = f"{clean_time} PM"
             elif has_subah:
                 time_str = f"{clean_time} AM"
+            elif has_din_mein and hour is not None and 1 <= hour <= 6:
+                time_str = f"{clean_time} PM"
             else:
                 time_str = clean_time
                 warning = "AM/PM ambiguity detected. Please confirm."
