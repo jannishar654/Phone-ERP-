@@ -1,6 +1,22 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import List, Optional
 from datetime import datetime
+import re
+
+def normalize_indian_phone(v: Optional[str]) -> Optional[str]:
+    if not v:
+        return v
+    # Remove all non-digit characters except '+'
+    cleaned = re.sub(r'[^\d+]', '', str(v))
+    if not cleaned:
+        return v
+    # If it's exactly 10 digits, assume Indian and prepend +91
+    if re.fullmatch(r'\d{10}', cleaned):
+        return f"+91{cleaned}"
+    # If it starts with 91 and has 12 digits total
+    if re.fullmatch(r'91\d{10}', cleaned):
+        return f"+{cleaned}"
+    return cleaned
 
 class Item(BaseModel):
     name: str
@@ -25,6 +41,10 @@ class ActionCard(BaseModel):
     user_id: Optional[str] = None
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
+
+    @validator("customer_phone", pre=True)
+    def normalize_phone(cls, v):
+        return normalize_indian_phone(v)
     items: List[Item] = Field(default_factory=list)
     delivery_address: Optional[str] = None
     delivery_time: Optional[str] = None
@@ -61,6 +81,10 @@ class ActionCardCreate(BaseModel):
     user_id: Optional[str] = None
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
+
+    @validator("customer_phone", pre=True)
+    def normalize_phone(cls, v):
+        return normalize_indian_phone(v)
     items: List[Item] = Field(default_factory=list)
     delivery_address: Optional[str] = None
     delivery_time: Optional[str] = None
@@ -90,6 +114,10 @@ class ActionCardCreate(BaseModel):
 class ActionCardUpdate(BaseModel):
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
+
+    @validator("customer_phone", pre=True)
+    def normalize_phone(cls, v):
+        return normalize_indian_phone(v)
     items: Optional[List[Item]] = None
     delivery_address: Optional[str] = None
     delivery_time: Optional[str] = None
