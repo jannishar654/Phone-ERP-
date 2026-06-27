@@ -122,6 +122,8 @@ async def test_telegram_voice_order(mock_supabase, mock_gemini, mock_requests, m
     
     await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "voice": {"file_id": "file123"}, "message_id": 999}})
     
+    mock_gemini.transcribe_audio_file.assert_called_with(b"audio_data", "file_12.ogg", "audio/ogg")
+    
     mock_action_card.create_card.assert_called_once()
     created_card = mock_action_card.create_card.call_args[0][0]
     assert created_card["metadata"]["input_type"] == "voice"
@@ -130,6 +132,52 @@ async def test_telegram_voice_order(mock_supabase, mock_gemini, mock_requests, m
     assert created_card["transcript"] == "5 kg sugar voice"
     
     mock_send_message.assert_called_with("123", "Voice order received. Shopkeeper will review.")
+
+@pytest.mark.asyncio
+async def test_telegram_voice_order_wav(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    
+    mock_resp1 = MagicMock()
+    mock_resp1.status_code = 200
+    mock_resp1.json.return_value = {"ok": True, "result": {"file_path": "voice/file_12.wav"}}
+    mock_resp2 = MagicMock()
+    mock_resp2.status_code = 200
+    mock_resp2.content = b"audio_data"
+    mock_requests.get.side_effect = [mock_resp1, mock_resp2]
+    
+    mock_gemini.transcribe_audio_file.return_value = "5 kg sugar voice"
+    mock_gemini.extract_order_details.return_value = {"items": []}
+    
+    await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "audio": {"file_id": "file123"}}})
+    
+    mock_gemini.transcribe_audio_file.assert_called_with(b"audio_data", "file_12.wav", "audio/wav")
+
+@pytest.mark.asyncio
+async def test_telegram_voice_ffmpeg_fallback(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    
+    mock_resp1 = MagicMock()
+    mock_resp1.status_code = 200
+    mock_resp1.json.return_value = {"ok": True, "result": {"file_path": "voice/file_12.ogg"}}
+    mock_resp2 = MagicMock()
+    mock_resp2.status_code = 200
+    mock_resp2.content = b"audio_data"
+    mock_requests.get.side_effect = [mock_resp1, mock_resp2]
+    
+    # First call fails, second call (fallback) succeeds
+    mock_gemini.transcribe_audio_file.side_effect = [Exception("Gemini rejected ogg"), "5 kg sugar fallback"]
+    mock_gemini.extract_order_details.return_value = {"items": []}
+    
+    with patch("subprocess.run") as mock_subprocess:
+        mock_subprocess.return_value = MagicMock()
+        # Mock the wav_content since open() is used internally
+        with patch("builtins.open", MagicMock()) as mock_open:
+            mock_open.return_value.__enter__.return_value.read.return_value = b"wav_data"
+            await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "voice": {"file_id": "file123"}}})
+            
+    assert mock_gemini.transcribe_audio_file.call_count == 2
+    mock_gemini.transcribe_audio_file.assert_any_call(b"audio_data", "file_12.ogg", "audio/ogg")
+    mock_gemini.transcribe_audio_file.assert_any_call(b"wav_data", "fallback.wav", "audio/wav")
 
 @pytest.mark.asyncio
 async def test_telegram_voice_failure_network(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):

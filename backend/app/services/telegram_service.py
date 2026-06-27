@@ -175,13 +175,53 @@ class TelegramService:
                 
                 from app.services.gemini import GeminiService
                 filename = file_path.split("/")[-1] if "/" in file_path else "voice.ogg"
-                logger.info(f"Telegram temp file path extension: {filename.split('.')[-1] if '.' in filename else 'unknown'}")
+                ext = filename.split('.')[-1].lower() if '.' in filename else 'unknown'
+                logger.info(f"Telegram temp file path extension: {ext}")
                 
-                # Check if we need to convert to wav (Gemini usually handles ogg, but we add ffmpeg logic if required)
-                # Actually, Gemini STT natively accepts .ogg, .mp3, .wav, .m4a
-                # But to be robust, we'll try it directly first. The user asked to convert to wav "If Gemini STT cannot read .ogg directly".
-                # For now, we will pass it directly because Gemini DOES read .ogg directly.
-                transcript = await GeminiService.transcribe_audio_file(file_content, filename)
+                mime_type = "application/octet-stream"
+                if ext in ["ogg", "oga", "opus"]:
+                    mime_type = "audio/ogg"
+                elif ext == "wav":
+                    mime_type = "audio/wav"
+                elif ext == "mp3":
+                    mime_type = "audio/mpeg"
+                elif ext == "m4a":
+                    mime_type = "audio/mp4"
+
+                transcript = None
+                try:
+                    transcript = await GeminiService.transcribe_audio_file(file_content, filename, mime_type)
+                except Exception as stt_err:
+                    logger.warning(f"Gemini STT direct pass failed: {stt_err}. Trying ffmpeg fallback...")
+                    if ext in ["ogg", "oga", "opus"]:
+                        import tempfile
+                        import subprocess
+                        import os
+                        
+                        with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as f_in:
+                            f_in.write(file_content)
+                            f_in_path = f_in.name
+                            
+                        f_out_path = f_in_path + ".wav"
+                        try:
+                            subprocess.run(["ffmpeg", "-y", "-i", f_in_path, "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", f_out_path], check=True, capture_output=True)
+                            with open(f_out_path, "rb") as f_out:
+                                wav_content = f_out.read()
+                                
+                            transcript = await GeminiService.transcribe_audio_file(wav_content, "fallback.wav", "audio/wav")
+                        except Exception as fallback_err:
+                            logger.error(f"FFMPEG fallback failed: {fallback_err}")
+                        finally:
+                            if os.path.exists(f_in_path):
+                                os.remove(f_in_path)
+                            if os.path.exists(f_out_path):
+                                os.remove(f_out_path)
+                    
+                    if not transcript:
+                        logger.error("Gemini STT transcription failed after fallback.")
+                        self.send_message(chat_id, "Sorry, voice order could not be processed. Please send the order as text.")
+                        return
+
                 if not transcript:
                     logger.error("Gemini STT transcription failed (returned empty).")
                     self.send_message(chat_id, "Sorry, voice order could not be processed. Please send the order as text.")

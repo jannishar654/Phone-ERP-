@@ -207,7 +207,7 @@ class GeminiService:
         return clean_name
 
     @staticmethod
-    async def transcribe_audio_file(file_content: bytes, filename: str) -> str:
+    async def transcribe_audio_file(file_content: bytes, filename: str, mime_type: str = None) -> str:
         """Upload audio to Gemini and return its transcript."""
 
         if not file_content:
@@ -221,10 +221,12 @@ class GeminiService:
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-        file_extension, mime_type = GeminiService._detect_audio_format(
+        file_extension, detected_mime_type = GeminiService._detect_audio_format(
             file_content,
             filename,
         )
+        final_mime_type = mime_type or detected_mime_type
+        
         temporary_path = None
         uploaded_file = None
 
@@ -240,7 +242,7 @@ class GeminiService:
                 client.files.upload,
                 file=temporary_path,
                 config=types.UploadFileConfig(
-                    mime_type=mime_type,
+                    mime_type=final_mime_type,
                     display_name=filename,
                 ),
             )
