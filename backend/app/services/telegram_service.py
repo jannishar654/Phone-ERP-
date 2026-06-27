@@ -96,7 +96,8 @@ class TelegramService:
         chat_id = str(message.get("chat", {}).get("id"))
         user_id = str(message.get("from", {}).get("id"))
         text = message.get("text", "").strip()
-        voice = message.get("voice")
+        # Support both voice and audio
+        voice_or_audio = message.get("voice") or message.get("audio")
         
         shop_id, owner_id = self._resolve_shop_and_owner()
         if not shop_id or not owner_id:
@@ -108,33 +109,81 @@ class TelegramService:
             self.send_message(chat_id, "System error initializing profile.")
             return
 
-        if voice:
+        if voice_or_audio:
             if not customer.get("profile_completed"):
                 self.send_message(chat_id, "Please complete your profile setup first before sending voice orders.")
                 return
                 
-            file_id = voice.get("file_id")
+            file_id = voice_or_audio.get("file_id")
             if not file_id:
+                logger.warning("Telegram voice/audio missing file_id.")
                 self.send_message(chat_id, "Sorry, I could not read the voice message.")
                 return
             
+            logger.info(f"Telegram voice/audio file_id present: {file_id}")
+            
+            # Fetch token dynamically to support env var updates without restart
+            bot_token = settings.TELEGRAM_BOT_TOKEN
+            if not bot_token:
+                logger.error("TELEGRAM_BOT_TOKEN is not configured.")
+                self.send_message(chat_id, "Sorry, I could not download the voice message. Please try again or send text.")
+                return
+
             try:
-                file_info_url = f"{self.api_url}/getFile?file_id={file_id}"
+                # 1. Get file path
+                file_info_url = f"https://api.telegram.org/bot{bot_token}/getFile?file_id={file_id}"
                 file_info_resp = requests.get(file_info_url, timeout=10)
+                
+                logger.info(f"Telegram getFile status_code: {file_info_resp.status_code}")
+                
+                if file_info_resp.status_code in (401, 404):
+                    logger.error(f"Telegram getFile failed with {file_info_resp.status_code}. Token might be revoked or invalid.")
+                    self.send_message(chat_id, "Sorry, I could not download the voice message. Please try again or send text.")
+                    return
+                
                 file_info_resp.raise_for_status()
-                file_path = file_info_resp.json().get("result", {}).get("file_path")
-                if not file_path:
-                    raise Exception("No file_path returned")
+                
+                resp_json = file_info_resp.json()
+                if not resp_json.get("ok"):
+                    # Safe logging: log error_code and description, DO NOT log the full url or token
+                    err_code = resp_json.get("error_code")
+                    desc = resp_json.get("description")
+                    logger.error(f"Telegram getFile returned ok=false. error_code={err_code}, description={desc}")
+                    self.send_message(chat_id, "Sorry, I could not download the voice message. Please try again or send text.")
+                    return
                     
-                download_url = f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
+                file_path = resp_json.get("result", {}).get("file_path")
+                if not file_path:
+                    logger.error("Telegram getFile ok=true but missing result.file_path")
+                    self.send_message(chat_id, "Sorry, I could not download the voice message. Please try again or send text.")
+                    return
+                    
+                logger.info(f"Telegram getFile ok/file_path present.")
+                    
+                # 2. Download file
+                download_url = f"https://api.telegram.org/file/bot{bot_token}/{file_path}"
                 dl_resp = requests.get(download_url, timeout=20)
-                dl_resp.raise_for_status()
+                logger.info(f"Telegram download status_code: {dl_resp.status_code}")
+                
+                if dl_resp.status_code != 200:
+                    logger.error(f"Telegram file download failed with status {dl_resp.status_code}")
+                    self.send_message(chat_id, "Sorry, I could not download the voice message. Please try again or send text.")
+                    return
+                    
                 file_content = dl_resp.content
+                logger.info(f"Telegram downloaded byte size: {len(file_content)}")
                 
                 from app.services.gemini import GeminiService
                 filename = file_path.split("/")[-1] if "/" in file_path else "voice.ogg"
+                logger.info(f"Telegram temp file path extension: {filename.split('.')[-1] if '.' in filename else 'unknown'}")
+                
+                # Check if we need to convert to wav (Gemini usually handles ogg, but we add ffmpeg logic if required)
+                # Actually, Gemini STT natively accepts .ogg, .mp3, .wav, .m4a
+                # But to be robust, we'll try it directly first. The user asked to convert to wav "If Gemini STT cannot read .ogg directly".
+                # For now, we will pass it directly because Gemini DOES read .ogg directly.
                 transcript = await GeminiService.transcribe_audio_file(file_content, filename)
                 if not transcript:
+                    logger.error("Gemini STT transcription failed (returned empty).")
                     self.send_message(chat_id, "Sorry, voice order could not be processed. Please send the order as text.")
                     return
                     
@@ -142,7 +191,9 @@ class TelegramService:
                 self._create_order_card(extracted, transcript, shop_id, owner_id, customer, user_id, chat_id, input_type="voice", message_id=message.get("message_id"))
                 self.send_message(chat_id, "Voice order received. Shopkeeper will review.")
             except Exception as e:
-                logger.error(f"Failed to process telegram voice order: {e}")
+                # Sanitize error message in case it contains the URL
+                err_str = str(e).replace(bot_token, "***TOKEN***") if bot_token else str(e)
+                logger.error(f"Failed to process telegram voice order: {err_str}")
                 self.send_message(chat_id, "Sorry, I could not download the voice message. Please try again or send text.")
             return
             

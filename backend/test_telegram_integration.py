@@ -11,6 +11,7 @@ client = TestClient(app)
 def mock_settings():
     settings.TELEGRAM_DEFAULT_SHOP_ID = "shop_123"
     settings.TELEGRAM_DEFAULT_OWNER_ID = "owner_123"
+    settings.TELEGRAM_BOT_TOKEN = "fake_token_123"
     yield
 
 @pytest.fixture
@@ -105,11 +106,14 @@ async def test_telegram_ready_order_text(mock_supabase, mock_gemini, mock_action
 @pytest.mark.asyncio
 async def test_telegram_voice_order(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
     mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    settings.TELEGRAM_BOT_TOKEN = "fake_token_123"
     
     # Mock requests for file path and download
     mock_resp1 = MagicMock()
-    mock_resp1.json.return_value = {"result": {"file_path": "voice/file_12.ogg"}}
+    mock_resp1.status_code = 200
+    mock_resp1.json.return_value = {"ok": True, "result": {"file_path": "voice/file_12.ogg"}}
     mock_resp2 = MagicMock()
+    mock_resp2.status_code = 200
     mock_resp2.content = b"audio_data"
     mock_requests.get.side_effect = [mock_resp1, mock_resp2]
     
@@ -128,8 +132,50 @@ async def test_telegram_voice_order(mock_supabase, mock_gemini, mock_requests, m
     mock_send_message.assert_called_with("123", "Voice order received. Shopkeeper will review.")
 
 @pytest.mark.asyncio
-async def test_telegram_voice_failure(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+async def test_telegram_voice_failure_network(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
     mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
-    mock_requests.get.side_effect = Exception("Network error")
+    mock_requests.get.side_effect = Exception("Network error fake_token_123")
+    settings.TELEGRAM_BOT_TOKEN = "fake_token_123"
+    
+    await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "voice": {"file_id": "file123"}}})
+    mock_send_message.assert_called_with("123", "Sorry, I could not download the voice message. Please try again or send text.")
+
+@pytest.mark.asyncio
+async def test_telegram_voice_getFile_ok_false(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"ok": False, "error_code": 400, "description": "Bad Request"}
+    mock_requests.get.return_value = mock_resp
+    
+    await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "voice": {"file_id": "file123"}}})
+    mock_send_message.assert_called_with("123", "Sorry, I could not download the voice message. Please try again or send text.")
+
+@pytest.mark.asyncio
+async def test_telegram_voice_getFile_missing_path(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"ok": True, "result": {}}
+    mock_requests.get.return_value = mock_resp
+    
+    await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "voice": {"file_id": "file123"}}})
+    mock_send_message.assert_called_with("123", "Sorry, I could not download the voice message. Please try again or send text.")
+
+@pytest.mark.asyncio
+async def test_telegram_voice_download_non_200(mock_supabase, mock_gemini, mock_requests, mock_action_card, mock_send_message):
+    mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
+    
+    mock_resp1 = MagicMock()
+    mock_resp1.status_code = 200
+    mock_resp1.json.return_value = {"ok": True, "result": {"file_path": "path.ogg"}}
+    
+    mock_resp2 = MagicMock()
+    mock_resp2.status_code = 500
+    
+    mock_requests.get.side_effect = [mock_resp1, mock_resp2]
+    
     await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "voice": {"file_id": "file123"}}})
     mock_send_message.assert_called_with("123", "Sorry, I could not download the voice message. Please try again or send text.")
