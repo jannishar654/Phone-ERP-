@@ -29,7 +29,7 @@ class SupabaseService:
             return res.data[0] if res.data else None
         except Exception as e:
             logger.error(f"Supabase create error: {e}")
-            return None
+            raise Exception(f"Database insertion failed: {e}")
 
     @staticmethod
     def get_all(user_id: str = None) -> list:
@@ -68,7 +68,7 @@ class SupabaseService:
             return res.data[0] if res.data else None
         except Exception as e:
             logger.error(f"Supabase update error: {e}")
-            return None
+            raise Exception(f"Database update failed: {e}")
 
     @staticmethod
     def delete(card_id: str, user_id: str = None) -> bool:
@@ -81,4 +81,4 @@ class SupabaseService:
             return True
         except Exception as e:
             logger.error(f"Supabase delete error: {e}")
-            return False
+            raise Exception(f"Database deletion failed: {e}")

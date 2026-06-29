@@ -34,6 +34,9 @@ export interface ActionCard {
   source: 'audio' | 'text' | string;
   message_type?: string;
   confidence?: number;
+  confidence_score?: number;
+  confidence_label?: string;
+  confidence_reasons?: string[];
   stt_provider?: string;
   extraction_provider?: string;
   metadata?: Record<string, any>;

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { getActionCards, updateActionCardStatus, updateActionCard } from '@/lib/api';
+import { getActionCards, updateActionCardStatus, updateActionCard, convertActionCardToOrder } from '@/lib/api';
 import { ActionCard, Item } from '@/types';
 
 // Main content wrapping the search params logic
@@ -139,6 +139,17 @@ function ActionCardContent() {
       setCards(cards.map(c => c.id === selectedCard.id ? updated : c));
     } catch (err) {
       alert('Failed to update item resolution on the backend.');
+    }
+  };
+
+  const handleConvertToOrder = async () => {
+    if (!selectedCard) return;
+    try {
+      await convertActionCardToOrder(selectedCard.id);
+      alert('Order successfully generated!');
+      router.push('/orders');
+    } catch (err: any) {
+      alert('Failed to convert to order: ' + err.message);
     }
   };
 
@@ -504,13 +515,40 @@ function ActionCardContent() {
                   </h2>
                   <p className="text-sm text-indigo-650 font-bold mt-0.5 flex justify-between items-center">
                     <span>{selectedCard.customer_phone || 'No phone number provided'}</span>
-                    {selectedCard.confidence !== undefined && (
+                    {selectedCard.confidence_score !== undefined && selectedCard.confidence_label ? (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                        selectedCard.confidence_label === 'High' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                        selectedCard.confidence_label === 'Medium' ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                        'bg-red-100 text-red-800 border-red-300'
+                      }`}>
+                        Review Readiness: {selectedCard.confidence_score}% {selectedCard.confidence_label}
+                      </span>
+                    ) : selectedCard.confidence !== undefined && (
                       <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded">
-                        Confidence: {(selectedCard.confidence * 100).toFixed(0)}%
+                        Model Confidence: {(selectedCard.confidence * 100).toFixed(0)}%
                       </span>
                     )}
                   </p>
                 </div>
+                
+                {selectedCard.confidence_reasons && selectedCard.confidence_reasons.length > 0 && (
+                  <div className={`p-2 rounded mt-2 border ${
+                    selectedCard.confidence_label === 'High' ? 'bg-emerald-50 border-emerald-200' :
+                    selectedCard.confidence_label === 'Medium' ? 'bg-amber-50 border-amber-200' :
+                    'bg-red-50 border-red-200'
+                  }`}>
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Review Reasons:</h4>
+                    <ul className="text-xs space-y-0.5 pl-3 list-disc">
+                      {selectedCard.confidence_reasons.map((reason, idx) => (
+                        <li key={idx} className={
+                          selectedCard.confidence_label === 'High' ? 'text-emerald-700' :
+                          selectedCard.confidence_label === 'Medium' ? 'text-amber-700' : 
+                          'text-red-700'
+                        }>{reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 <div className="space-y-3">
                   <div>
@@ -590,6 +628,25 @@ function ActionCardContent() {
                         </div>
                       ))}
                     </div>
+                    {(() => {
+                      const orderTotal = selectedCard.items.reduce((sum, item) => sum + ((item.quantity || 0) * (item.price || 0)), 0);
+                      const hasMissingPrice = selectedCard.items.some(item => item.price === undefined || item.price === null || item.price <= 0);
+                      return (
+                        <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-2 text-sm font-semibold text-slate-600">
+                          <span className="text-slate-500 text-xs uppercase tracking-wider">Calculated Grand Total</span>
+                          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
+                            <span className="text-base sm:text-lg font-black text-slate-900 font-mono bg-slate-50 border border-slate-150 px-3 py-1 rounded">
+                              ₹{orderTotal.toFixed(2)}
+                            </span>
+                            {hasMissingPrice && (
+                              <span className="text-amber-600 font-bold text-[10px] sm:text-xs italic bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                                + Pending Price Verification
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {selectedCard.metadata?.cancelled_items?.length > 0 && (
@@ -766,6 +823,17 @@ function ActionCardContent() {
                   >
                     Edit Order Card
                   </button>
+                  
+                  {selectedCard.status === 'approved' && (
+                    <div className="pt-2">
+                      <button
+                        onClick={handleConvertToOrder}
+                        className="w-full px-3 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold cursor-pointer transition-colors shadow-md"
+                      >
+                        Generate Final Bill / Order
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )

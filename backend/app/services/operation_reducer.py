@@ -142,10 +142,11 @@ class OperationReducer:
                 matches = OperationReducer._match_item_exact(op_dict, active_items)
                 if len(matches) == 1:
                     idx = matches[0]
-                    active_items[idx]["quantity"] = qty
+                    if qty is not None:
+                        active_items[idx]["quantity"] = qty
                     if unit:
                         active_items[idx]["unit"] = unit
-                    operation_warnings.append(f"Quantity corrected to {qty} {unit} for '{raw_product}'")
+                    operation_warnings.append(f"Quantity corrected to {active_items[idx].get('quantity')} {active_items[idx].get('unit')} for '{raw_product}'")
                 elif len(matches) > 1:
                     operation_warnings.append(f"Ambiguity Warning: Multiple matches for SET_QUANTITY '{raw_product}'. Operation preserved in warnings.")
                 else:

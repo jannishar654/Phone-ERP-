@@ -262,6 +262,19 @@ export async function updateActionCardStatus(cardId: string, status: string): Pr
   }
 }
 
+export async function convertActionCardToOrder(cardId: string): Promise<any> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/orders/action-cards/${cardId}/convert`, {
+    method: 'POST',
+    headers,
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to convert action card to order.');
+  }
+  return res.json();
+}
+
 export async function deleteActionCard(cardId: string): Promise<void> {
   try {
     const headers = await getAuthHeaders();
@@ -275,4 +288,72 @@ export async function deleteActionCard(cardId: string): Promise<void> {
     const updated = db.filter(c => c.id !== cardId);
     setLocalDB(updated);
   }
+}
+
+// Catalog API
+export async function getCatalogItems(): Promise<any[]> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/catalog/`, { headers });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to fetch catalog items.');
+  }
+  return res.json();
+}
+
+export async function createCatalogItem(itemData: any): Promise<any> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/catalog/`, {
+    method: 'POST',
+    headers: {
+      ...headers,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(itemData),
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to create catalog item.');
+  }
+  return res.json();
+}
+
+export async function updateCatalogItem(itemId: string, updates: any): Promise<any> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/catalog/${itemId}`, {
+    method: 'PUT',
+    headers: {
+      ...headers,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to update catalog item.');
+  }
+  return res.json();
+}
+
+export async function deleteCatalogItem(itemId: string): Promise<any> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/catalog/${itemId}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to delete catalog item.');
+  }
+  return res.json();
+}
+
+export async function getOrders(): Promise<any[]> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/orders/`, { headers });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to fetch orders.');
+  }
+  return res.json();
 }

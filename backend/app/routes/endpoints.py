@@ -11,8 +11,14 @@ from app.config.settings import settings
 
 import logging
 
+from app.routes import catalog, orders, telegram
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+router.include_router(catalog.router)
+router.include_router(orders.router)
+router.include_router(telegram.router)
 
 class ExtractRequest(BaseModel):
     transcript: str
@@ -21,9 +27,12 @@ class ExtractRequest(BaseModel):
     extraction_provider: Optional[str] = "gemini"
     pipeline: Optional[str] = "gemini_gemini"
 
-def _safe_items_from_extracted(extracted: Dict[str, Any]) -> List[Item]:
+def _safe_items_from_extracted(extracted: Dict[str, Any], shop_id: Optional[str] = None) -> List[Item]:
     raw_items = extracted.get("items", []) or []
-    safe_items = []
+    aggregated_items = {}
+    
+    from app.services.matching_service import matching_service
+    
     for it in raw_items:
         try:
             name = (it.get("name") or "").strip() if isinstance(it, dict) else str(it)
@@ -44,18 +53,57 @@ def _safe_items_from_extracted(extracted: Dict[str, Any]) -> List[Item]:
                 unit = ""
 
             price = None
-            if isinstance(it, dict) and it.get("price") is not None:
+            price_status = "Pending Price Verification"
+            canonical_name = None
+            resolution_status = "unmatched"
+            possible_matches = []
+
+            # 1. Real Catalog Matching using shop_id
+            if shop_id:
+                matched = matching_service.match_product(name, shop_id)
+                resolution_status = matched.get("resolution_status", "unmatched")
+                canonical_name = matched.get("canonical_name")
+                possible_matches = matched.get("possible_matches", [])
+                if resolution_status in ["matched", "suggested"]:
+                    price = matched.get("unit_price")
+                    if matched.get("unit"):
+                        unit = matched.get("unit")
+                    price_status = "Verified"
+
+            # 2. Fallback if not matched but AI provided a price (not trusted, but kept)
+            if price is None and isinstance(it, dict) and it.get("price") is not None:
                 try:
                     price = float(it.get("price"))
                 except Exception:
-                    price = None
+                    pass
 
-            safe_items.append({"name": name, "quantity": qty if qty is not None else None, "unit": unit, "price": price})
+            final_name = canonical_name or name
+            
+            if final_name in aggregated_items:
+                existing = aggregated_items[final_name]
+                if existing["quantity"] is not None and qty is not None:
+                    existing["quantity"] += qty
+                elif qty is not None:
+                    existing["quantity"] = qty
+            else:
+                aggregated_items[final_name] = {
+                    "name": final_name,
+                    "raw_name": name,
+                    "quantity": qty if qty is not None else None,
+                    "unit": unit,
+                    "price": price,
+                    "price_status": price_status,
+                    "canonical_name": canonical_name,
+                    "resolution_status": resolution_status,
+                    "possible_matches": possible_matches
+                }
         except Exception:
-            safe_items.append({"name": "Unknown Item", "quantity": None, "unit": "", "price": None})
+            if "Unknown Item" not in aggregated_items:
+                aggregated_items["Unknown Item"] = {"name": "Unknown Item", "quantity": None, "unit": "", "price": None}
+            pass
 
     try:
-        return [Item(**item) for item in safe_items]
+        return [Item(**item) for item in aggregated_items.values()]
     except Exception:
         return [Item(name="Unknown Item", quantity=None, price=None)]
 
@@ -68,11 +116,68 @@ def _create_card_from_extracted(
     transcript: str,
     user_id: Optional[str] = None,
 ) -> ActionCard:
+    shop_id = None
+    if user_id:
+        from app.services.supabase import supabase_client
+        if supabase_client is not None:
+            try:
+                res = supabase_client.table("shops").select("id").eq("owner_id", user_id).execute()
+                if res.data:
+                    shop_id = res.data[0]["id"]
+            except Exception:
+                pass
+
+    items = _safe_items_from_extracted(extracted, shop_id)
+    
+    def _item_get(item, key, default=None):
+        if isinstance(item, dict):
+            return item.get(key, default)
+        return getattr(item, key, default)
+
+    # Clean up stale catalog warnings if items are now matched
+    validation_warnings = extracted.get("validation_warnings", [])
+    final_warnings = []
+    
+    matched_names = []
+    for i in items:
+        res_status = _item_get(i, "resolution_status")
+        price = _item_get(i, "price")
+        try:
+            price_val = float(price or 0)
+        except (TypeError, ValueError):
+            price_val = 0
+            
+        if res_status in ("matched", "suggested") or price_val > 0:
+            name_val = _item_get(i, "raw_name", _item_get(i, "name"))
+            if name_val:
+                matched_names.append(name_val)
+    for w in validation_warnings:
+        if "No catalog match found" in w or "Ambiguous product" in w:
+            is_stale = False
+            for mn in matched_names:
+                if mn and (f"'{mn}'" in w or f"'{mn.lower()}'" in w.lower()):
+                    is_stale = True
+                    break
+            if is_stale:
+                continue
+        final_warnings.append(w)
+
+    raw_address = extracted.get("delivery_address", "")
+    clean_address, address_meta = GeminiService.normalize_delivery_address(raw_address)
+    
+    # ensure raw address gets persisted in metadata
+    extracted_metadata = extracted.get("metadata", {})
+    if isinstance(extracted_metadata, dict):
+        extracted_metadata.update(address_meta)
+    else:
+        extracted_metadata = address_meta
+
     card_data = {
+        "shop_id": shop_id,
         "customer_name": extracted.get("customer_name", "Unknown"),
         "customer_phone": extracted.get("customer_phone", ""),
-        "items": _safe_items_from_extracted(extracted),
-        "delivery_address": extracted.get("delivery_address", ""),
+        "items": items,
+        "delivery_address": clean_address,
         "delivery_time": extracted.get("delivery_time", ""),
         "delivery_time_raw": extracted.get("delivery_time_raw"),
         "delivery_time_normalized": extracted.get("delivery_time_normalized"),
@@ -80,7 +185,7 @@ def _create_card_from_extracted(
         "delivery_time_warning": extracted.get("delivery_time_warning"),
         "risk_flags": extracted.get("risk_flags", []),
         "missing_fields": extracted.get("missing_fields", []),
-        "validation_warnings": extracted.get("validation_warnings", []),
+        "validation_warnings": final_warnings,
         "payment_method": extracted.get("payment_method"),
         "status": "pending",
         "source": source,
@@ -92,12 +197,22 @@ def _create_card_from_extracted(
             "pipeline": pipeline,
             "extraction_notes": extracted.get("extraction_notes", ""),
             "multi_card_notes": "Multiple cards returned but currently only using the first card in UI." if extracted.get("_multi_card_flag") else "",
-            **(extracted.get("metadata", {}) if isinstance(extracted.get("metadata"), dict) else {}),
+            **extracted_metadata,
         },
         "transcript": transcript,
     }
 
-    return ActionCardController.create_card(card_data, user_id)
+    from app.services.confidence_scorer import ConfidenceScorer
+    score, label, reasons = ConfidenceScorer.calculate_confidence(card_data)
+    card_data["confidence_score"] = score
+    card_data["confidence_label"] = label
+    card_data["confidence_reasons"] = reasons
+
+    try:
+        return ActionCardController.create_card(card_data, user_id)
+    except Exception as e:
+        logger.error(f"Failed to create Action Card: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Health check endpoint
 @router.get("/health", status_code=status.HTTP_200_OK, response_model=Dict[str, str])
@@ -246,7 +361,7 @@ async def extract_action_card_audio(
     )
 # Entity extraction endpoint
 @router.post("/extract-action-card", response_model=ActionCard, status_code=status.HTTP_201_CREATED)
-async def extract_action_card(payload: ExtractRequest) -> ActionCard:
+async def extract_action_card(payload: ExtractRequest, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
     try:
         extracted = await GeminiService.extract_order_details(
             payload.transcript,
@@ -261,76 +376,20 @@ async def extract_action_card(payload: ExtractRequest) -> ActionCard:
             detail=str(error),
         ) from error
 
-    # Sanitize items to ensure types/constraints (Pydantic will enforce quantity > 0)
-    raw_items = extracted.get("items", []) or []
-    safe_items = []
-    for it in raw_items:
-        try:
-            name = (it.get("name") or "").strip() if isinstance(it, dict) else str(it)
-            if not name:
-                name = "Unknown Item"
-
-            # Allow missing/invalid quantity to pass through as missing/None so validators catch it
-            qty_raw = it.get("quantity")
-            if qty_raw is not None:
-                try:
-                    qty = float(qty_raw)
-                except Exception:
-                    qty = None
-            else:
-                qty = None
-
-            unit = (it.get("unit") or "") if isinstance(it, dict) else ""
-            if str(unit).strip().lower() in ["none", "null", "missing", "unknown"]:
-                unit = ""
-            price = None
-            if isinstance(it, dict) and it.get("price") is not None:
-                try:
-                    price = float(it.get("price"))
-                except Exception:
-                    price = None
-
-            safe_items.append({"name": name, "quantity": qty if qty is not None else None, "unit": unit, "price": price})
-        except Exception:
-            # On any unexpected structure, fall back to a single unknown item
-            safe_items.append({"name": "Unknown Item", "quantity": None, "unit": "", "price": None})
-
-    # Create Pydantic Item models (this will still validate and raise if something unexpected remains)
-    try:
-        items_models = [Item(**item) for item in safe_items]
-    except Exception as e:
-        # If validation still fails, fallback to a minimal item list but mark qty invalid
-        items_models = [Item(name="Unknown Item", quantity=None, price=None)]
-
-    card_data = {
-        "customer_name": extracted.get("customer_name", "Unknown"),
-        "customer_phone": extracted.get("customer_phone", ""),
-        "items": items_models,
-        "delivery_address": extracted.get("delivery_address", ""),
-        "delivery_time": extracted.get("delivery_time", ""),
-        "delivery_time_raw": extracted.get("delivery_time_raw"),
-        "delivery_time_normalized": extracted.get("delivery_time_normalized"),
-        "delivery_time_confidence": extracted.get("delivery_time_confidence"),
-        "delivery_time_warning": extracted.get("delivery_time_warning"),
-        "risk_flags": extracted.get("risk_flags", []),
-        "missing_fields": extracted.get("missing_fields", []),
-        "validation_warnings": extracted.get("validation_warnings", []),
-        "payment_method": extracted.get("payment_method"),
-        "status": "pending",
-        "source": payload.source,
-        "message_type": extracted.get("type", "ORDER"),
-        "confidence": extracted.get("confidence", 0.0),
-        "stt_provider": payload.stt_provider,
-        "extraction_provider": payload.extraction_provider,
-        "metadata": {
-            "pipeline": payload.pipeline,
-            "extraction_notes": extracted.get("extraction_notes", ""),
-            "multi_card_notes": "Multiple cards returned but currently only using the first card in UI." if extracted.get("_multi_card_flag") else ""
-        },
-        "transcript": payload.transcript,
-    }
-
-    return ActionCardController.create_card(card_data)
+    transcript = str(
+        extracted.get("transcript")
+        or extracted.get("metadata", {}).get("transcript_original", "")
+        or payload.transcript
+    )
+    return _create_card_from_extracted(
+        extracted,
+        source=payload.source,
+        stt_provider=payload.stt_provider,
+        extraction_provider=payload.extraction_provider,
+        pipeline=payload.pipeline,
+        transcript=transcript,
+        user_id=user_id,
+    )
 
 # Get all orders/cards
 @router.get("/action-cards", response_model=List[ActionCard], status_code=status.HTTP_200_OK)
@@ -351,37 +410,59 @@ async def get_action_card(card_id: str, user_id: Optional[str] = Depends(get_cur
 # Create manual card
 @router.post("/action-cards", response_model=ActionCard, status_code=status.HTTP_201_CREATED)
 async def create_action_card(payload: ActionCardCreate, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
-    return ActionCardController.create_card(payload.model_dump(), user_id)
+    try:
+        return ActionCardController.create_card(payload.model_dump(), user_id)
+    except Exception as e:
+        logger.error(f"Failed to create manual card: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Edit card
 @router.put("/action-cards/{card_id}", response_model=ActionCard, status_code=status.HTTP_200_OK)
 async def update_action_card(card_id: str, payload: ActionCardUpdate, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
-    updated_card = ActionCardController.update_card(card_id, payload.model_dump(exclude_unset=True), user_id)
-    if not updated_card:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"ActionCard with ID {card_id} not found"
-        )
-    return updated_card
+    try:
+        updated_card = ActionCardController.update_card(card_id, payload.model_dump(exclude_unset=True), user_id)
+        if not updated_card:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"ActionCard with ID {card_id} not found"
+            )
+        return updated_card
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update card: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Quick status update
 @router.patch("/action-cards/{card_id}/status", response_model=ActionCard, status_code=status.HTTP_200_OK)
 async def update_action_card_status(card_id: str, payload: StatusUpdate, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
-    updated_card = ActionCardController.update_card_status(card_id, payload.status, user_id)
-    if not updated_card:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"ActionCard with ID {card_id} not found"
-        )
-    return updated_card
+    try:
+        updated_card = ActionCardController.update_card_status(card_id, payload.status, user_id)
+        if not updated_card:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"ActionCard with ID {card_id} not found"
+            )
+        return updated_card
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update card status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Delete card
 @router.delete("/action-cards/{card_id}", status_code=status.HTTP_200_OK)
 async def delete_action_card(card_id: str, user_id: Optional[str] = Depends(get_current_user_id)):
-    success = ActionCardController.delete_card(card_id, user_id)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"ActionCard with ID {card_id} not found"
-        )
-    return {"message": f"ActionCard {card_id} deleted successfully"}
+    try:
+        success = ActionCardController.delete_card(card_id, user_id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"ActionCard with ID {card_id} not found"
+            )
+        return {"detail": "ActionCard deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete card: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

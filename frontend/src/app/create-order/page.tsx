@@ -59,6 +59,9 @@ export default function CreateOrder() {
   const [paymentMethod, setPaymentMethod] = useState<string>('Not Specified');
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [confidence, setConfidence] = useState<number | null>(null);
+  const [confidenceScore, setConfidenceScore] = useState<number | null>(null);
+  const [confidenceLabel, setConfidenceLabel] = useState<string | null>(null);
+  const [confidenceReasons, setConfidenceReasons] = useState<string[]>([]);
   const [sttProvider, setSttProvider] = useState<string | null>(null);
   const [extractionProvider, setExtractionProvider] = useState<string | null>(null);
 
@@ -235,6 +238,9 @@ export default function CreateOrder() {
       setPaymentMethod(card.payment_method || 'Not Specified');
       setMissingFields(card.missing_fields || []);
       setConfidence(card.confidence !== undefined ? card.confidence : null);
+      setConfidenceScore(card.confidence_score !== undefined ? card.confidence_score : null);
+      setConfidenceLabel(card.confidence_label || null);
+      setConfidenceReasons(card.confidence_reasons || []);
       setSttProvider(card.stt_provider || null);
       setExtractionProvider(card.extraction_provider || null);
       setIsGenerated(true);
@@ -298,6 +304,9 @@ export default function CreateOrder() {
       setPaymentMethod(card.payment_method || 'Not Specified');
       setMissingFields(card.missing_fields || []);
       setConfidence(card.confidence !== undefined ? card.confidence : null);
+      setConfidenceScore(card.confidence_score !== undefined ? card.confidence_score : null);
+      setConfidenceLabel(card.confidence_label || null);
+      setConfidenceReasons(card.confidence_reasons || []);
       setSttProvider(null);
       setExtractionProvider(card.extraction_provider || null);
       setTranscript(manualTranscript);
@@ -416,7 +425,7 @@ export default function CreateOrder() {
       } else {
         await createActionCard(payload);
       }
-      router.push('/orders');
+      router.push('/action-card');
       router.refresh();
     } catch (err) {
       alert("Failed to submit order. Falling back to local storage.");
@@ -636,6 +645,50 @@ const s = (secs % 60).toString().padStart(2, '0');
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
               {/* Left Column - Forms & Items (Span 2) */}
               <div className="lg:col-span-2 space-y-6">
+                
+                {/* Confidence Panel */}
+                {confidenceScore !== null && confidenceLabel !== null && (
+                  <div className={`rounded-xl border p-5 shadow-xs ${
+                    confidenceLabel === 'High' ? 'bg-emerald-50 border-emerald-200' :
+                    confidenceLabel === 'Medium' ? 'bg-amber-50 border-amber-200' :
+                    'bg-red-50 border-red-200'
+                  }`}>
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className={`text-sm font-extrabold px-2.5 py-1 rounded-md border ${
+                        confidenceLabel === 'High' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                        confidenceLabel === 'Medium' ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                        'bg-red-100 text-red-800 border-red-300'
+                      }`}>
+                        Review Readiness: {confidenceScore}% {confidenceLabel}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Review Status</span>
+                    </div>
+                    {confidenceReasons && confidenceReasons.length > 0 && (
+                      <ul className="text-sm space-y-1 pl-4 list-disc mt-2">
+                        {confidenceReasons.map((reason, idx) => (
+                          <li key={idx} className={
+                            confidenceLabel === 'High' ? 'text-emerald-700 font-medium' :
+                            confidenceLabel === 'Medium' ? 'text-amber-800 font-medium' : 
+                            'text-red-800 font-medium'
+                          }>{reason}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+                
+                {/* Legacy Confidence Fallback */}
+                {confidenceScore === null && confidence !== null && (
+                  <div className="rounded-xl border p-4 shadow-xs bg-slate-50 border-slate-200">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-extrabold px-2.5 py-1 rounded-md border bg-slate-100 text-slate-700 border-slate-300">
+                        Model Confidence: {(confidence * 100).toFixed(0)}%
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Review Status</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Customer & Delivery Card */}
                 <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
                   <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
@@ -874,17 +927,18 @@ const s = (secs % 60).toString().padStart(2, '0');
                     </div>
                   )}
 
-                  <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center text-sm font-semibold text-slate-600">
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-2 text-sm font-semibold text-slate-600">
                     <span className="text-slate-500">Calculated Grand Total:</span>
-                    {items.some(item => item.price === undefined || item.price === null || item.price <= 0) ? (
-                      <span className="text-amber-600 font-bold text-xs italic bg-amber-50 px-2 py-1 rounded border border-amber-200">
-                        Pending Price Verification
-                      </span>
-                    ) : (
+                    <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
                       <span className="text-base sm:text-lg font-black text-slate-900 font-mono bg-slate-50 border border-slate-150 px-3 py-1 rounded">
                         ₹{orderTotal.toFixed(2)}
                       </span>
-                    )}
+                      {items.some(item => item.price === undefined || item.price === null || item.price <= 0) && (
+                        <span className="text-amber-600 font-bold text-xs italic bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                          + Pending Price Verification
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

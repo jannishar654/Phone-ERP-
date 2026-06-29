@@ -22,8 +22,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from app.routes.telegram import router as telegram_router
+
 # Register routes
 app.include_router(api_router)
+app.include_router(telegram_router)
 
 @app.get("/")
 def read_root():
