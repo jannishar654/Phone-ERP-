@@ -104,11 +104,16 @@ class GeminiService:
         if not cust_name or cust_name.upper() == "UNKNOWN":
             return cust_name
             
+        # Strip leading filler words before trimming trailing command words.
+        cust_name = re.sub(
+            r'^(?:unka\s+naam\s+|party\s+ka\s+naam\s+|naam\s+jo\s+rahega\s+|naam\s+(?:likhna|likh\s*do|likhdo|rahega)\s+|naam\s+)',
+            '',
+            cust_name,
+            flags=re.IGNORECASE,
+        ).strip()
+
         # Strip trailing filler words
         cust_name = re.sub(r'(?:\s+(?:rahega|likhna|likh\s*dena|likh\s*do|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
-        
-        # Strip leading filler words
-        cust_name = re.sub(r'^(?:naam\s+|unka\s+naam\s+|party\s+ka\s+naam\s+|naam\s+jo\s+rahega\s+)', '', cust_name, flags=re.IGNORECASE).strip()
         
         return cust_name.title()
 
@@ -166,6 +171,7 @@ class GeminiService:
         # Cleanup double commas, leading commas, and weird spacing
         clean_address = re.sub(r'\s*,\s*', ', ', clean_address)
         clean_address = re.sub(r'(?:,\s*)+', ', ', clean_address)
+        clean_address = re.sub(r',\s+(Ke\s+Paas\b)', r' \1', clean_address)
         clean_address = clean_address.strip(', ')
         
         return clean_address, {"raw_delivery_address": raw_address}
