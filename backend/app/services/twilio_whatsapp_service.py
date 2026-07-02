@@ -117,8 +117,12 @@ class TwilioWhatsappService:
             wa_id = from_phone.replace("whatsapp:", "")
             
         media_url_0 = payload.get("MediaUrl0")
-        media_content_type_0 = payload.get("MediaContentType0")
+        raw_media_content_type = payload.get("MediaContentType0", "")
+        media_content_type_0 = raw_media_content_type.split(";")[0].strip().lower() if raw_media_content_type else None
         msg_id = payload.get("MessageSid")
+        num_media = payload.get("NumMedia", "0")
+        
+        logger.info(f"Twilio WhatsApp Webhook: MessageSid={msg_id}, NumMedia={num_media}, MediaContentType0={media_content_type_0}")
         
         shop_id, owner_id = self._resolve_shop_and_owner()
         if not shop_id or not owner_id:
@@ -139,7 +143,9 @@ class TwilioWhatsappService:
                 try:
                     from app.services.gemini import GeminiService
                     extracted = await GeminiService.extract_order_details(pending_text)
-                    self._create_order_card(extracted, pending_text, shop_id, owner_id, curr_channel_data, customer, payload, input_type="text")
+                    card = self._create_order_card(extracted, pending_text, shop_id, owner_id, curr_channel_data, customer, payload, input_type="text")
+                    if card:
+                        logger.info(f"Created pending action card {card.id} for MessageSid={msg_id}")
                     meta.pop("pending_order_text", None)
                     meta.pop("pending_order_message_id", None)
                     self.update_channel_state(curr_channel_data["id"], {"metadata": meta})
@@ -149,7 +155,9 @@ class TwilioWhatsappService:
             return False
         
         if media_url_0:
+            logger.info(f"Entering media branch for MessageSid={msg_id}")
             if not media_content_type_0 or not media_content_type_0.startswith("audio/"):
+                logger.info(f"Media is not audio (type={media_content_type_0}), rejecting.")
                 return self._generate_twiml("Please send a text or voice order.")
                 
             if not channel_data.get("profile_completed"):
@@ -161,9 +169,10 @@ class TwilioWhatsappService:
             try:
                 resp = requests.get(media_url_0, auth=(account_sid, auth_token), timeout=20)
                 if resp.status_code != 200:
-                    logger.error(f"Failed to download Twilio media: status {resp.status_code}")
+                    logger.error(f"Failed to download Twilio media: status {resp.status_code} for MessageSid={msg_id}")
                     return self._generate_twiml("Sorry, I could not download the voice message. Please try again or send text.")
                 
+                logger.info(f"Successfully downloaded audio bytes for MessageSid={msg_id}")
                 file_content = resp.content
                 mime_type = media_content_type_0 or "application/octet-stream"
                 ext = "ogg" if "ogg" in mime_type else "wav" if "wav" in mime_type else "unknown"
@@ -194,10 +203,14 @@ class TwilioWhatsappService:
                         if os.path.exists(f_out_path): os.remove(f_out_path)
                         
                 if not transcript:
+                    logger.warning(f"Voice transcription yielded empty result for MessageSid={msg_id}")
                     return self._generate_twiml("Sorry, voice order could not be processed. Please send the order as text.")
                     
+                logger.info(f"Successfully transcribed audio for MessageSid={msg_id}. Transcript length: {len(transcript)} chars.")
                 extracted = await GeminiService.extract_order_details(transcript)
-                self._create_order_card(extracted, transcript, shop_id, owner_id, channel_data, customer, payload, input_type="voice")
+                card = self._create_order_card(extracted, transcript, shop_id, owner_id, channel_data, customer, payload, input_type="voice")
+                if card:
+                    logger.info(f"Created action card {card.id} for voice order MessageSid={msg_id}")
                 return self._generate_twiml("Voice order received. Shopkeeper will review.")
             except Exception as e:
                 logger.error(f"Failed to process twilio voice order: {e}")
@@ -405,7 +418,9 @@ class TwilioWhatsappService:
         try:
             from app.services.gemini import GeminiService
             extracted = await GeminiService.extract_order_details(text)
-            self._create_order_card(extracted, text, shop_id, owner_id, channel_data, customer, payload, input_type="text")
+            card = self._create_order_card(extracted, text, shop_id, owner_id, channel_data, customer, payload, input_type="text")
+            if card:
+                logger.info(f"Created text action card {card.id} for MessageSid={msg_id}")
             return self._generate_twiml("Order received. Shopkeeper will review.")
         except Exception as e:
             logger.error(f"Failed to process twilio text order: {e}")
@@ -473,6 +488,7 @@ class TwilioWhatsappService:
         card_data["confidence_label"] = label
         card_data["confidence_reasons"] = reasons
 
-        ActionCardController.create_card(card_data, user_id=owner_id)
+        card = ActionCardController.create_card(card_data, user_id=owner_id)
+        return card
 
 twilio_whatsapp_service = TwilioWhatsappService()
