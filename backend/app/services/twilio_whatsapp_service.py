@@ -4,7 +4,6 @@ import re
 import os
 import tempfile
 import subprocess
-import sys
 from typing import Optional, Dict, Any
 from app.config.settings import settings
 from app.services.supabase import supabase_client
@@ -122,15 +121,6 @@ class TwilioWhatsappService:
         media_content_type_0 = raw_media_content_type.split(";")[0].strip().lower() if raw_media_content_type else None
         msg_id = payload.get("MessageSid")
         num_media = payload.get("NumMedia", "0")
-        
-        # VERY VISIBLE TEMPORARY LOG FOR RENDER DEBUGGING
-        print(f"\n======================================")
-        print(f"TWILIO WEBHOOK LIVE DEBUG:")
-        print(f"MessageSid: {msg_id}")
-        print(f"NumMedia: {num_media}")
-        print(f"MediaContentType0: {media_content_type_0}")
-        print(f"======================================\n", file=sys.stdout)
-        sys.stdout.flush()
         
         logger.info(f"Twilio WhatsApp Webhook: MessageSid={msg_id}, NumMedia={num_media}, MediaContentType0={media_content_type_0}")
         
