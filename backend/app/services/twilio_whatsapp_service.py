@@ -1,6 +1,9 @@
 import logging
 import requests
 import re
+import os
+import tempfile
+import subprocess
 from typing import Optional, Dict, Any
 from app.config.settings import settings
 from app.services.supabase import supabase_client
@@ -146,6 +149,9 @@ class TwilioWhatsappService:
             return False
         
         if media_url_0:
+            if not media_content_type_0 or not media_content_type_0.startswith("audio/"):
+                return self._generate_twiml("Please send a text or voice order.")
+                
             if not channel_data.get("profile_completed"):
                 return self._generate_twiml("Please complete your profile setup first before sending voice orders.")
             
@@ -169,9 +175,6 @@ class TwilioWhatsappService:
                     transcript = await GeminiService.transcribe_audio_file(file_content, filename, mime_type)
                 except Exception as stt_err:
                     logger.warning(f"Gemini STT direct pass failed: {stt_err}. Trying ffmpeg fallback...")
-                    import tempfile
-                    import subprocess
-                    import os
                     
                     with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as f_in:
                         f_in.write(file_content)
@@ -195,7 +198,7 @@ class TwilioWhatsappService:
                     
                 extracted = await GeminiService.extract_order_details(transcript)
                 self._create_order_card(extracted, transcript, shop_id, owner_id, channel_data, customer, payload, input_type="voice")
-                return self._generate_twiml("Order received. Shopkeeper will review.")
+                return self._generate_twiml("Voice order received. Shopkeeper will review.")
             except Exception as e:
                 logger.error(f"Failed to process twilio voice order: {e}")
                 return self._generate_twiml("Sorry, I could not process the voice message. Please try again or send text.")

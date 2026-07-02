@@ -316,3 +316,207 @@ async def test_twilio_provides_address_completes_pending_order(mock_extract, moc
     # Should skip phone (since we have it), create card, and say order received
     assert "Order received" in res
     assert mock_create.called
+
+@patch("app.services.twilio_whatsapp_service.requests.get")
+@patch("app.services.twilio_whatsapp_service.supabase_client")
+@patch("app.services.twilio_whatsapp_service.ActionCardController.create_card")
+@patch("app.services.gemini.GeminiService.transcribe_audio_file")
+@patch("app.services.gemini.GeminiService.extract_order_details")
+@pytest.mark.asyncio
+async def test_twilio_voice_order_success(mock_extract, mock_transcribe, mock_create, mock_supa, mock_get):
+    """Test successful voice order processing via Twilio WhatsApp"""
+    from app.services.twilio_whatsapp_service import twilio_whatsapp_service
+    from app.config.settings import settings
+    
+    mock_chan_select = MagicMock()
+    mock_chan_select.eq().eq().eq().execute.return_value = MagicMock(data=[{
+        "id": "chan-1", "state": "ready", "profile_completed": True,
+        "customers": {"id": "cust-1", "name": "John Doe", "phone": "+919999999999"}
+    }])
+    def mock_table(t):
+        mock_t = MagicMock()
+        mock_t.select.return_value = mock_chan_select
+        return mock_t
+    mock_supa.table.side_effect = mock_table
+    
+    # Mock Twilio audio download
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.content = b"fake_audio_bytes"
+    mock_get.return_value = mock_response
+    
+    # Mock STT and Extraction
+    mock_transcribe.return_value = "send 1 liter milk"
+    mock_extract.return_value = {
+        "customer_name": "John Doe",
+        "items": [{"name": "Milk", "quantity": "1", "unit": "liter"}],
+        "type": "ORDER"
+    }
+    
+    payload = {
+        "From": "whatsapp:+919999999999", 
+        "WaId": "919999999999",
+        "NumMedia": "1",
+        "MediaUrl0": "https://api.twilio.com/some_audio",
+        "MediaContentType0": "audio/ogg",
+        "MessageSid": "SM123voice"
+    }
+    
+    res = await twilio_whatsapp_service.process_update(payload)
+    
+    # Verify download happened with correct auth
+    mock_get.assert_called_once_with(
+        "https://api.twilio.com/some_audio", 
+        auth=(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN),
+        timeout=20
+    )
+    
+    # Verify transcribe was called with correct mime
+    mock_transcribe.assert_called_once_with(b"fake_audio_bytes", "voice.ogg", "audio/ogg")
+    
+    # Verify correct response
+    assert "Voice order received" in res
+    
+    # Verify Action Card created with voice input_type and MessageSid
+    assert mock_create.called
+    card_data = mock_create.call_args[0][0]
+    assert card_data["metadata"]["input_type"] == "voice"
+    assert card_data["metadata"]["twilio_message_sid"] == "SM123voice"
+    assert card_data["transcript"] == "send 1 liter milk"
+
+@patch("app.services.twilio_whatsapp_service.supabase_client")
+@pytest.mark.asyncio
+async def test_twilio_voice_order_non_audio_rejected(mock_supa):
+    """Test non-audio media is rejected with appropriate message"""
+    from app.services.twilio_whatsapp_service import twilio_whatsapp_service
+    
+    mock_chan_select = MagicMock()
+    mock_chan_select.eq().eq().eq().execute.return_value = MagicMock(data=[{
+        "id": "chan-1", "state": "ready", "profile_completed": True,
+        "customers": {"id": "cust-1", "name": "John Doe"}
+    }])
+    def mock_table(t):
+        mock_t = MagicMock()
+        mock_t.select.return_value = mock_chan_select
+        return mock_t
+    mock_supa.table.side_effect = mock_table
+    
+    payload = {
+        "From": "whatsapp:+919999999999", 
+        "WaId": "919999999999",
+        "NumMedia": "1",
+        "MediaUrl0": "https://api.twilio.com/some_image",
+        "MediaContentType0": "image/jpeg",
+        "MessageSid": "SM123image"
+    }
+    
+    res = await twilio_whatsapp_service.process_update(payload)
+    assert "Please send a text or voice order" in res
+
+@patch("app.services.twilio_whatsapp_service.requests.get")
+@patch("app.services.twilio_whatsapp_service.supabase_client")
+@pytest.mark.asyncio
+async def test_twilio_voice_order_download_failure(mock_supa, mock_get):
+    """Test safe handling when Twilio media download fails"""
+    from app.services.twilio_whatsapp_service import twilio_whatsapp_service
+    
+    mock_chan_select = MagicMock()
+    mock_chan_select.eq().eq().eq().execute.return_value = MagicMock(data=[{
+        "id": "chan-1", "state": "ready", "profile_completed": True,
+        "customers": {"id": "cust-1", "name": "John Doe"}
+    }])
+    def mock_table(t):
+        mock_t = MagicMock()
+        mock_t.select.return_value = mock_chan_select
+        return mock_t
+    mock_supa.table.side_effect = mock_table
+    
+    # Mock Twilio audio download failure
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_get.return_value = mock_response
+    
+    payload = {
+        "From": "whatsapp:+919999999999", 
+        "WaId": "919999999999",
+        "NumMedia": "1",
+        "MediaUrl0": "https://api.twilio.com/some_audio",
+        "MediaContentType0": "audio/ogg",
+        "MessageSid": "SM123voice"
+    }
+    
+    res = await twilio_whatsapp_service.process_update(payload)
+    assert "Sorry, I could not download the voice message" in res
+
+@patch("app.services.twilio_whatsapp_service.requests.get")
+@patch("app.services.twilio_whatsapp_service.supabase_client")
+@patch("app.services.twilio_whatsapp_service.ActionCardController.create_card")
+@patch("app.services.gemini.GeminiService.transcribe_audio_file")
+@patch("app.services.gemini.GeminiService.extract_order_details")
+@patch("app.services.twilio_whatsapp_service.subprocess.run")
+@pytest.mark.asyncio
+async def test_twilio_voice_order_ffmpeg_fallback(mock_run, mock_extract, mock_transcribe, mock_create, mock_supa, mock_get):
+    """Test voice processing falls back to ffmpeg if Gemini rejects audio/ogg"""
+    from app.services.twilio_whatsapp_service import twilio_whatsapp_service
+    
+    mock_chan_select = MagicMock()
+    mock_chan_select.eq().eq().eq().execute.return_value = MagicMock(data=[{
+        "id": "chan-1", "state": "ready", "profile_completed": True,
+        "customers": {"id": "cust-1", "name": "John Doe", "phone": "+919999999999"}
+    }])
+    def mock_table(t):
+        mock_t = MagicMock()
+        mock_t.select.return_value = mock_chan_select
+        return mock_t
+    mock_supa.table.side_effect = mock_table
+    
+    # Mock Twilio audio download
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.content = b"fake_ogg_bytes"
+    mock_get.return_value = mock_response
+    
+    # Mock subprocess.run to create the output .wav file
+    def fake_subprocess_run(cmd, **kwargs):
+        out_path = cmd[-1]
+        with open(out_path, "wb") as f:
+            f.write(b"fake_wav_bytes")
+    mock_run.side_effect = fake_subprocess_run
+    
+    # Mock STT to fail on first call (ogg) and succeed on second (wav)
+    mock_transcribe.side_effect = [
+        Exception("Unsupported audio format"),
+        "send 1 liter milk"
+    ]
+    
+    mock_extract.return_value = {
+        "customer_name": "John Doe",
+        "items": [{"name": "Milk", "quantity": "1", "unit": "liter"}],
+        "type": "ORDER"
+    }
+    
+    payload = {
+        "From": "whatsapp:+919999999999", 
+        "WaId": "919999999999",
+        "NumMedia": "1",
+        "MediaUrl0": "https://api.twilio.com/some_audio",
+        "MediaContentType0": "audio/ogg",
+        "MessageSid": "SM123voice"
+    }
+    
+    res = await twilio_whatsapp_service.process_update(payload)
+    
+    # Verify transcribe was called twice
+    assert mock_transcribe.call_count == 2
+    
+    # First call with ogg
+    mock_transcribe.assert_any_call(b"fake_ogg_bytes", "voice.ogg", "audio/ogg")
+    
+    # Second call with wav
+    mock_transcribe.assert_any_call(b"fake_wav_bytes", "fallback.wav", "audio/wav")
+    
+    # Verify Action Card created successfully
+    assert mock_create.called
+    card_data = mock_create.call_args[0][0]
+    assert card_data["metadata"]["input_type"] == "voice"
+    assert card_data["transcript"] == "send 1 liter milk"
