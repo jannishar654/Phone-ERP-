@@ -52,10 +52,14 @@ def test_twilio_signature_valid(mock_process, client):
     mock_process.assert_called_once()
 
 @patch("app.services.twilio_whatsapp_service.supabase_client")
+@patch("app.services.gemini.GeminiService.extract_order_details")
 @pytest.mark.asyncio
-async def test_twilio_onboarding_flow(mock_supa):
-    """Test the onboarding state machine"""
+async def test_twilio_onboarding_flow(mock_extract, mock_supa):
+    """Test standard onboarding: /start -> Name -> Address -> Phone -> Ready"""
     from app.services.twilio_whatsapp_service import twilio_whatsapp_service
+    
+    # Mock Gemini to return no items, so looks_like_order fallback triggers
+    mock_extract.return_value = {"items": []}
     
     # Mock shop config is correct
     
@@ -193,7 +197,7 @@ async def test_twilio_order_during_onboarding_with_all_details(mock_extract, moc
     mock_extract.return_value = {
         "customer_name": "Ravi",
         "delivery_address": "Block B",
-        "items": [],
+        "items": [{"name": "sugar", "quantity": 2, "unit": "kg"}],
         "confidence": 0.9,
         "type": "ORDER"
     }
@@ -230,19 +234,19 @@ async def test_twilio_order_during_onboarding_missing_address(mock_extract, mock
     mock_chan_select.eq().eq().eq().execute.return_value = MagicMock(data=[channel_data])
     
     mock_update = MagicMock()
+    mock_t_cached = MagicMock()
     
     def mock_table(t):
-        mock_t = MagicMock()
-        mock_t.select.return_value = mock_chan_select
-        mock_t.update.return_value = mock_update
+        mock_t_cached.select.return_value = mock_chan_select
+        mock_t_cached.update.return_value = mock_update
         mock_update.eq.return_value = mock_update
-        return mock_t
+        return mock_t_cached
     mock_supa.table.side_effect = mock_table
     
     mock_extract.return_value = {
         "customer_name": "Ravi",
         # Missing delivery_address
-        "items": [],
+        "items": [{"name": "sugar", "quantity": 2, "unit": "kg"}],
         "confidence": 0.9,
         "type": "ORDER"
     }
@@ -259,7 +263,7 @@ async def test_twilio_order_during_onboarding_missing_address(mock_extract, mock
     assert "What is your delivery address" in res
     
     # Verify update was called on customer_channels
-    update_calls = [call for call in mock_supa.table("customer_channels").update.call_args_list]
+    update_calls = [call for call in mock_t_cached.update.call_args_list]
     # Check that metadata was updated with pending_order_text
     found_metadata = False
     for call in update_calls:
@@ -297,7 +301,7 @@ async def test_twilio_provides_address_completes_pending_order(mock_extract, moc
     
     mock_extract.return_value = {
         "customer_name": "Ravi",
-        "items": [],
+        "items": [{"name": "sugar", "quantity": 2, "unit": "kg"}],
         "confidence": 0.9,
         "type": "ORDER"
     }

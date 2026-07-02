@@ -286,43 +286,51 @@ class TwilioWhatsappService:
                 from app.services.gemini import GeminiService
                 extracted = await GeminiService.extract_order_details(text)
                 
-                ext_name = extracted.get("customer_name")
-                ext_address = extracted.get("delivery_address")
-                has_name = bool(ext_name and ext_name.lower() != "unknown")
-                has_address = bool(ext_address and ext_address.lower() != "unknown")
-                
-                if has_name: customer["name"] = ext_name
-                if has_address: customer["address"] = ext_address
-                
-                if has_name and has_address:
-                    self.update_customer(customer_id, {"name": ext_name, "address": ext_address})
-                    updates = {"display_name": ext_name, "state": "ready"}
-                    if channel_data.get("phone"):
-                        updates["profile_completed"] = True
-                    self.update_channel_state(channel_data["id"], updates)
-                    channel_data.update(updates)
-                    
-                    self._create_order_card(extracted, text, shop_id, owner_id, channel_data, customer, payload, input_type="text")
-                    return self._generate_twiml("Order received. Shopkeeper will review.")
+                # If Gemini finds no items, it's not a real order. Fall back to normal onboarding.
+                if not extracted.get("items"):
+                    looks_like = False
                 else:
-                    meta["pending_order_text"] = text
-                    if msg_id:
-                        meta["pending_order_message_id"] = msg_id
-                    updates = {"metadata": meta}
+                    looks_like = True
+                    ext_name = extracted.get("customer_name")
+                    ext_address = extracted.get("delivery_address")
+                    has_name = bool(ext_name and ext_name.lower() != "unknown")
+                    has_address = bool(ext_address and ext_address.lower() != "unknown")
                     
-                    if has_name and state == "awaiting_name":
-                        state = "awaiting_address"
-                        self.update_customer(customer_id, {"name": ext_name})
-                        updates["display_name"] = ext_name
+                    if has_name: customer["name"] = ext_name
+                    if has_address: customer["address"] = ext_address
                     
-                    updates["state"] = state
-                    self.update_channel_state(channel_data["id"], updates)
-                    
-                    if state == "awaiting_name":
-                        return self._generate_twiml("Welcome to PhoneERP. Please tell me your name.")
-                    elif state == "awaiting_address":
-                        return self._generate_twiml("Thanks! What is your delivery address?")
+                    if has_name and has_address:
+                        self.update_customer(customer_id, {"name": ext_name, "address": ext_address})
+                        updates = {"display_name": ext_name, "state": "ready"}
+                        if channel_data.get("phone"):
+                            updates["profile_completed"] = True
+                        self.update_channel_state(channel_data["id"], updates)
+                        channel_data.update(updates)
+                        
+                        self._create_order_card(extracted, text, shop_id, owner_id, channel_data, customer, payload, input_type="text")
+                        return self._generate_twiml("Order received. Shopkeeper will review.")
+                    else:
+                        meta["pending_order_text"] = text
+                        if msg_id:
+                            meta["pending_order_message_id"] = msg_id
+                        updates = {"metadata": meta}
+                        
+                        if has_name and state == "awaiting_name":
+                            state = "awaiting_address"
+                            self.update_customer(customer_id, {"name": ext_name})
+                            updates["display_name"] = ext_name
+                        
+                        updates["state"] = state
+                        self.update_channel_state(channel_data["id"], updates)
+                        
+                        if state == "awaiting_name":
+                            return self._generate_twiml("Welcome to PhoneERP. Please tell me your name.")
+                        elif state == "awaiting_address":
+                            return self._generate_twiml("Thanks! What is your delivery address?")
             else:
+                looks_like = False
+                
+            if not looks_like:
                 # Normal onboarding flow for non-orders
                 if state == "awaiting_name":
                     self.update_customer(customer_id, {"name": text})
@@ -387,6 +395,9 @@ class TwilioWhatsappService:
             self.update_customer(customer_id, {"phone": norm_phone})
             self.update_channel_state(channel_data["id"], {"phone": norm_phone, "state": "ready"})
             return self._generate_twiml("Phone updated!")
+            
+        if not looks_like_order(text):
+            return self._generate_twiml("Please send a grocery order, or use /help for options.")
             
         try:
             from app.services.gemini import GeminiService
