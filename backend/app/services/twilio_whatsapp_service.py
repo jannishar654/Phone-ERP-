@@ -22,6 +22,16 @@ def normalize_phone(phone: str) -> Optional[str]:
         return '+91' + cleaned
     return None
 
+def looks_like_order(msg: str) -> bool:
+    t = msg.lower()
+    qty_words = ["kilo", "kg", "litre", "liter", "packet", "dabba", "bottle", "gram", "pcs", "piece"]
+    hindi_nums = ["ek", "do", "teen", "char", "paanch", "chhe", "saat", "aath", "nau", "das", "gyarah", "barah", "pandrah", "bees", "pachas"]
+    verbs = ["bhej dena", "bhejna", "chahiye", "order", "de dena", "deliver", "pahuncha dena", "bhej do", "dedo", "de do"]
+    if any(char.isdigit() for char in t): return True
+    if any(re.search(r'\b' + w + r'\b', t) for w in qty_words + hindi_nums): return True
+    if any(v in t for v in verbs): return True
+    return False
+
 class TwilioWhatsappService:
     def _resolve_shop_and_owner(self) -> tuple[Optional[str], Optional[str]]:
         return settings.TWILIO_DEFAULT_SHOP_ID, settings.TWILIO_DEFAULT_OWNER_ID
@@ -41,7 +51,6 @@ class TwilioWhatsappService:
             res = supabase_client.table("customer_channels").select("*, customers(*)").eq("channel", "whatsapp").eq("channel_user_id", wa_id).eq("shop_id", shop_id).execute()
             if res.data:
                 return res.data[0]
-            # We don't have a channel record, but we might have a customer record with this phone
             phone_norm = normalize_phone(from_phone)
             customer_id = None
             customer_data = None
@@ -106,6 +115,7 @@ class TwilioWhatsappService:
             
         media_url_0 = payload.get("MediaUrl0")
         media_content_type_0 = payload.get("MediaContentType0")
+        msg_id = payload.get("MessageSid")
         
         shop_id, owner_id = self._resolve_shop_and_owner()
         if not shop_id or not owner_id:
@@ -118,6 +128,22 @@ class TwilioWhatsappService:
         customer = channel_data.get("customers", {})
         customer_id = customer.get("id")
         state = channel_data.get("state", "awaiting_name")
+        
+        async def check_pending_order(curr_channel_data):
+            meta = curr_channel_data.get("metadata", {})
+            pending_text = meta.get("pending_order_text")
+            if pending_text:
+                try:
+                    from app.services.gemini import GeminiService
+                    extracted = await GeminiService.extract_order_details(pending_text)
+                    self._create_order_card(extracted, pending_text, shop_id, owner_id, curr_channel_data, customer, payload, input_type="text")
+                    meta.pop("pending_order_text", None)
+                    meta.pop("pending_order_message_id", None)
+                    self.update_channel_state(curr_channel_data["id"], {"metadata": meta})
+                    return True
+                except Exception as e:
+                    logger.error(f"Failed to process pending order: {e}")
+            return False
         
         if media_url_0:
             if not channel_data.get("profile_completed"):
@@ -251,29 +277,94 @@ class TwilioWhatsappService:
                 logger.error(f"Failed to fetch twilio orders: {e}")
                 return self._generate_twiml("Could not fetch orders right now.")
 
-        if state == "awaiting_name":
-            self.update_customer(customer_id, {"name": text})
-            self.update_channel_state(channel_data["id"], {"display_name": text, "state": "awaiting_address"})
-            return self._generate_twiml("Thanks! What is your delivery address?")
-            
-        if state == "awaiting_address":
-            self.update_customer(customer_id, {"address": text})
-            self.update_channel_state(channel_data["id"], {"state": "awaiting_phone"})
-            return self._generate_twiml("Please provide your phone number (or type 'skip').")
-            
-        if state == "awaiting_phone":
-            if text.lower() == "skip":
-                self.update_channel_state(channel_data["id"], {"profile_completed": True, "state": "ready"})
-                return self._generate_twiml("Profile saved. Now send your order.")
-            
-            norm_phone = normalize_phone(text)
-            if not norm_phone:
-                return self._generate_twiml("Invalid phone number. Please send a valid 10-digit Indian number or type 'skip'.")
+        if not channel_data.get("profile_completed"):
+            if looks_like_order(text):
+                meta = channel_data.get("metadata", {})
+                if msg_id and meta.get("pending_order_message_id") == msg_id:
+                    return self._generate_twiml("") # ignore duplicate
+                    
+                from app.services.gemini import GeminiService
+                extracted = await GeminiService.extract_order_details(text)
                 
-            self.update_customer(customer_id, {"phone": norm_phone})
-            self.update_channel_state(channel_data["id"], {"phone": norm_phone, "profile_completed": True, "state": "ready"})
-            return self._generate_twiml("Profile saved. Now send your order.")
-            
+                ext_name = extracted.get("customer_name")
+                ext_address = extracted.get("delivery_address")
+                has_name = bool(ext_name and ext_name.lower() != "unknown")
+                has_address = bool(ext_address and ext_address.lower() != "unknown")
+                
+                if has_name: customer["name"] = ext_name
+                if has_address: customer["address"] = ext_address
+                
+                if has_name and has_address:
+                    self.update_customer(customer_id, {"name": ext_name, "address": ext_address})
+                    updates = {"display_name": ext_name, "state": "ready"}
+                    if channel_data.get("phone"):
+                        updates["profile_completed"] = True
+                    self.update_channel_state(channel_data["id"], updates)
+                    channel_data.update(updates)
+                    
+                    self._create_order_card(extracted, text, shop_id, owner_id, channel_data, customer, payload, input_type="text")
+                    return self._generate_twiml("Order received. Shopkeeper will review.")
+                else:
+                    meta["pending_order_text"] = text
+                    if msg_id:
+                        meta["pending_order_message_id"] = msg_id
+                    updates = {"metadata": meta}
+                    
+                    if has_name and state == "awaiting_name":
+                        state = "awaiting_address"
+                        self.update_customer(customer_id, {"name": ext_name})
+                        updates["display_name"] = ext_name
+                    
+                    updates["state"] = state
+                    self.update_channel_state(channel_data["id"], updates)
+                    
+                    if state == "awaiting_name":
+                        return self._generate_twiml("Welcome to PhoneERP. Please tell me your name.")
+                    elif state == "awaiting_address":
+                        return self._generate_twiml("Thanks! What is your delivery address?")
+            else:
+                # Normal onboarding flow for non-orders
+                if state == "awaiting_name":
+                    self.update_customer(customer_id, {"name": text})
+                    updates = {"display_name": text, "state": "awaiting_address"}
+                    self.update_channel_state(channel_data["id"], updates)
+                    channel_data.update(updates)
+                    customer["name"] = text
+                    return self._generate_twiml("Thanks! What is your delivery address?")
+                    
+                if state == "awaiting_address":
+                    self.update_customer(customer_id, {"address": text})
+                    updates = {}
+                    if channel_data.get("phone"):
+                        updates["state"] = "ready"
+                        updates["profile_completed"] = True
+                        self.update_channel_state(channel_data["id"], updates)
+                        channel_data.update(updates)
+                        customer["address"] = text
+                        processed = await check_pending_order(channel_data)
+                        msg = "Order received. Shopkeeper will review." if processed else "Profile saved. Now send your order."
+                        return self._generate_twiml(msg)
+                    else:
+                        updates["state"] = "awaiting_phone"
+                        self.update_channel_state(channel_data["id"], updates)
+                        return self._generate_twiml("Please provide your phone number (or type 'skip').")
+                        
+                if state == "awaiting_phone":
+                    updates = {"state": "ready", "profile_completed": True}
+                    if text.lower() != "skip":
+                        norm_phone = normalize_phone(text)
+                        if not norm_phone:
+                            return self._generate_twiml("Invalid phone number. Please send a valid 10-digit Indian number or type 'skip'.")
+                        self.update_customer(customer_id, {"phone": norm_phone})
+                        updates["phone"] = norm_phone
+                        customer["phone"] = norm_phone
+                        
+                    self.update_channel_state(channel_data["id"], updates)
+                    channel_data.update(updates)
+                    processed = await check_pending_order(channel_data)
+                    msg = "Order received. Shopkeeper will review." if processed else "Profile saved. Now send your order."
+                    return self._generate_twiml(msg)
+
         if state == "editing_name":
             self.update_customer(customer_id, {"name": text})
             self.update_channel_state(channel_data["id"], {"display_name": text, "state": "ready"})
@@ -296,22 +387,6 @@ class TwilioWhatsappService:
             self.update_customer(customer_id, {"phone": norm_phone})
             self.update_channel_state(channel_data["id"], {"phone": norm_phone, "state": "ready"})
             return self._generate_twiml("Phone updated!")
-
-        if not channel_data.get("profile_completed"):
-            return self._generate_twiml("Please complete your profile setup first.")
-            
-        def looks_like_order(msg: str) -> bool:
-            t = msg.lower()
-            qty_words = ["kilo", "kg", "litre", "liter", "packet", "dabba", "bottle", "gram", "pcs", "piece"]
-            hindi_nums = ["ek", "do", "teen", "char", "paanch", "chhe", "saat", "aath", "nau", "das", "gyarah", "barah", "pandrah", "bees", "pachas"]
-            verbs = ["bhej dena", "bhejna", "chahiye", "order", "de dena", "deliver", "pahuncha dena", "bhej do", "dedo", "de do"]
-            if any(char.isdigit() for char in t): return True
-            if any(re.search(r'\b' + w + r'\b', t) for w in qty_words + hindi_nums): return True
-            if any(v in t for v in verbs): return True
-            return False
-
-        if not looks_like_order(text):
-            return self._generate_twiml("Please send a grocery order, or use /help for options.")
             
         try:
             from app.services.gemini import GeminiService
@@ -329,8 +404,8 @@ class TwilioWhatsappService:
             extracted["delivery_address"] = customer.get("default_address") or customer.get("address")
         if not extracted.get("customer_phone") and customer.get("phone"):
             extracted["customer_phone"] = customer.get("phone")
-        if not extracted.get("customer_phone") and extracted.get("phone"):
-            extracted["customer_phone"] = extracted.get("phone")
+        if not extracted.get("customer_phone") and channel_data.get("phone"):
+            extracted["customer_phone"] = channel_data.get("phone")
         
         from app.routes.endpoints import _safe_items_from_extracted
         safe_items = _safe_items_from_extracted(extracted, shop_id)

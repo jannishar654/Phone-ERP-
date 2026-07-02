@@ -167,3 +167,148 @@ async def test_twilio_random_text_rejection(mock_supa):
     
     res = await twilio_whatsapp_service.process_update({"Body": "how are you?", "From": "whatsapp:+919999999999", "WaId": "919999999999"})
     assert "Please send a grocery order" in res
+
+@patch("app.services.twilio_whatsapp_service.supabase_client")
+@patch("app.services.twilio_whatsapp_service.ActionCardController.create_card")
+@patch("app.services.gemini.GeminiService.extract_order_details")
+@pytest.mark.asyncio
+async def test_twilio_order_during_onboarding_with_all_details(mock_extract, mock_create, mock_supa):
+    """Test order sent during onboarding with name and address creates Action Card immediately"""
+    from app.services.twilio_whatsapp_service import twilio_whatsapp_service
+    
+    # User is in awaiting_name state
+    mock_chan_select = MagicMock()
+    mock_chan_select.eq().eq().eq().execute.return_value = MagicMock(data=[{
+        "id": "chan-1", "state": "awaiting_name", "profile_completed": False,
+        "phone": "+919999999999",
+        "customers": {"id": "cust-1", "name": "Unknown", "phone": "+919999999999"}
+    }])
+    
+    def mock_table(t):
+        mock_t = MagicMock()
+        mock_t.select.return_value = mock_chan_select
+        return mock_t
+    mock_supa.table.side_effect = mock_table
+    
+    mock_extract.return_value = {
+        "customer_name": "Ravi",
+        "delivery_address": "Block B",
+        "items": [],
+        "confidence": 0.9,
+        "type": "ORDER"
+    }
+    
+    # User sends an order-like text instead of just their name
+    res = await twilio_whatsapp_service.process_update({
+        "Body": "Send 2 kg sugar to Block B, my name is Ravi", 
+        "From": "whatsapp:+919999999999", 
+        "WaId": "919999999999"
+    })
+    
+    assert "Order received" in res
+    assert mock_create.called
+    
+    # Verify the created card has the phone populated and the name/address populated
+    created_card = mock_create.call_args[0][0]
+    assert created_card["customer_name"] == "Ravi"
+    assert created_card["delivery_address"] == "Block B"
+    assert created_card["customer_phone"] == "+919999999999"
+
+@patch("app.services.twilio_whatsapp_service.supabase_client")
+@patch("app.services.gemini.GeminiService.extract_order_details")
+@pytest.mark.asyncio
+async def test_twilio_order_during_onboarding_missing_address(mock_extract, mock_supa):
+    """Test order sent during onboarding without address stores pending order and asks for address"""
+    from app.services.twilio_whatsapp_service import twilio_whatsapp_service
+    
+    channel_data = {
+        "id": "chan-1", "state": "awaiting_name", "profile_completed": False,
+        "phone": "+919999999999",
+        "customers": {"id": "cust-1", "name": "Unknown", "phone": "+919999999999"}
+    }
+    mock_chan_select = MagicMock()
+    mock_chan_select.eq().eq().eq().execute.return_value = MagicMock(data=[channel_data])
+    
+    mock_update = MagicMock()
+    
+    def mock_table(t):
+        mock_t = MagicMock()
+        mock_t.select.return_value = mock_chan_select
+        mock_t.update.return_value = mock_update
+        mock_update.eq.return_value = mock_update
+        return mock_t
+    mock_supa.table.side_effect = mock_table
+    
+    mock_extract.return_value = {
+        "customer_name": "Ravi",
+        # Missing delivery_address
+        "items": [],
+        "confidence": 0.9,
+        "type": "ORDER"
+    }
+    
+    # User sends an order-like text with name but no address
+    res = await twilio_whatsapp_service.process_update({
+        "Body": "Ravi here, send 2 kg sugar", 
+        "From": "whatsapp:+919999999999", 
+        "WaId": "919999999999",
+        "MessageSid": "SM123"
+    })
+    
+    # Bot should recognize the name, store pending order, and ask for address
+    assert "What is your delivery address" in res
+    
+    # Verify update was called on customer_channels
+    update_calls = [call for call in mock_supa.table("customer_channels").update.call_args_list]
+    # Check that metadata was updated with pending_order_text
+    found_metadata = False
+    for call in update_calls:
+        updates = call[0][0]
+        if "metadata" in updates and updates["metadata"].get("pending_order_text") == "Ravi here, send 2 kg sugar":
+            found_metadata = True
+    assert found_metadata
+
+@patch("app.services.twilio_whatsapp_service.supabase_client")
+@patch("app.services.twilio_whatsapp_service.ActionCardController.create_card")
+@patch("app.services.gemini.GeminiService.extract_order_details")
+@pytest.mark.asyncio
+async def test_twilio_provides_address_completes_pending_order(mock_extract, mock_create, mock_supa):
+    """Test user provides address, completing the pending order automatically skipping phone"""
+    from app.services.twilio_whatsapp_service import twilio_whatsapp_service
+    
+    # User is in awaiting_address state with a pending order
+    channel_data = {
+        "id": "chan-1", "state": "awaiting_address", "profile_completed": False,
+        "phone": "+919999999999",
+        "metadata": {
+            "pending_order_text": "Ravi here, send 2 kg sugar",
+            "pending_order_message_id": "SM123"
+        },
+        "customers": {"id": "cust-1", "name": "Ravi", "phone": "+919999999999"}
+    }
+    mock_chan_select = MagicMock()
+    mock_chan_select.eq().eq().eq().execute.return_value = MagicMock(data=[channel_data])
+    
+    def mock_table(t):
+        mock_t = MagicMock()
+        mock_t.select.return_value = mock_chan_select
+        return mock_t
+    mock_supa.table.side_effect = mock_table
+    
+    mock_extract.return_value = {
+        "customer_name": "Ravi",
+        "items": [],
+        "confidence": 0.9,
+        "type": "ORDER"
+    }
+    
+    # User just sends address (not an order)
+    res = await twilio_whatsapp_service.process_update({
+        "Body": "Block B", 
+        "From": "whatsapp:+919999999999", 
+        "WaId": "919999999999"
+    })
+    
+    # Should skip phone (since we have it), create card, and say order received
+    assert "Order received" in res
+    assert mock_create.called
