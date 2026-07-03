@@ -27,9 +27,14 @@ class OrderBase(BaseModel):
     action_card_id: Optional[str] = None
     total_amount: float = Field(default=0.0, ge=0.0)
     status: str = "pending"
+    lifecycle_status: Optional[str] = None
     delivery_address: Optional[str] = None
     delivery_time: Optional[datetime] = None
     payment_method: Optional[str] = None
+    packed_at: Optional[datetime] = None
+    out_for_delivery_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
 
 class OrderCreate(OrderBase):
     items: List[OrderItemCreate]
@@ -42,3 +47,6 @@ class OrderResponse(OrderBase):
 
     class Config:
         from_attributes = True
+
+class OrderLifecycleUpdate(BaseModel):
+    lifecycle_status: str

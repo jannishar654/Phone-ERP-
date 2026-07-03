@@ -2,20 +2,25 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getActionCards } from '@/lib/api';
+import { getActionCards, getOrders } from '@/lib/api';
 import { ActionCard } from '@/types';
 import MetricCard from '@/components/dashboard/MetricCard';
 
 export default function Dashboard() {
   const [cards, setCards] = useState<ActionCard[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadDashboardData() {
       try {
-        const data = await getActionCards();
-        setCards(data);
+        const [cardsData, ordersData] = await Promise.all([
+          getActionCards(),
+          getOrders().catch(() => []) // fallback safely
+        ]);
+        setCards(cardsData);
+        setOrders(ordersData);
       } catch (err: any) {
         setError('Failed to fetch dashboard metrics from backend.');
         console.error(err);
@@ -27,16 +32,20 @@ export default function Dashboard() {
     loadDashboardData();
   }, []);
 
-  // Compute metric values dynamically based on live mock backend store
-  const totalOrders = cards.length;
-  const pendingOrders = cards.filter(c => c.status.toLowerCase() === 'pending').length;
-  const approvedOrders = cards.filter(c => c.status.toLowerCase() === 'approved').length;
-  const deliveredOrders = cards.filter(c => c.status.toLowerCase() === 'delivered' || c.status.toLowerCase() === 'completed').length;
+  const pendingActionCards = cards.filter(c => c.status.toLowerCase() === 'pending').length;
+  
+  const packingOrders = orders.filter(o => {
+    const s = o.lifecycle_status;
+    return !s || s === 'pending_review' || s === 'packing';
+  }).length;
+
+  const outForDeliveryOrders = orders.filter(o => o.lifecycle_status === 'out_for_delivery').length;
+  const deliveredOrders = orders.filter(o => o.lifecycle_status === 'delivered').length;
 
   const metrics = [
-    { name: 'Total Orders', value: totalOrders, color: 'text-indigo-650' },
-    { name: 'Pending Orders', value: pendingOrders, color: 'text-amber-600' },
-    { name: 'Approved Orders', value: approvedOrders, color: 'text-emerald-600' },
+    { name: 'Pending Review (Action Cards)', value: pendingActionCards, color: 'text-amber-600' },
+    { name: 'Packing Orders', value: packingOrders, color: 'text-indigo-650' },
+    { name: 'Out for Delivery Orders', value: outForDeliveryOrders, color: 'text-emerald-600' },
     { name: 'Delivered Orders', value: deliveredOrders, color: 'text-cyan-600' },
   ];
 
