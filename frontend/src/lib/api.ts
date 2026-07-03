@@ -357,3 +357,20 @@ export async function getOrders(): Promise<any[]> {
   }
   return res.json();
 }
+
+export async function updateOrderLifecycleStatus(orderId: string, lifecycle_status: string): Promise<any> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/orders/${orderId}/status`, {
+    method: 'PATCH',
+    headers: {
+      ...headers,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ lifecycle_status }),
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to update order status.');
+  }
+  return res.json();
+}

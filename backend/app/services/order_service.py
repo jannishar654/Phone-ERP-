@@ -92,6 +92,7 @@ class OrderService:
                 "action_card_id": action_card_id,
                 "total_amount": total_amount,
                 "status": status,
+                "lifecycle_status": "packing",
                 "delivery_address": action_card.get("delivery_address"),
                 "payment_method": action_card.get("payment_method"),
                 "created_at": datetime.utcnow().isoformat()
