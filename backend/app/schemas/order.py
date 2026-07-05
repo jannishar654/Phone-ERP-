@@ -35,6 +35,7 @@ class OrderBase(BaseModel):
     out_for_delivery_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
+    orderNumber: Optional[int] = Field(None, validation_alias="order_number", serialization_alias="orderNumber")
 
 class OrderCreate(OrderBase):
     items: List[OrderItemCreate]

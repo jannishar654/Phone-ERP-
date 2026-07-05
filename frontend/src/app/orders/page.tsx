@@ -20,6 +20,7 @@ interface Order {
   lifecycle_status: string | null;
   created_at: string;
   order_items: OrderItem[];
+  orderNumber?: number;
 }
 
 export default function OrdersPage() {
@@ -104,7 +105,7 @@ export default function OrdersPage() {
               <div key={order.id} className="bg-white p-4 rounded-xl shadow-sm border">
                 <div className="flex justify-between items-start mb-3 border-b pb-3">
                   <div>
-                    <h3 className="font-semibold text-gray-900">Order #{order.id.slice(0, 8)}</h3>
+                    <h3 className="font-semibold text-gray-900">Order #{order.orderNumber ?? order.id.slice(0, 8)}</h3>
                     <p className="text-xs text-gray-500">{new Date(order.created_at).toLocaleString()}</p>
                   </div>
                   <div className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1

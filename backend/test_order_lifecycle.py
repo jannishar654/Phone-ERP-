@@ -134,3 +134,71 @@ def test_shop_isolation(mock_auth, mock_supabase):
     
     assert response.status_code == 404
     assert response.json()["detail"] == "Order not found"
+
+
+def test_mock_order_number_sequence_persistence():
+    import os
+    import json
+    from app.services.order_service import OrderService
+    
+    # Ensure any existing sequence file is cleared or mocked
+    seq_file = os.path.join(os.path.dirname(__file__), "app", "data", "sequence.json")
+    original_content = None
+    if os.path.exists(seq_file):
+        try:
+            with open(seq_file, "r") as f:
+                original_content = f.read()
+            os.remove(seq_file)
+        except Exception:
+            pass
+            
+    try:
+        service = OrderService()
+        service.supabase = None # enforce mock mode
+        
+        # We need mock action card and matching mock
+        mock_action_card = {
+            "id": "ac_mock_seq",
+            "shop_id": "shop_123",
+            "customer_id": "cust_123",
+            "items": [{"name": "Item 1", "price": 10.0, "quantity": 2}],
+            "delivery_address": "Home",
+            "payment_method": "Cash"
+        }
+        
+        with patch("app.services.store.store.get_by_id", return_value=MagicMock(model_dump=lambda: mock_action_card)):
+            with patch("app.services.store.store.update_status") as mock_update_status:
+                with patch("app.services.matching_service.matching_service.match_product", return_value={"resolution_status": "matched", "unit_price": 10.0}):
+                    # First conversion
+                    order1 = service.convert_action_card_to_order("ac_mock_seq", "user_123")
+                    assert order1["order_number"] == 1001
+                    
+                    # Second conversion (sequence increments)
+                    order2 = service.convert_action_card_to_order("ac_mock_seq", "user_123")
+                    assert order2["order_number"] == 1002
+                    
+                    # Check sequence file content
+                    assert os.path.exists(seq_file)
+                    with open(seq_file, "r") as f:
+                        data = json.load(f)
+                        assert data["order_number_seq"] == 1003
+                        
+                    # Re-instantiate order service to simulate server restart
+                    service_new = OrderService()
+                    service_new.supabase = None
+                    order3 = service_new.convert_action_card_to_order("ac_mock_seq", "user_123")
+                    assert order3["order_number"] == 1003
+    finally:
+        # Restore original sequence file
+        if os.path.exists(seq_file):
+            try:
+                os.remove(seq_file)
+            except Exception:
+                pass
+        if original_content is not None:
+            try:
+                with open(seq_file, "w") as f:
+                    f.write(original_content)
+            except Exception:
+                pass
+
