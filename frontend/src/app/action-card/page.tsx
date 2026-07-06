@@ -2,8 +2,166 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { getActionCards, updateActionCardStatus, updateActionCard, convertActionCardToOrder } from '@/lib/api';
+import { getActionCards, updateActionCardStatus, updateActionCard, convertActionCardToOrder, deleteActionCard } from '@/lib/api';
 import { ActionCard, Item } from '@/types';
+import { format } from 'date-fns';
+import { Calendar as CalendarIcon, Phone, MapPin, Clock } from 'lucide-react';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+
+const formatDeliveryTime = (value: string | undefined): string => {
+  if (!value) return 'Immediate';
+  const trimmed = value.trim();
+  if (trimmed.toLowerCase() === 'immediate' || trimmed === '') return 'Immediate';
+
+  // Parse YYYY-MM-DD hh:mm AM/PM or YYYY-MM-DD HH:mm
+  const dateMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{1,2}):(\d{2})(?:\s*(AM|PM|am|pm))?)?/i);
+  if (dateMatch) {
+    const [_, y, m, d, hh, mm, ampm] = dateMatch;
+
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthName = months[parseInt(m, 10) - 1] || m;
+    const dayStr = `${d} ${monthName}`;
+
+    if (hh && mm) {
+      const timeStr = ampm ? `${hh}:${mm} ${ampm.toUpperCase()}` : `${hh}:${mm}`;
+      return `${dayStr} • ${timeStr}`;
+    }
+    return dayStr;
+  }
+
+  return trimmed;
+};
+
+const getStatusBadgeClass = (status: string) => {
+  const base = "inline-flex items-center justify-center rounded-full h-6 px-3 text-[10px] font-bold uppercase tracking-wider border shadow-3xs transition-all";
+  switch (status?.toLowerCase()) {
+    case 'completed':
+    case 'delivered':
+    case 'converted':
+      return `${base} bg-emerald-500 text-white border-emerald-600`;
+    case 'approved':
+      return `${base} bg-indigo-600 text-white border-indigo-700`;
+    case 'rejected':
+      return `${base} bg-red-600 text-white border-red-700`;
+    case 'pending':
+    default:
+      return `${base} bg-amber-500 text-white border-amber-600`;
+  }
+};
+
+
+interface CustomDateTimePickerProps {
+  value: string;
+  onChange: (val: string) => void;
+}
+
+function CustomDateTimePicker({ value, onChange }: CustomDateTimePickerProps) {
+  const dateMatch = value ? value.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i) : null;
+
+  let dateVal: Date | undefined = undefined;
+  let hourVal: string = "";
+  let minuteVal: string = "";
+  let ampmVal: string = "";
+
+  if (dateMatch) {
+    const [_, y, m, d, hh, mm, ampm] = dateMatch;
+    dateVal = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+    hourVal = hh;
+    minuteVal = mm;
+    ampmVal = ampm?.toUpperCase() || "AM";
+  }
+
+  const hoursOptions = Array.from({ length: 12 }, (_, i) => String(i + 1));
+  const minutesOptions = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+
+  const updateValue = (d: Date | undefined, h: string, m: string, ap: string) => {
+    if (!d) {
+      onChange("Immediate");
+      return;
+    }
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hh = h || "12";
+    const mm = m || "00";
+    const ampm = ap || "AM";
+    onChange(`${year}-${month}-${day} ${hh}:${mm} ${ampm}`);
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-2 items-center">
+        {/* Popover Date Selection */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="flex-1 flex items-center justify-between bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-3 py-2 text-xs font-bold text-slate-700 cursor-pointer transition-all shadow-3xs"
+            >
+              <span className="flex items-center gap-2">
+                <CalendarIcon className="h-4 w-4 text-slate-400" />
+                {dateVal ? format(dateVal, "PPP") : "Select Date"}
+              </span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="single"
+              selected={dateVal}
+              onSelect={(d) => updateValue(d, hourVal || "12", minuteVal || "00", ampmVal || "AM")}
+            />
+          </PopoverContent>
+        </Popover>
+
+        {/* Time Select Dropdowns */}
+        <div className="flex gap-1.5 items-center">
+          <select
+            value={hourVal}
+            onChange={(e) => updateValue(dateVal || new Date(), e.target.value, minuteVal || "00", ampmVal || "AM")}
+            className="bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+          >
+            <option value="">Hour</option>
+            {hoursOptions.map((h) => (
+              <option key={h} value={h}>{h}</option>
+            ))}
+          </select>
+          <span className="text-slate-400 font-bold">:</span>
+          <select
+            value={minuteVal}
+            onChange={(e) => updateValue(dateVal || new Date(), hourVal || "12", e.target.value, ampmVal || "AM")}
+            className="bg-white border border-slate-350 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+          >
+            <option value="">Min</option>
+            {minutesOptions.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          <select
+            value={ampmVal}
+            onChange={(e) => updateValue(dateVal || new Date(), hourVal || "12", minuteVal || "00", e.target.value)}
+            className="bg-white border border-slate-350 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+          >
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </select>
+        </div>
+      </div>
+
+      {value && value !== 'Immediate' && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            className="text-[10px] text-slate-500 hover:text-slate-700 font-bold cursor-pointer transition-colors"
+          >
+            ✕ Clear
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Main content wrapping the search params logic
 function ActionCardContent() {
@@ -23,6 +181,42 @@ function ActionCardContent() {
   const [editAddress, setEditAddress] = useState('');
   const [editTime, setEditTime] = useState('');
   const [editItems, setEditItems] = useState<Item[]>([]);
+
+  // Menu and deletion states
+  const [openMenuCardId, setOpenMenuCardId] = useState<string | null>(null);
+  const [deleteConfirmCard, setDeleteConfirmCard] = useState<ActionCard | null>(null);
+  const [unsavedChangesConfirm, setUnsavedChangesConfirm] = useState<{ onConfirm: () => void } | null>(null);
+
+  const hasUnsavedChanges = () => {
+    if (!isEditing || !selectedCard) return false;
+    if (editName !== (selectedCard.customer_name || '')) return true;
+    if (editPhone !== (selectedCard.customer_phone || '')) return true;
+    if (editAddress !== (selectedCard.delivery_address || '')) return true;
+    if (editTime !== (selectedCard.delivery_time || '')) return true;
+    
+    if (editItems.length !== selectedCard.items.length) return true;
+    for (let i = 0; i < editItems.length; i++) {
+      const a = editItems[i];
+      const b = selectedCard.items[i];
+      if (!b) return true;
+      if (a.name !== b.name) return true;
+      if (a.quantity !== b.quantity) return true;
+      if ((a.price || 0) !== (b.price || 0)) return true;
+      if ((a.unit || '') !== (b.unit || '')) return true;
+    }
+    return false;
+  };
+
+  const confirmNavigation = (onConfirm: () => void) => {
+    if (hasUnsavedChanges()) {
+      setUnsavedChangesConfirm({ onConfirm });
+    } else {
+      onConfirm();
+    }
+  };
+
+  // Collapsible AI Analysis state
+  const [isAiAnalysisExpanded, setIsAiAnalysisExpanded] = useState(false);
 
   // Speech upload demo state
   const [demoTranscript, setDemoTranscript] = useState('');
@@ -57,7 +251,16 @@ function ActionCardContent() {
 
   useEffect(() => {
     loadCards();
-  }, [cardIdParam]);
+  }, []);
+
+  useEffect(() => {
+    if (cards.length > 0 && cardIdParam) {
+      const found = cards.find(c => c.id === cardIdParam);
+      if (found && (!selectedCard || selectedCard.id !== found.id)) {
+        setSelectedCard(found);
+      }
+    }
+  }, [cardIdParam, cards]);
 
   useEffect(() => {
     if (selectedCard && editParam === 'true') {
@@ -70,10 +273,17 @@ function ActionCardContent() {
     }
   }, [selectedCard, editParam]);
 
-  const selectCard = (card: ActionCard) => {
+  const selectCard = (card: ActionCard | null) => {
     setSelectedCard(card);
     setIsEditing(false);
-    router.replace(`/action-card?id=${card.id}`);
+    setIsAiAnalysisExpanded(false);
+    const params = new URLSearchParams(window.location.search);
+    if (card) {
+      params.set('id', card.id);
+    } else {
+      params.delete('id');
+    }
+    router.replace(`/action-card?${params.toString()}`, { scroll: false });
   };
 
   const getCardValidationWarning = (card: ActionCard) => {
@@ -98,6 +308,11 @@ function ActionCardContent() {
       }
     }
     return null;
+  };
+
+  const isDayMissing = (card: ActionCard) => {
+    const warning = card.delivery_time_warning?.toLowerCase() || '';
+    return warning.includes('day') || warning.includes('date') || (!card.delivery_time_normalized && card.delivery_time_raw);
   };
 
   const handleStatusUpdate = async (status: string) => {
@@ -189,11 +404,34 @@ function ActionCardContent() {
     if (!selectedCard) return;
     try {
       const validItems = editItems.filter(i => i.name.trim() !== '');
+      let finalDeliveryTime = editTime;
+      if (!finalDeliveryTime || finalDeliveryTime.trim() === '') {
+        finalDeliveryTime = 'Immediate';
+      }
+
+      // Past check warning
+      const dateMatch = finalDeliveryTime.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i);
+      if (dateMatch) {
+        const [_, y, m, d, hh, mm, ampm] = dateMatch;
+        let hour = parseInt(hh, 10);
+        if (ampm) {
+          const up = ampm.toUpperCase();
+          if (up === 'PM' && hour < 12) hour += 12;
+          if (up === 'AM' && hour === 12) hour = 0;
+        }
+        const selectedDate = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, parseInt(mm, 10));
+        const checkTime = new Date();
+        checkTime.setMinutes(checkTime.getMinutes() - 5);
+        if (selectedDate < checkTime) {
+          alert('Warning: The selected delivery date and time is in the past. Saving anyway.');
+        }
+      }
+
       const updated = await updateActionCard(selectedCard.id, {
         customer_name: editName,
         customer_phone: editPhone,
         delivery_address: editAddress,
-        delivery_time: editTime,
+        delivery_time: finalDeliveryTime,
         items: validItems
       });
       setSelectedCard(updated);
@@ -236,18 +474,15 @@ function ActionCardContent() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       {/* Title */}
       <div>
         <h1 className="text-2xl font-extrabold text-slate-900">Action Cards Board</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Inspect order metadata parsed by AI. Validate details, make corrections, and sign off to ERP registry.
-        </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left 2 Cols: Cards List */}
-        <div className="lg:col-span-2 space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
+        {/* Left 3 Cols: Cards List */}
+        <div className="lg:col-span-3 space-y-4 lg:max-h-[calc(100vh-200px)] lg:overflow-y-auto pr-3">
           {isLoading ? (
             <div className="py-12 text-center text-sm text-slate-450">Loading cards...</div>
           ) : error ? (
@@ -258,111 +493,172 @@ function ActionCardContent() {
             cards.map((card) => (
               <div
                 key={card.id}
-                onClick={() => selectCard(card)}
-                className={`p-6 rounded-xl border transition-all duration-150 cursor-pointer flex flex-col justify-between shadow-xs ${
-                  selectedCard?.id === card.id
-                    ? 'border-indigo-500 bg-indigo-50/40 shadow-sm'
-                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
-                }`}
+                id={`card-${card.id}`}
+                onClick={() => confirmNavigation(() => selectCard(card))}
+                className={`p-3 rounded-xl border transition-all duration-150 cursor-pointer flex flex-col justify-between shadow-3xs ${selectedCard?.id === card.id
+                    ? 'border-indigo-500 bg-indigo-50/40 shadow-xs'
+                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50 hover:shadow-xs'
+                  }`}
               >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs font-mono text-slate-450 font-bold">{card.id}</span>
-                      <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
-                        card.source === 'audio'
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="flex items-center gap-1.5 leading-none">
+                      <span className="text-[9px] font-mono text-slate-400 font-bold">{card.id}</span>
+                      <span className="text-[9px] font-mono text-slate-400 font-bold">•</span>
+                      <span className="text-[9px] font-mono text-slate-400 font-bold">{new Date(card.created_at).toLocaleDateString()}</span>
+                      <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wider ${card.source === 'audio'
                           ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                          : 'bg-cyan-50 text-cyan-705 border border-cyan-200'
-                      }`}>
+                          : 'bg-cyan-50 text-cyan-700 border border-cyan-200'
+                        }`}>
                         {card.source}
                       </span>
                     </div>
-                    <h3 className="text-lg font-bold text-slate-900 mt-1.5">
+                    <h3 className="text-base font-extrabold text-slate-900 truncate mt-1">
                       {card.customer_name || 'Anonymous Customer'}
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">{card.customer_phone}</p>
+                    {card.customer_phone && (
+                      <p className="text-[11px] text-slate-500 font-bold mt-0.5">{card.customer_phone}</p>
+                    )}
                   </div>
 
-                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border ${
-                    card.status === 'completed' || card.status === 'delivered'
-                      ? 'bg-emerald-50 text-emerald-705 border-emerald-200'
-                      : card.status === 'approved'
-                      ? 'bg-indigo-50 text-indigo-705 border-indigo-200'
-                      : card.status === 'rejected'
-                      ? 'bg-red-50 text-red-705 border-red-200'
-                      : 'bg-amber-50 text-amber-700 border-amber-300 font-bold'
-                  }`}>
-                    {card.status === 'pending' && <span className="h-1 w-1 rounded-full bg-amber-500 animate-pulse mr-1"></span>}
-                    {card.status}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={getStatusBadgeClass(card.status)}>
+                      {card.status === 'pending' && <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse mr-1.5"></span>}
+                      {card.status}
+                    </span>
+                    {/* Three-dot dropdown menu trigger */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuCardId(openMenuCardId === card.id ? null : card.id);
+                        }}
+                        className="p-1 hover:bg-slate-100/80 rounded text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                        title="More actions"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                        </svg>
+                      </button>
+
+                      {openMenuCardId === card.id && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-10" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenMenuCardId(null);
+                            }}
+                          />
+                          <div className="absolute right-0 mt-1 w-28 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-20 text-[11px]">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuCardId(null);
+                                selectCard(card);
+                                setIsEditing(true);
+                              }}
+                              className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700 font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                            >
+                              <svg className="h-3.5 w-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                              Edit
+                            </button>
+                            {['pending', 'rejected'].includes(card.status?.toLowerCase()) ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenMenuCardId(null);
+                                  setDeleteConfirmCard(card);
+                                }}
+                                className="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-650 hover:text-red-700 font-bold transition-colors cursor-pointer flex items-center gap-1.5 border-t border-slate-100"
+                              >
+                                <svg className="h-3.5 w-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                Delete
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  alert(`Action Card is ${card.status.toUpperCase()}. Approved or Converted cards cannot be deleted to preserve data integrity.`);
+                                }}
+                                className="w-full text-left px-3 py-1.5 text-slate-300 font-bold flex items-center gap-1.5 cursor-not-allowed border-t border-slate-100"
+                                title="Approved or converted cards cannot be deleted"
+                              >
+                                <svg className="h-3.5 w-3.5 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                {/* Items Summary preview */}
-                <div className="mt-4 pt-4 border-t border-slate-100">
-                  <span className="text-xs text-slate-500 uppercase font-bold tracking-wider">Ordered Items</span>
-                  <ul className="mt-2 space-y-1">
+                {/* Ordered Items Summary */}
+                <div className="mt-2 pt-2 border-t border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Ordered Items</span>
+                  <ul className="space-y-0.5">
                     {card.items.map((item, idx) => (
-                      <li key={idx} className="text-sm text-slate-600 flex justify-between font-semibold">
+                      <li key={idx} className="text-xs text-slate-650 flex justify-between font-semibold">
                         <span>{item.quantity}{item.unit ? ` ${item.unit}` : 'x'} {item.name}</span>
                         {item.price !== undefined && item.price !== null && item.price > 0 ? (
                           <span className="text-slate-500 font-mono">₹{(item.price * item.quantity).toFixed(2)}</span>
                         ) : (
-                          <span className="text-slate-400 font-medium italic text-[11px]">Price not available</span>
+                          <span className="text-slate-400 italic text-[10px]">Price pending</span>
                         )}
                       </li>
                     ))}
                   </ul>
                 </div>
 
-                <div className="mt-4 flex items-center justify-between text-xs text-slate-500 pt-2 font-medium">
-                  <span className="truncate max-w-[70%]">Deliver: {card.delivery_address}</span>
-                  <span>{new Date(card.created_at).toLocaleDateString()}</span>
+                {/* Delivery Information */}
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-slate-600 gap-4">
+                  <span className="truncate max-w-[55%] flex items-center gap-1" title={card.delivery_address}>
+                    <span className="text-slate-400 text-[10px] uppercase font-bold">Where:</span>
+                    <span className="text-slate-800 truncate">{card.delivery_address || 'Not specified'}</span>
+                  </span>
+                  <span className="flex items-center gap-1 max-w-[42%] truncate shrink-0">
+                    <span className="text-slate-400 text-[10px] uppercase font-bold">When:</span>
+                    <span className="text-slate-800 truncate">{formatDeliveryTime(card.delivery_time)}</span>
+                    {isDayMissing(card) && (
+                      <span className="text-amber-650 font-black text-xs cursor-help shrink-0" title="Delivery day not specified">⚠</span>
+                    )}
+                  </span>
                 </div>
               </div>
             ))
           )}
 
-          {/* Simulated Speech Transcription Box */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4 shadow-sm">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-indigo-750">Simulate Call Transcription</h3>
-            <p className="text-xs text-slate-500 leading-relaxed font-medium">
-              Type or paste sample customer speech transcriptions. Our mock endpoint will simulate AI entity extraction and add a card to the database.
-            </p>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Extraction Engine</label>
-              <select
-                value={extractProvider}
-                onChange={(e) => setExtractProvider(e.target.value)}
-                disabled={isExtracting}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 font-medium focus:outline-none focus:border-indigo-500 mb-2"
-              >
-                <option value="gemini">Gemini Extraction</option>
-                <option value="gliner">GLiNER Extraction</option>
-              </select>
-            </div>
-            <textarea
-              rows={3}
-              value={demoTranscript}
-              onChange={(e) => setDemoTranscript(e.target.value)}
-              placeholder='Example: "Hi this is Kathryn Janeway from USS Voyager. Send 5 dilithium crystals to cargo bay 1 ASAP."'
-              className="w-full bg-white border border-slate-300 rounded-lg p-3 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-medium"
-            />
-            <button
-              onClick={handleSimulateExtraction}
-              disabled={isExtracting || !demoTranscript.trim()}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-705 disabled:bg-indigo-400 text-white rounded-lg text-xs font-bold shadow-sm cursor-pointer"
-            >
-              {isExtracting ? 'Extracting...' : 'Parse Speech with AI'}
-            </button>
-          </div>
+
         </div>
 
-        {/* Right 1 Col: Detailed Inspect Sidebar Panel */}
-        <div className="rounded-xl border border-slate-200 bg-white p-6 self-start min-h-[450px] flex flex-col justify-between shadow-sm">
+        {/* Right 2 Cols: Detailed Inspect Sidebar Panel */}
+        <div className={`fixed inset-y-0 right-0 z-40 w-full bg-white transition-transform duration-300 ease-out transform ${
+          selectedCard ? 'translate-x-0' : 'translate-x-full'
+        } lg:static lg:z-auto lg:translate-x-0 lg:col-span-2 lg:rounded-xl lg:border lg:border-slate-200 p-5 lg:pr-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-200px)] lg:overflow-y-auto lg:self-start lg:min-h-[450px] flex flex-col justify-between shadow-sm`}>
           {selectedCard ? (
             isEditing ? (
               /* Editing Panel View */
               <div className="space-y-4">
+                {/* Back button for mobile/tablet screen viewports */}
+                <button
+                  type="button"
+                  onClick={() => confirmNavigation(() => selectCard(null))}
+                  className="lg:hidden mb-4 flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-800 transition-colors cursor-pointer bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg shadow-3xs"
+                >
+                  ← Action Cards
+                </button>
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <h3 className="font-bold text-slate-900">Edit Order Details</h3>
                   <span className="text-xs font-mono text-slate-450 font-bold">{selectedCard.id}</span>
@@ -397,12 +693,10 @@ function ActionCardContent() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Delivery Time</label>
-                    <input
-                      type="text"
+                    <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5">Delivery Time</label>
+                    <CustomDateTimePicker
                       value={editTime}
-                      onChange={(e) => setEditTime(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
+                      onChange={(val) => setEditTime(val)}
                     />
                   </div>
 
@@ -412,7 +706,7 @@ function ActionCardContent() {
                       <button
                         type="button"
                         onClick={addEditItemRow}
-                        className="text-[10px] text-indigo-650 font-bold cursor-pointer hover:text-indigo-800"
+                        className="text-[10px] text-indigo-600 font-bold cursor-pointer hover:text-indigo-800"
                       >
                         + Add Item
                       </button>
@@ -467,7 +761,7 @@ function ActionCardContent() {
 
                 <div className="pt-4 border-t border-slate-100 flex gap-2">
                   <button
-                    onClick={() => setIsEditing(false)}
+                    onClick={() => confirmNavigation(() => setIsEditing(false))}
                     className="flex-1 px-3 py-2 border border-slate-300 hover:bg-slate-50 text-slate-600 hover:text-slate-900 rounded text-xs font-bold cursor-pointer"
                   >
                     Cancel
@@ -482,149 +776,127 @@ function ActionCardContent() {
               </div>
             ) : (
               /* Inspect Details Panel View */
-              <div className="space-y-6">
+              <div className="space-y-4">
+                {/* Back button for mobile/tablet screen viewports */}
+                <button
+                  type="button"
+                  onClick={() => confirmNavigation(() => selectCard(null))}
+                  className="lg:hidden mb-4 flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-800 transition-colors cursor-pointer bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg shadow-3xs"
+                >
+                  ← Action Cards
+                </button>
                 <div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-450 font-bold">{selectedCard.id}</span>
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold border ${
-                      selectedCard.status === 'completed' || selectedCard.status === 'delivered'
-                        ? 'bg-emerald-50 text-emerald-705 border-emerald-200 uppercase tracking-wider'
-                        : selectedCard.status === 'approved'
-                        ? 'bg-indigo-50 text-indigo-750 border-indigo-200 uppercase tracking-wider'
-                        : selectedCard.status === 'rejected'
-                        ? 'bg-red-50 text-red-705 border-red-200 uppercase tracking-wider'
-                        : 'bg-amber-50 text-amber-700 border-amber-300 font-bold uppercase tracking-wider shadow-3xs'
-                    }`}>
-                      {selectedCard.status === 'pending' && <span className="h-1 w-1 rounded-full bg-amber-500 animate-pulse mr-1"></span>}
+                    <span className="text-[10px] font-mono text-slate-400 font-bold">{selectedCard.id}</span>
+                    <span className={getStatusBadgeClass(selectedCard.status)}>
+                      {selectedCard.status === 'pending' && <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse mr-1.5"></span>}
                       {selectedCard.status}
                     </span>
                   </div>
-                  <h2 className="text-xl font-extrabold text-slate-900 mt-2 flex items-center gap-2">
-                    {selectedCard.customer_name || 'Anonymous'}
-                    {selectedCard.message_type && (
-                      <span className={`text-[10px] px-2 py-0.5 rounded border uppercase tracking-wider font-bold ${
-                        selectedCard.message_type === 'COMPLAINT' || selectedCard.message_type === 'CANCEL'
-                        ? 'bg-red-100 text-red-800 border-red-300'
-                        : selectedCard.message_type === 'RETURN'
-                        ? 'bg-orange-100 text-orange-800 border-orange-300'
-                        : 'bg-indigo-100 text-indigo-800 border-indigo-300'
-                      }`}>
-                        {selectedCard.message_type}
+                  <div className="grid grid-cols-[1.2fr_0.8fr] gap-4 mt-1.5 items-center">
+                    <div className="flex items-baseline gap-2 min-w-0">
+                      <h2 className="text-xl font-extrabold text-slate-900 leading-none truncate">
+                        {selectedCard.customer_name || 'Anonymous'}
+                      </h2>
+                      {selectedCard.message_type && selectedCard.message_type !== 'ORDER' && (
+                        <span className={`text-[10px] px-2 py-0.5 rounded border uppercase tracking-wider font-bold shrink-0 leading-none ${selectedCard.message_type === 'COMPLAINT' || selectedCard.message_type === 'CANCEL'
+                            ? 'bg-red-100 text-red-800 border-red-300'
+                            : selectedCard.message_type === 'RETURN'
+                              ? 'bg-orange-100 text-orange-800 border-orange-300'
+                              : 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                          }`}>
+                          {selectedCard.message_type}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Phone className="h-4 w-4 text-indigo-500 shrink-0" />
+                      <span className="text-xs text-indigo-655 font-bold truncate">
+                        {selectedCard.customer_phone || 'No phone number'}
                       </span>
-                    )}
-                  </h2>
-                  <p className="text-sm text-indigo-650 font-bold mt-0.5 flex justify-between items-center">
-                    <span>{selectedCard.customer_phone || 'No phone number provided'}</span>
-                    {selectedCard.confidence_score !== undefined && selectedCard.confidence_label ? (
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
-                        selectedCard.confidence_label === 'High' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                        selectedCard.confidence_label === 'Medium' ? 'bg-amber-100 text-amber-800 border-amber-300' :
-                        'bg-red-100 text-red-800 border-red-300'
-                      }`}>
-                        Review Readiness: {selectedCard.confidence_score}% {selectedCard.confidence_label}
-                      </span>
-                    ) : selectedCard.confidence !== undefined && (
-                      <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded">
-                        Model Confidence: {(selectedCard.confidence * 100).toFixed(0)}%
-                      </span>
-                    )}
-                  </p>
-                </div>
-                
-                {selectedCard.confidence_reasons && selectedCard.confidence_reasons.length > 0 && (
-                  <div className={`p-2 rounded mt-2 border ${
-                    selectedCard.confidence_label === 'High' ? 'bg-emerald-50 border-emerald-200' :
-                    selectedCard.confidence_label === 'Medium' ? 'bg-amber-50 border-amber-200' :
-                    'bg-red-50 border-red-200'
-                  }`}>
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Review Reasons:</h4>
-                    <ul className="text-xs space-y-0.5 pl-3 list-disc">
-                      {selectedCard.confidence_reasons.map((reason, idx) => (
-                        <li key={idx} className={
-                          selectedCard.confidence_label === 'High' ? 'text-emerald-700' :
-                          selectedCard.confidence_label === 'Medium' ? 'text-amber-700' : 
-                          'text-red-700'
-                        }>{reason}</li>
-                      ))}
-                    </ul>
+                    </div>
                   </div>
-                )}
+                </div>
 
                 <div className="space-y-3">
-                  <div>
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Delivery Instructions</h4>
-                    <p className="text-sm text-slate-800 mt-1 font-bold">{selectedCard.delivery_address || 'Not specified'}</p>
-                    <div className="mt-0.5">
-                      <p className="text-xs text-slate-500 font-semibold">Time: {selectedCard.delivery_time || 'Immediate'}</p>
-                      {selectedCard.delivery_time_raw && (
-                        <p className="text-[10px] text-slate-400 font-medium italic mt-0.5">Original delivery time: "{selectedCard.delivery_time_raw}"</p>
-                      )}
-                      {selectedCard.delivery_time_warning && (
-                        <p className="text-[10px] text-amber-600 font-semibold mt-0.5 flex items-center gap-1">
-                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          {selectedCard.delivery_time_warning}
-                        </p>
-                      )}
+                  <div className="grid grid-cols-[1.2fr_0.8fr] gap-4 pb-2 border-b border-slate-100 text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <MapPin className="h-4 w-4 text-slate-400 shrink-0" />
+                      <span className="text-xs text-slate-800 font-bold truncate" title={selectedCard.delivery_address}>
+                        {selectedCard.delivery_address || 'Not specified'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Clock className="h-4 w-4 text-slate-400 shrink-0" />
+                      <div className="min-w-0 flex flex-col justify-center">
+                        <span className="text-xs text-slate-800 font-bold truncate">
+                          {formatDeliveryTime(selectedCard.delivery_time)}
+                        </span>
+                        {isDayMissing(selectedCard) && (
+                          <span className="text-[9px] text-amber-600 font-bold leading-none mt-0.5">
+                            ⚠ Delivery day not specified
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-slate-100">
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Payment Details</h4>
-                    <p className={`text-xs mt-1 font-bold ${
-                      selectedCard.payment_method === 'Credit (Udhaar)' ? 'text-red-650' :
-                      selectedCard.payment_method === 'Cash' || selectedCard.payment_method === 'Online' ? 'text-emerald-650' :
-                      'text-slate-600'
-                    }`}>
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Payment</span>
+                    <span className={`font-bold ${selectedCard.payment_method === 'Credit (Udhaar)' ? 'text-red-600' :
+                        selectedCard.payment_method === 'Cash' || selectedCard.payment_method === 'Online' ? 'text-emerald-600' :
+                          'text-slate-600'
+                      }`}>
                       {selectedCard.payment_method || 'Not Specified'}
-                    </p>
+                    </span>
                   </div>
 
                   <div className="pt-2 border-t border-slate-100">
                     <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Order Items</h4>
-                    <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                    <div className="space-y-2">
                       {selectedCard.items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-xs p-2 rounded bg-slate-50 border border-slate-100 shadow-3xs">
-                          <div className="text-slate-800 font-medium">
+                        <div key={idx} className="flex justify-between items-center text-xs p-2.5 rounded-lg bg-slate-50 border border-slate-150 shadow-3xs hover:bg-slate-50/70 transition-colors">
+                          <div className="text-slate-800 font-semibold flex items-center min-w-0 pr-2">
                             {(() => {
                               const isQtyMissing = item.quantity === null || item.quantity === undefined || ['none', 'null', 'missing', 'unknown'].includes(String(item.quantity).toLowerCase());
                               const isUnitMissing = !item.unit || ['none', 'null', 'missing', 'unknown'].includes(String(item.unit).toLowerCase());
 
                               if (isQtyMissing) {
-                                return <span className="font-bold text-amber-600 bg-amber-50 px-1 py-0.5 rounded border border-amber-200 mr-1.5">Missing Qty</span>;
+                                return <span className="font-bold text-[9px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mr-1.5 shrink-0">Missing Qty</span>;
                               }
                               return (
-                                <span className="font-bold text-slate-900 mr-1">
+                                <span className="font-bold text-slate-900 mr-2 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shrink-0">
                                   {item.quantity}{!isUnitMissing ? ` ${item.unit}` : 'x'}
                                 </span>
                               );
                             })()}
-                            <span className="font-bold">{item.raw_name || item.name}</span>
-                            {item.resolution_status === 'suggested' && item.canonical_name && (
-                              <div className="mt-1 text-[10px] text-blue-600 font-bold flex flex-wrap items-center gap-1">
-                                <span className="bg-blue-50 border border-blue-200 px-1 rounded">Suggested: {item.canonical_name}</span>
-                                <span className="text-slate-500 font-normal ml-1">
-                                  <button className="underline hover:text-blue-800 font-semibold" onClick={(e) => { e.preventDefault(); handleResolveSuggestion(idx, 'accepted'); }}>Accept</button> |
-                                  <button className="underline hover:text-blue-800 ml-1" onClick={(e) => { e.preventDefault(); handleResolveSuggestion(idx, 'kept_raw'); }}>Keep spoken</button>
-                                </span>
-                              </div>
-                            )}
-                            {item.alias_used && item.canonical_name && (
-                              <div className="mt-0.5 text-[9px] text-emerald-600 font-bold">
-                                Auto-applied alias: {item.canonical_name}
-                              </div>
+                            <div className="truncate">
+                              <span className="font-bold text-slate-900 block truncate" title={item.name}>{item.raw_name || item.name}</span>
+                              {item.resolution_status === 'suggested' && item.canonical_name && (
+                                <div className="mt-1 text-[10px] text-blue-650 font-bold flex flex-wrap items-center gap-1">
+                                  <span className="bg-blue-50 border border-blue-200 px-1 rounded">Suggested: {item.canonical_name}</span>
+                                  <span className="text-slate-500 font-normal ml-1">
+                                    <button className="underline hover:text-blue-800 font-semibold cursor-pointer" onClick={(e) => { e.preventDefault(); handleResolveSuggestion(idx, 'accepted'); }}>Accept</button> |
+                                    <button className="underline hover:text-blue-800 ml-1 cursor-pointer" onClick={(e) => { e.preventDefault(); handleResolveSuggestion(idx, 'kept_raw'); }}>Keep spoken</button>
+                                  </span>
+                                </div>
+                              )}
+                              {item.alias_used && item.canonical_name && (
+                                <div className="mt-0.5 text-[9px] text-emerald-600 font-bold">
+                                  Auto-applied alias: {item.canonical_name}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            {item.price !== undefined && item.price !== null && item.price > 0 ? (
+                              <span className="font-mono text-slate-800 font-bold">
+                                ₹{(item.price * item.quantity).toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-medium italic text-[10px]">Price pending</span>
                             )}
                           </div>
-                          {item.price !== undefined && item.price !== null && item.price > 0 ? (
-                            <div className="text-right font-mono text-slate-500 font-bold">
-                              ₹{(item.price * item.quantity).toFixed(2)}
-                            </div>
-                          ) : (
-                            <div className="text-right text-slate-400 font-medium italic text-[11px]">
-                              Price not available
-                            </div>
-                          )}
                         </div>
                       ))}
                     </div>
@@ -632,15 +904,15 @@ function ActionCardContent() {
                       const orderTotal = selectedCard.items.reduce((sum, item) => sum + ((item.quantity || 0) * (item.price || 0)), 0);
                       const hasMissingPrice = selectedCard.items.some(item => item.price === undefined || item.price === null || item.price <= 0);
                       return (
-                        <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-2 text-sm font-semibold text-slate-600">
-                          <span className="text-slate-500 text-xs uppercase tracking-wider">Calculated Grand Total</span>
-                          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
-                            <span className="text-base sm:text-lg font-black text-slate-900 font-mono bg-slate-50 border border-slate-150 px-3 py-1 rounded">
+                        <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center gap-2 text-sm font-semibold text-slate-600">
+                          <span className="text-slate-500 text-xs uppercase tracking-wider font-bold">Calculated Grand Total</span>
+                          <div className="flex flex-col items-end">
+                            <span className="text-base sm:text-lg font-black text-slate-900 font-mono bg-slate-50 border border-slate-150 px-3 py-0.5 rounded-lg">
                               ₹{orderTotal.toFixed(2)}
                             </span>
                             {hasMissingPrice && (
-                              <span className="text-amber-600 font-bold text-[10px] sm:text-xs italic bg-amber-50 px-2 py-1 rounded border border-amber-200">
-                                + Pending Price Verification
+                              <span className="text-[10px] text-amber-600 font-bold mt-1 text-right">
+                                ⚠ Pending Verification
                               </span>
                             )}
                           </div>
@@ -720,35 +992,35 @@ function ActionCardContent() {
                     </div>
                   )}
 
+                  {/* Collapsible Transcript Section */}
                   {selectedCard.transcript && (
-                    <div className="pt-2 border-t border-slate-100">
-                      <div className="flex justify-between items-center mb-2">
-                        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Original AI Transcript</h4>
-                        {selectedCard.metadata?.pipeline && (
-                          <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono border border-slate-200">
-                            Pipeline: {selectedCard.metadata.pipeline}
-                          </span>
-                        )}
-                      </div>
-                      <blockquote className="mt-1 text-xs text-slate-650 bg-slate-50 p-3 rounded border border-slate-150 italic leading-relaxed font-medium">
-                        "{selectedCard.transcript}"
-                      </blockquote>
+                    <div className="pt-4 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setIsAiAnalysisExpanded(!isAiAnalysisExpanded)}
+                        className="w-full flex items-center justify-between text-[10px] font-bold text-slate-450 uppercase tracking-wider py-2 px-3 bg-white border border-slate-200 hover:bg-slate-50/50 hover:border-slate-300 rounded-lg transition-all"
+                      >
+                        <span>Original Transcript</span>
+                        <svg
+                          className={`h-3 w-3 transform transition-transform duration-200 text-slate-400 ${isAiAnalysisExpanded ? 'rotate-180' : ''
+                            }`}
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
 
-                      {selectedCard.metadata?.extraction_notes && (
-                        <div className="mt-2 text-[10px] text-slate-600 bg-blue-50 p-2 rounded border border-blue-100 flex items-start gap-1.5">
-                          <svg className="h-3 w-3 text-blue-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <div><span className="font-bold">Extraction Notes:</span> {selectedCard.metadata.extraction_notes}</div>
-                        </div>
-                      )}
-
-                      {selectedCard.metadata?.multi_card_notes && (
-                        <div className="mt-1 text-[10px] text-amber-700 bg-amber-50 p-2 rounded border border-amber-200 flex items-start gap-1.5">
-                          <svg className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          <div><span className="font-bold">Multi-card Warning:</span> {selectedCard.metadata.multi_card_notes}</div>
+                      {isAiAnalysisExpanded && (
+                        <div className="mt-3 p-4 bg-slate-50 border border-slate-150 rounded-lg space-y-4">
+                          {/* Original AI Transcript */}
+                          <div>
+                            <blockquote className="text-xs text-slate-650 bg-white p-2.5 rounded border border-slate-200 italic leading-relaxed font-medium">
+                              "{selectedCard.transcript}"
+                            </blockquote>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -756,41 +1028,7 @@ function ActionCardContent() {
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 space-y-2">
-                  {selectedCard.risk_flags && selectedCard.risk_flags.length > 0 && (
-                    <div className="bg-red-50 border border-red-200 p-3 rounded-lg text-[10px] text-red-800 font-semibold leading-relaxed flex items-start gap-2 my-2">
-                      <svg className="h-4 w-4 text-red-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                      <div>
-                        <span className="font-extrabold uppercase mr-1">Risk Detected:</span>
-                        {selectedCard.risk_flags.join(", ")}
-                      </div>
-                    </div>
-                  )}
 
-                  {selectedCard.missing_fields && selectedCard.missing_fields.length > 0 && (
-                    <div className="bg-amber-50 border border-amber-250 p-3 rounded-lg text-[10px] text-amber-850 font-semibold leading-relaxed flex items-start gap-2 my-2">
-                      <svg className="h-4 w-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                      <div>
-                        <span className="font-extrabold uppercase mr-1">Missing details:</span>
-                        {selectedCard.missing_fields.join(", ")}
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedCard.validation_warnings && selectedCard.validation_warnings.length > 0 && (
-                    <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg text-[10px] text-slate-700 font-semibold leading-relaxed flex items-start gap-2 my-2">
-                      <svg className="h-4 w-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <div>
-                        <span className="font-extrabold uppercase mr-1">Validation Warnings:</span>
-                        {selectedCard.validation_warnings.join(" ")}
-                      </div>
-                    </div>
-                  )}
                   {getCardValidationWarning(selectedCard) && (
                     <div className="text-sm text-amber-705 font-semibold flex items-center justify-start text-left gap-2 py-1 my-2">
                       <span className="text-amber-500 text-base shrink-0">⚠</span>
@@ -805,7 +1043,7 @@ function ActionCardContent() {
                     <button
                       onClick={() => handleStatusUpdate('approved')}
                       disabled={selectedCard.status === 'approved' || !!getCardValidationWarning(selectedCard)}
-                      className="flex-1 px-3 py-2 bg-emerald-650 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-650 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
+                      className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
                     >
                       Approve
                     </button>
@@ -823,7 +1061,7 @@ function ActionCardContent() {
                   >
                     Edit Order Card
                   </button>
-                  
+
                   {selectedCard.status === 'approved' && (
                     <div className="pt-2">
                       <button
@@ -850,6 +1088,95 @@ function ActionCardContent() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmCard && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in-50 zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-full bg-red-50 flex items-center justify-center text-red-600 shrink-0">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-extrabold text-slate-900">Delete Action Card</h3>
+                <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                  Are you sure you want to permanently delete the Action Card for <strong className="text-slate-800 font-semibold">{deleteConfirmCard.customer_name || 'Anonymous'}</strong>? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmCard(null)}
+                className="px-4 py-2 border border-slate-300 hover:bg-slate-50 rounded-lg text-xs font-bold text-slate-700 cursor-pointer transition-all shadow-3xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const cardId = deleteConfirmCard.id;
+                  setDeleteConfirmCard(null);
+                  try {
+                    await deleteActionCard(cardId);
+                    // Reload list
+                    await loadCards();
+                    // Clear selected card if we deleted it
+                    if (selectedCard?.id === cardId) {
+                      setSelectedCard(null);
+                      // Clear search query param
+                      const params = new URLSearchParams(window.location.search);
+                      params.delete('id');
+                      router.replace(`/action-card?${params.toString()}`, { scroll: false });
+                    }
+                  } catch (err) {
+                    alert('Failed to delete Action Card.');
+                  }
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-all shadow-sm"
+              >
+                Yes, Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unsaved Changes Confirmation Dialog */}
+      {unsavedChangesConfirm && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-sm w-full p-5 space-y-4 animate-in fade-in-50 zoom-in-95 duration-150">
+            <div className="space-y-1.5">
+              <h3 className="text-sm font-bold text-slate-900">Unsaved Changes</h3>
+              <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                You have unsaved changes. Are you sure you want to discard them? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setUnsavedChangesConfirm(null)}
+                className="px-3.5 py-1.5 border border-slate-300 hover:bg-slate-50 rounded-lg font-bold text-slate-700 cursor-pointer transition-all shadow-3xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const action = unsavedChangesConfirm.onConfirm;
+                  setUnsavedChangesConfirm(null);
+                  action();
+                }}
+                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold cursor-pointer transition-all shadow-sm"
+              >
+                Discard Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

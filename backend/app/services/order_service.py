@@ -9,6 +9,27 @@ class OrderService:
     def __init__(self):
         self.supabase = supabase_client
 
+    def _get_and_increment_mock_sequence(self) -> int:
+        import os
+        import json
+        seq_file = os.path.join(os.path.dirname(__file__), "..", "data", "sequence.json")
+        seq_val = 1001
+        if os.path.exists(seq_file):
+            try:
+                with open(seq_file, "r") as f:
+                    seq_val = json.load(f).get("order_number_seq", 1001)
+            except Exception:
+                pass
+        
+        next_seq = seq_val + 1
+        try:
+            os.makedirs(os.path.dirname(seq_file), exist_ok=True)
+            with open(seq_file, "w") as f:
+                json.dump({"order_number_seq": next_seq}, f)
+        except Exception:
+            pass
+        return seq_val
+
     def convert_action_card_to_order(self, action_card_id: str, user_id: str) -> Optional[dict]:
         try:
             # 1. Fetch action card
@@ -105,6 +126,7 @@ class OrderService:
                     oi["order_id"] = order_id
                     oi["id"] = str(uuid.uuid4())
                 order_data["order_items"] = order_items_data
+                order_data["order_number"] = self._get_and_increment_mock_sequence()
                 
                 store.update_status(action_card_id, "converted")
                 return order_data

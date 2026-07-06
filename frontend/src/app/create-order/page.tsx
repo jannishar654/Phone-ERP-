@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation';
 import { createActionCard, extractActionCard, extractActionCardFromAudio, transcribeAudio, updateActionCard, deleteActionCard } from '@/lib/api';
 import { saveVoiceRecording } from '@/lib/voice-recordings';
 import { Item } from '@/types';
+import { format } from 'date-fns';
+import { Calendar as CalendarIcon, Clock } from 'lucide-react';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const isLargeQuantity = (qty: number | null | undefined, unit?: string | null) => {
   if (qty === null || qty === undefined) return false;
@@ -20,6 +24,142 @@ const isLargeQuantity = (qty: number | null | undefined, unit?: string | null) =
   const threshold = thresholds[unitLower] || thresholds['fallback'];
   return qty > threshold;
 };
+
+const formatDeliveryTime = (value: string | undefined): string => {
+  if (!value) return 'Immediate';
+  const trimmed = value.trim();
+  if (trimmed.toLowerCase() === 'immediate' || trimmed === '') return 'Immediate';
+
+  // Parse YYYY-MM-DD hh:mm AM/PM or YYYY-MM-DD HH:mm
+  const dateMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{1,2}):(\d{2})(?:\s*(AM|PM|am|pm))?)?/i);
+  if (dateMatch) {
+    const [_, y, m, d, hh, mm, ampm] = dateMatch;
+
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthName = months[parseInt(m, 10) - 1] || m;
+    const dayStr = `${d} ${monthName}`;
+
+    if (hh && mm) {
+      const timeStr = ampm ? `${hh}:${mm} ${ampm.toUpperCase()}` : `${hh}:${mm}`;
+      return `${dayStr} • ${timeStr}`;
+    }
+    return dayStr;
+  }
+
+  return trimmed;
+};
+
+interface CustomDateTimePickerProps {
+  value: string;
+  onChange: (val: string) => void;
+}
+
+function CustomDateTimePicker({ value, onChange }: CustomDateTimePickerProps) {
+  const dateMatch = value ? value.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i) : null;
+
+  let dateVal: Date | undefined = undefined;
+  let hourVal: string = "";
+  let minuteVal: string = "";
+  let ampmVal: string = "";
+
+  if (dateMatch) {
+    const [_, y, m, d, hh, mm, ampm] = dateMatch;
+    dateVal = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+    hourVal = hh;
+    minuteVal = mm;
+    ampmVal = ampm?.toUpperCase() || "AM";
+  }
+
+  const hoursOptions = Array.from({ length: 12 }, (_, i) => String(i + 1));
+  const minutesOptions = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+
+  const updateValue = (d: Date | undefined, h: string, m: string, ap: string) => {
+    if (!d) {
+      onChange("Immediate");
+      return;
+    }
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hh = h || "12";
+    const mm = m || "00";
+    const ampm = ap || "AM";
+    onChange(`${year}-${month}-${day} ${hh}:${mm} ${ampm}`);
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-2 items-center">
+        {/* Popover Date Selection */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="flex-1 flex items-center justify-between bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-3 py-2 text-xs font-bold text-slate-700 cursor-pointer transition-all shadow-3xs"
+            >
+              <span className="flex items-center gap-2">
+                <CalendarIcon className="h-4 w-4 text-slate-400" />
+                {dateVal ? format(dateVal, "PPP") : "Select Date"}
+              </span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="single"
+              selected={dateVal}
+              onSelect={(d) => updateValue(d, hourVal || "12", minuteVal || "00", ampmVal || "AM")}
+            />
+          </PopoverContent>
+        </Popover>
+
+        {/* Time Select Dropdowns */}
+        <div className="flex gap-1.5 items-center">
+          <select
+            value={hourVal}
+            onChange={(e) => updateValue(dateVal || new Date(), e.target.value, minuteVal || "00", ampmVal || "AM")}
+            className="bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+          >
+            <option value="">Hour</option>
+            {hoursOptions.map((h) => (
+              <option key={h} value={h}>{h}</option>
+            ))}
+          </select>
+          <span className="text-slate-400 font-bold">:</span>
+          <select
+            value={minuteVal}
+            onChange={(e) => updateValue(dateVal || new Date(), hourVal || "12", e.target.value, ampmVal || "AM")}
+            className="bg-white border border-slate-350 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+          >
+            <option value="">Min</option>
+            {minutesOptions.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          <select
+            value={ampmVal}
+            onChange={(e) => updateValue(dateVal || new Date(), hourVal || "12", minuteVal || "00", e.target.value)}
+            className="bg-white border border-slate-350 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+          >
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </select>
+        </div>
+      </div>
+
+      {value && value !== 'Immediate' && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            className="text-[10px] text-slate-500 hover:text-slate-700 font-bold cursor-pointer transition-colors"
+          >
+            ✕ Clear
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function CreateOrder() {
   const router = useRouter();
@@ -445,10 +585,7 @@ const s = (secs % 60).toString().padStart(2, '0');
       <div className="text-center flex flex-col items-center justify-center pb-4">
         {isGenerated ? (
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Review & Confirm Order</h1>
-            <p className="text-sm sm:text-base text-slate-500 mt-2 max-w-2xl">
-              Verify the AI-extracted details below and submit to register the order.
-            </p>
+            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900">Review & Confirm Order</h1>
           </div>
         ) : (
           <div>
@@ -730,7 +867,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                         </div>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div>
+                        <div className="sm:col-span-3">
                           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Delivery Address</label>
                           <input
                             type="text"
@@ -740,17 +877,14 @@ const s = (secs % 60).toString().padStart(2, '0');
                             className="w-full bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
                           />
                         </div>
-                        <div>
+                        <div className="sm:col-span-2">
                           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Delivery Window</label>
-                          <input
-                            type="text"
-                            required
+                          <CustomDateTimePicker
                             value={deliveryTime}
-                            onChange={(e) => setDeliveryTime(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
+                            onChange={(val) => setDeliveryTime(val)}
                           />
                         </div>
-                        <div>
+                        <div className="sm:col-span-1">
                           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Payment Method</label>
                           <select
                             value={paymentMethod}
@@ -807,7 +941,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                             <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
-                            <span className="line-clamp-2 leading-tight">{deliveryTime || 'N/A'}</span>
+                            <span className="line-clamp-2 leading-tight">{formatDeliveryTime(deliveryTime)}</span>
                           </div>
                         </div>
                       </div>

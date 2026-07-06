@@ -7,8 +7,10 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 from app.services.llm_normalizer import LLMNormalizer
 import logging
 
+import pytest
 logging.basicConfig(level=logging.INFO)
 
+@pytest.mark.asyncio
 async def test_llm_normalizer():
     print("--- Testing LLM Normalizer Edge Cases ---")
 
