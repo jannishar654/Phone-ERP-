@@ -5,6 +5,7 @@ from datetime import datetime
 class OrderItemBase(BaseModel):
     catalog_item_id: Optional[str] = None
     raw_name: str
+    display_name: Optional[str] = None
     quantity: float
     unit: Optional[str] = None
     unit_price: float = Field(default=0.0, ge=0.0)

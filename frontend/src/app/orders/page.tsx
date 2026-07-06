@@ -7,6 +7,7 @@ import { getOrders, updateOrderLifecycleStatus } from "@/lib/api";
 interface OrderItem {
   id: string;
   raw_name: string;
+  display_name?: string;
   quantity: number;
   unit: string;
   unit_price: number;
@@ -120,7 +121,7 @@ export default function OrdersPage() {
                 <div className="space-y-2 mb-3">
                   {order.order_items && order.order_items.map(item => (
                     <div key={item.id} className="flex justify-between text-sm">
-                      <span className="text-gray-700">{item.raw_name} <span className="text-gray-400">x {item.quantity} {item.unit}</span></span>
+                      <span className="text-gray-700">{item.display_name || item.raw_name} <span className="text-gray-400">x {item.quantity} {item.unit}</span></span>
                       <span className="font-medium">₹{item.line_total}</span>
                     </div>
                   ))}

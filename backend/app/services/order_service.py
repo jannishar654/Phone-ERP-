@@ -73,6 +73,7 @@ class OrderService:
                 
                 # If matched, we get unit_price and catalog_item_id
                 catalog_item_id = matched.get("catalog_item_id")
+                display_name = matched.get("display_name")
                 
                 # Trust the matched price if matched, else fallback to Action Card price
                 if matched.get("resolution_status") in ["matched", "suggested"]:
@@ -95,6 +96,7 @@ class OrderService:
                 order_items_data.append({
                     "catalog_item_id": catalog_item_id or (item.get("metadata", {}).get("catalog_item_id") if item.get("metadata") else None),
                     "raw_name": raw_name,
+                    "display_name": display_name or item.get("name"),
                     "quantity": qty,
                     "unit": item.get("unit"),
                     "unit_price": price,

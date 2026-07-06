@@ -55,6 +55,7 @@ def _safe_items_from_extracted(extracted: Dict[str, Any], shop_id: Optional[str]
             price = None
             price_status = "Pending Price Verification"
             canonical_name = None
+            display_name = None
             resolution_status = "unmatched"
             possible_matches = []
 
@@ -63,6 +64,7 @@ def _safe_items_from_extracted(extracted: Dict[str, Any], shop_id: Optional[str]
                 matched = matching_service.match_product(name, shop_id)
                 resolution_status = matched.get("resolution_status", "unmatched")
                 canonical_name = matched.get("canonical_name")
+                display_name = matched.get("display_name")
                 possible_matches = matched.get("possible_matches", [])
                 if resolution_status in ["matched", "suggested"]:
                     price = matched.get("unit_price")
@@ -77,7 +79,7 @@ def _safe_items_from_extracted(extracted: Dict[str, Any], shop_id: Optional[str]
                 except Exception:
                     pass
 
-            final_name = canonical_name or name
+            final_name = display_name or canonical_name or name
             
             if final_name in aggregated_items:
                 existing = aggregated_items[final_name]

@@ -105,6 +105,39 @@ class TestCatalogMatchingAndOrder(unittest.TestCase):
         self.assertEqual(res["resolution_status"], "matched")
         self.assertEqual(res["unit_price"], 40.0)
         self.assertEqual(res["canonical_name"], "Aashirvaad Atta")
+        self.assertEqual(res["display_name"], "Aashirvaad Atta")
+
+    @patch.object(catalog_service, "get_items_by_shop")
+    def test_alias_mapping_display_names(self, mock_get_items):
+        mock_get_items.return_value = [
+            {"id": "sugar_id", "canonical_name": "sugar", "display_name": "Sugar / Chini", "base_price": 45.0, "unit": "kg", "aliases": ["chini", "cheeni"]},
+            {"id": "atta_id", "canonical_name": "atta", "display_name": "Aashirvaad Atta", "base_price": 45.0, "unit": "kg", "aliases": ["aata"]},
+            {"id": "oil_id", "canonical_name": "oil", "display_name": "Oil", "base_price": 170.0, "unit": "ltr", "aliases": ["tail"]}
+        ]
+        
+        # Test sugar aliases
+        for raw in ["chini", "cheeni", "sugar"]:
+            res = matching_service.match_product(raw, "shop_abc")
+            self.assertEqual(res["resolution_status"], "matched")
+            self.assertEqual(res["display_name"], "Sugar / Chini")
+            self.assertEqual(res["raw_name"], raw)
+            self.assertEqual(res["unit_price"], 45.0)
+
+        # Test atta aliases
+        for raw in ["aata", "atta"]:
+            res = matching_service.match_product(raw, "shop_abc")
+            self.assertEqual(res["resolution_status"], "matched")
+            self.assertEqual(res["display_name"], "Aashirvaad Atta")
+            self.assertEqual(res["raw_name"], raw)
+            self.assertEqual(res["unit_price"], 45.0)
+
+        # Test oil aliases
+        for raw in ["tail", "oil"]:
+            res = matching_service.match_product(raw, "shop_abc")
+            self.assertEqual(res["resolution_status"], "matched")
+            self.assertEqual(res["display_name"], "Oil")
+            self.assertEqual(res["raw_name"], raw)
+            self.assertEqual(res["unit_price"], 170.0)
 
     @patch.object(catalog_service, "get_items_by_shop")
     def test_unmatched_product_returns_review_required(self, mock_get_items):
@@ -157,6 +190,56 @@ class TestCatalogMatchingAndOrder(unittest.TestCase):
         res = order_service.convert_action_card_to_order("card1", "user1")
         self.assertIsNotNone(res)
         self.assertEqual(res["id"], "order1")
+
+    @patch.object(order_service, "supabase")
+    @patch.object(matching_service, "match_product")
+    def test_order_item_preserves_display_name_and_raw_name(self, mock_match, mock_supabase):
+        mock_match.return_value = {
+            "resolution_status": "matched",
+            "catalog_item_id": "atta_id",
+            "canonical_name": "atta",
+            "display_name": "Aashirvaad Atta",
+            "unit": "kg",
+            "unit_price": 45.0
+        }
+        
+        mock_card_res = MagicMock()
+        mock_card_res.data = [{
+            "id": "card1",
+            "shop_id": "shop1",
+            "items": [{"name": "Aashirvaad Atta", "raw_name": "aata", "quantity": 1}]
+        }]
+        mock_order_res = MagicMock()
+        mock_order_res.data = [{"id": "order1"}]
+        mock_item_res = MagicMock()
+        mock_item_res.data = [{"id": "item1"}]
+        mock_final_res = MagicMock()
+        mock_final_res.data = [{"id": "order1", "total_amount": 45.0, "status": "pending"}]
+        
+        # side_effect for select: 1 for action card, 1 for final order
+        mock_supabase.table().select().eq().execute.side_effect = [mock_card_res, mock_final_res]
+        
+        # insert side effects: order, order_items
+        mock_supabase.table().insert().execute.side_effect = [mock_order_res, mock_item_res]
+        
+        # capture the items insert payload
+        mock_insert = mock_supabase.table().insert
+        
+        res = order_service.convert_action_card_to_order("card1", "user1")
+        self.assertIsNotNone(res)
+        
+        # find the insert call for items (which is a list)
+        items_payload = None
+        for call in mock_insert.call_args_list:
+            args = call[0]
+            if args and isinstance(args[0], list):
+                items_payload = args[0]
+                break
+                
+        self.assertIsNotNone(items_payload)
+        self.assertEqual(len(items_payload), 1)
+        self.assertEqual(items_payload[0]["raw_name"], "aata")
+        self.assertEqual(items_payload[0]["display_name"], "Aashirvaad Atta")
 
     @patch.object(order_service, "supabase")
     def test_price_missing_keeps_pending_price_verification(self, mock_supabase):
