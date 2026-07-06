@@ -185,6 +185,35 @@ function ActionCardContent() {
   // Menu and deletion states
   const [openMenuCardId, setOpenMenuCardId] = useState<string | null>(null);
   const [deleteConfirmCard, setDeleteConfirmCard] = useState<ActionCard | null>(null);
+  const [unsavedChangesConfirm, setUnsavedChangesConfirm] = useState<{ onConfirm: () => void } | null>(null);
+
+  const hasUnsavedChanges = () => {
+    if (!isEditing || !selectedCard) return false;
+    if (editName !== (selectedCard.customer_name || '')) return true;
+    if (editPhone !== (selectedCard.customer_phone || '')) return true;
+    if (editAddress !== (selectedCard.delivery_address || '')) return true;
+    if (editTime !== (selectedCard.delivery_time || '')) return true;
+    
+    if (editItems.length !== selectedCard.items.length) return true;
+    for (let i = 0; i < editItems.length; i++) {
+      const a = editItems[i];
+      const b = selectedCard.items[i];
+      if (!b) return true;
+      if (a.name !== b.name) return true;
+      if (a.quantity !== b.quantity) return true;
+      if ((a.price || 0) !== (b.price || 0)) return true;
+      if ((a.unit || '') !== (b.unit || '')) return true;
+    }
+    return false;
+  };
+
+  const confirmNavigation = (onConfirm: () => void) => {
+    if (hasUnsavedChanges()) {
+      setUnsavedChangesConfirm({ onConfirm });
+    } else {
+      onConfirm();
+    }
+  };
 
   // Collapsible AI Analysis state
   const [isAiAnalysisExpanded, setIsAiAnalysisExpanded] = useState(false);
@@ -244,11 +273,17 @@ function ActionCardContent() {
     }
   }, [selectedCard, editParam]);
 
-  const selectCard = (card: ActionCard) => {
+  const selectCard = (card: ActionCard | null) => {
     setSelectedCard(card);
     setIsEditing(false);
     setIsAiAnalysisExpanded(false);
-    router.replace(`/action-card?id=${card.id}`, { scroll: false });
+    const params = new URLSearchParams(window.location.search);
+    if (card) {
+      params.set('id', card.id);
+    } else {
+      params.delete('id');
+    }
+    router.replace(`/action-card?${params.toString()}`, { scroll: false });
   };
 
   const getCardValidationWarning = (card: ActionCard) => {
@@ -459,7 +494,7 @@ function ActionCardContent() {
               <div
                 key={card.id}
                 id={`card-${card.id}`}
-                onClick={() => selectCard(card)}
+                onClick={() => confirmNavigation(() => selectCard(card))}
                 className={`p-3 rounded-xl border transition-all duration-150 cursor-pointer flex flex-col justify-between shadow-3xs ${selectedCard?.id === card.id
                     ? 'border-indigo-500 bg-indigo-50/40 shadow-xs'
                     : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50 hover:shadow-xs'
@@ -609,11 +644,21 @@ function ActionCardContent() {
         </div>
 
         {/* Right 2 Cols: Detailed Inspect Sidebar Panel */}
-        <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-5 pr-4 sticky top-4 lg:max-h-[calc(100vh-200px)] lg:overflow-y-auto self-start min-h-[450px] flex flex-col justify-between shadow-sm">
+        <div className={`fixed inset-y-0 right-0 z-40 w-full bg-white transition-transform duration-300 ease-out transform ${
+          selectedCard ? 'translate-x-0' : 'translate-x-full'
+        } lg:static lg:z-auto lg:translate-x-0 lg:col-span-2 lg:rounded-xl lg:border lg:border-slate-200 p-5 lg:pr-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-200px)] lg:overflow-y-auto lg:self-start lg:min-h-[450px] flex flex-col justify-between shadow-sm`}>
           {selectedCard ? (
             isEditing ? (
               /* Editing Panel View */
               <div className="space-y-4">
+                {/* Back button for mobile/tablet screen viewports */}
+                <button
+                  type="button"
+                  onClick={() => confirmNavigation(() => selectCard(null))}
+                  className="lg:hidden mb-4 flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-800 transition-colors cursor-pointer bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg shadow-3xs"
+                >
+                  ← Action Cards
+                </button>
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <h3 className="font-bold text-slate-900">Edit Order Details</h3>
                   <span className="text-xs font-mono text-slate-450 font-bold">{selectedCard.id}</span>
@@ -716,7 +761,7 @@ function ActionCardContent() {
 
                 <div className="pt-4 border-t border-slate-100 flex gap-2">
                   <button
-                    onClick={() => setIsEditing(false)}
+                    onClick={() => confirmNavigation(() => setIsEditing(false))}
                     className="flex-1 px-3 py-2 border border-slate-300 hover:bg-slate-50 text-slate-600 hover:text-slate-900 rounded text-xs font-bold cursor-pointer"
                   >
                     Cancel
@@ -732,6 +777,14 @@ function ActionCardContent() {
             ) : (
               /* Inspect Details Panel View */
               <div className="space-y-4">
+                {/* Back button for mobile/tablet screen viewports */}
+                <button
+                  type="button"
+                  onClick={() => confirmNavigation(() => selectCard(null))}
+                  className="lg:hidden mb-4 flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-800 transition-colors cursor-pointer bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg shadow-3xs"
+                >
+                  ← Action Cards
+                </button>
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-mono text-slate-400 font-bold">{selectedCard.id}</span>
@@ -1085,6 +1138,40 @@ function ActionCardContent() {
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-all shadow-sm"
               >
                 Yes, Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unsaved Changes Confirmation Dialog */}
+      {unsavedChangesConfirm && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-sm w-full p-5 space-y-4 animate-in fade-in-50 zoom-in-95 duration-150">
+            <div className="space-y-1.5">
+              <h3 className="text-sm font-bold text-slate-900">Unsaved Changes</h3>
+              <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                You have unsaved changes. Are you sure you want to discard them? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setUnsavedChangesConfirm(null)}
+                className="px-3.5 py-1.5 border border-slate-300 hover:bg-slate-50 rounded-lg font-bold text-slate-700 cursor-pointer transition-all shadow-3xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const action = unsavedChangesConfirm.onConfirm;
+                  setUnsavedChangesConfirm(null);
+                  action();
+                }}
+                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold cursor-pointer transition-all shadow-sm"
+              >
+                Discard Changes
               </button>
             </div>
           </div>
