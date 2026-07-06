@@ -24,6 +24,9 @@ function ActionCardContent() {
   const [editTime, setEditTime] = useState('');
   const [editItems, setEditItems] = useState<Item[]>([]);
 
+  // Collapsible AI Analysis state
+  const [isAiAnalysisExpanded, setIsAiAnalysisExpanded] = useState(false);
+
   // Speech upload demo state
   const [demoTranscript, setDemoTranscript] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
@@ -73,6 +76,7 @@ function ActionCardContent() {
   const selectCard = (card: ActionCard) => {
     setSelectedCard(card);
     setIsEditing(false);
+    setIsAiAnalysisExpanded(false);
     router.replace(`/action-card?id=${card.id}`);
   };
 
@@ -98,6 +102,11 @@ function ActionCardContent() {
       }
     }
     return null;
+  };
+
+  const isDayMissing = (card: ActionCard) => {
+    const warning = card.delivery_time_warning?.toLowerCase() || '';
+    return warning.includes('day') || warning.includes('date') || (!card.delivery_time_normalized && card.delivery_time_raw);
   };
 
   const handleStatusUpdate = async (status: string) => {
@@ -314,8 +323,30 @@ function ActionCardContent() {
                   </ul>
                 </div>
 
-                <div className="mt-4 flex items-center justify-between text-xs text-slate-500 pt-2 font-medium">
-                  <span className="truncate max-w-[70%]">Deliver: {card.delivery_address}</span>
+                {/* Delivery Information */}
+                <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-4 text-xs font-medium text-slate-500">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Delivery Address</span>
+                    <span className="text-slate-800 font-bold truncate block" title={card.delivery_address}>
+                      {card.delivery_address || 'Not specified'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Delivery Time</span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-slate-800 font-bold truncate block">
+                        {card.delivery_time || 'Immediate'}
+                      </span>
+                      {isDayMissing(card) && (
+                        <span className="text-amber-600 font-bold text-[10px] shrink-0" title="Day not specified">
+                          ⚠
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-2 border-t border-dashed border-slate-100 flex items-center justify-end text-[10px] text-slate-400 font-bold">
                   <span>{new Date(card.created_at).toLocaleDateString()}</span>
                 </div>
               </div>
@@ -412,7 +443,7 @@ function ActionCardContent() {
                       <button
                         type="button"
                         onClick={addEditItemRow}
-                        className="text-[10px] text-indigo-650 font-bold cursor-pointer hover:text-indigo-800"
+                        className="text-[10px] text-indigo-600 font-bold cursor-pointer hover:text-indigo-800"
                       >
                         + Add Item
                       </button>
@@ -513,68 +544,35 @@ function ActionCardContent() {
                       </span>
                     )}
                   </h2>
-                  <p className="text-sm text-indigo-650 font-bold mt-0.5 flex justify-between items-center">
-                    <span>{selectedCard.customer_phone || 'No phone number provided'}</span>
-                    {selectedCard.confidence_score !== undefined && selectedCard.confidence_label ? (
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
-                        selectedCard.confidence_label === 'High' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                        selectedCard.confidence_label === 'Medium' ? 'bg-amber-100 text-amber-800 border-amber-300' :
-                        'bg-red-100 text-red-800 border-red-300'
-                      }`}>
-                        Review Readiness: {selectedCard.confidence_score}% {selectedCard.confidence_label}
-                      </span>
-                    ) : selectedCard.confidence !== undefined && (
-                      <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded">
-                        Model Confidence: {(selectedCard.confidence * 100).toFixed(0)}%
-                      </span>
-                    )}
+                  <p className="text-sm text-indigo-600 font-bold mt-0.5">
+                    {selectedCard.customer_phone || 'No phone number provided'}
                   </p>
                 </div>
-                
-                {selectedCard.confidence_reasons && selectedCard.confidence_reasons.length > 0 && (
-                  <div className={`p-2 rounded mt-2 border ${
-                    selectedCard.confidence_label === 'High' ? 'bg-emerald-50 border-emerald-200' :
-                    selectedCard.confidence_label === 'Medium' ? 'bg-amber-50 border-amber-200' :
-                    'bg-red-50 border-red-200'
-                  }`}>
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Review Reasons:</h4>
-                    <ul className="text-xs space-y-0.5 pl-3 list-disc">
-                      {selectedCard.confidence_reasons.map((reason, idx) => (
-                        <li key={idx} className={
-                          selectedCard.confidence_label === 'High' ? 'text-emerald-700' :
-                          selectedCard.confidence_label === 'Medium' ? 'text-amber-700' : 
-                          'text-red-700'
-                        }>{reason}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
 
                 <div className="space-y-3">
-                  <div>
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Delivery Instructions</h4>
-                    <p className="text-sm text-slate-800 mt-1 font-bold">{selectedCard.delivery_address || 'Not specified'}</p>
-                    <div className="mt-0.5">
-                      <p className="text-xs text-slate-500 font-semibold">Time: {selectedCard.delivery_time || 'Immediate'}</p>
-                      {selectedCard.delivery_time_raw && (
-                        <p className="text-[10px] text-slate-400 font-medium italic mt-0.5">Original delivery time: "{selectedCard.delivery_time_raw}"</p>
-                      )}
-                      {selectedCard.delivery_time_warning && (
-                        <p className="text-[10px] text-amber-600 font-semibold mt-0.5 flex items-center gap-1">
-                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          {selectedCard.delivery_time_warning}
-                        </p>
-                      )}
+                  <div className="grid grid-cols-2 gap-4 pb-3 border-b border-slate-100">
+                    <div>
+                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Delivery Address</h4>
+                      <p className="text-sm text-slate-800 mt-1 font-bold">{selectedCard.delivery_address || 'Not specified'}</p>
+                    </div>
+                    <div>
+                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Delivery Time</h4>
+                      <div className="flex flex-col mt-1">
+                        <p className="text-sm text-slate-800 font-bold">{selectedCard.delivery_time || 'Immediate'}</p>
+                        {isDayMissing(selectedCard) && (
+                          <span className="text-[11px] text-amber-600 font-bold mt-0.5 flex items-center gap-1">
+                            ⚠ Day not specified
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   <div className="pt-2 border-t border-slate-100">
                     <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Payment Details</h4>
                     <p className={`text-xs mt-1 font-bold ${
-                      selectedCard.payment_method === 'Credit (Udhaar)' ? 'text-red-650' :
-                      selectedCard.payment_method === 'Cash' || selectedCard.payment_method === 'Online' ? 'text-emerald-650' :
+                      selectedCard.payment_method === 'Credit (Udhaar)' ? 'text-red-600' :
+                      selectedCard.payment_method === 'Cash' || selectedCard.payment_method === 'Online' ? 'text-emerald-600' :
                       'text-slate-600'
                     }`}>
                       {selectedCard.payment_method || 'Not Specified'}
@@ -720,39 +718,133 @@ function ActionCardContent() {
                     </div>
                   )}
 
-                  {selectedCard.transcript && (
-                    <div className="pt-2 border-t border-slate-100">
-                      <div className="flex justify-between items-center mb-2">
-                        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Original AI Transcript</h4>
-                        {selectedCard.metadata?.pipeline && (
-                          <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono border border-slate-200">
-                            Pipeline: {selectedCard.metadata.pipeline}
-                          </span>
+                  {/* Collapsible AI Analysis Section */}
+                  <div className="pt-4 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setIsAiAnalysisExpanded(!isAiAnalysisExpanded)}
+                      className="w-full flex items-center justify-between text-xs font-bold text-indigo-750 hover:text-indigo-900 uppercase tracking-wider py-2 px-3 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-lg transition-all animate-none"
+                    >
+                      <span>AI Analysis Details</span>
+                      <svg
+                        className={`h-4 w-4 transform transition-transform duration-200 ${
+                          isAiAnalysisExpanded ? 'rotate-180' : ''
+                        }`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+
+                    {isAiAnalysisExpanded && (
+                      <div className="mt-3 p-4 bg-slate-50 border border-slate-150 rounded-lg space-y-4">
+                        {/* Review Readiness & Confidence Scores */}
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider block">Review Readiness</span>
+                            {selectedCard.confidence_score !== undefined && selectedCard.confidence_label ? (
+                              <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold border mt-1 ${
+                                selectedCard.confidence_label === 'High' ? 'bg-emerald-50 text-emerald-805 border-emerald-200' :
+                                selectedCard.confidence_label === 'Medium' ? 'bg-amber-50 text-amber-805 border-amber-200' :
+                                'bg-red-50 text-red-805 border-red-200'
+                              }`}>
+                                {selectedCard.confidence_score}% {selectedCard.confidence_label}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic">Not available</span>
+                            )}
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Model Confidence</span>
+                            {selectedCard.confidence !== undefined ? (
+                              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 mt-1">
+                                {(selectedCard.confidence * 100).toFixed(0)}%
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic">Not available</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Pipeline and STT/Extraction Info */}
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Pipeline</span>
+                            <span className="text-slate-700 font-mono text-[11px] block mt-1">
+                              {selectedCard.metadata?.pipeline || 'N/A'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Engine / Provider</span>
+                            <span className="text-slate-700 text-xs block mt-1">
+                              STT: {selectedCard.stt_provider || 'N/A'} | Extraction: {selectedCard.extraction_provider || 'N/A'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Original Delivery Time & Address (Raw) */}
+                        <div className="space-y-2 text-xs">
+                          {selectedCard.delivery_time_raw && (
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Original Delivery Time (Raw)</span>
+                              <code className="text-[11px] text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded block mt-1 font-mono">
+                                "{selectedCard.delivery_time_raw}"
+                              </code>
+                            </div>
+                          )}
+                          {selectedCard.delivery_address_raw && (
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Original Delivery Address (Raw)</span>
+                              <code className="text-[11px] text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded block mt-1 font-mono">
+                                "{selectedCard.delivery_address_raw}"
+                              </code>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Review Reasons */}
+                        {selectedCard.confidence_reasons && selectedCard.confidence_reasons.length > 0 && (
+                          <div className="pt-2 border-t border-slate-200">
+                            <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block mb-1">Review Reasons</span>
+                            <ul className="text-xs space-y-1 pl-4 list-disc text-slate-600">
+                              {selectedCard.confidence_reasons.map((reason, idx) => (
+                                <li key={idx}>{reason}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* Original AI Transcript */}
+                        {selectedCard.transcript && (
+                          <div className="pt-2 border-t border-slate-200">
+                            <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block mb-1">Original AI Transcript</span>
+                            <blockquote className="text-xs text-slate-650 bg-white p-2.5 rounded border border-slate-200 italic leading-relaxed font-medium">
+                              "{selectedCard.transcript}"
+                            </blockquote>
+                          </div>
+                        )}
+
+                        {/* Extraction & Multi-card Notes */}
+                        {(selectedCard.metadata?.extraction_notes || selectedCard.metadata?.multi_card_notes) && (
+                          <div className="pt-2 border-t border-slate-200 space-y-2 text-xs">
+                            {selectedCard.metadata?.extraction_notes && (
+                              <div className="text-[10px] text-blue-700 bg-blue-50/50 p-2 rounded border border-blue-100">
+                                <span className="font-bold">Extraction Notes:</span> {selectedCard.metadata.extraction_notes}
+                              </div>
+                            )}
+                            {selectedCard.metadata?.multi_card_notes && (
+                              <div className="text-[10px] text-amber-700 bg-amber-50/50 p-2 rounded border border-amber-100">
+                                <span className="font-bold">Multi-card Warning:</span> {selectedCard.metadata.multi_card_notes}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
-                      <blockquote className="mt-1 text-xs text-slate-650 bg-slate-50 p-3 rounded border border-slate-150 italic leading-relaxed font-medium">
-                        "{selectedCard.transcript}"
-                      </blockquote>
-
-                      {selectedCard.metadata?.extraction_notes && (
-                        <div className="mt-2 text-[10px] text-slate-600 bg-blue-50 p-2 rounded border border-blue-100 flex items-start gap-1.5">
-                          <svg className="h-3 w-3 text-blue-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <div><span className="font-bold">Extraction Notes:</span> {selectedCard.metadata.extraction_notes}</div>
-                        </div>
-                      )}
-
-                      {selectedCard.metadata?.multi_card_notes && (
-                        <div className="mt-1 text-[10px] text-amber-700 bg-amber-50 p-2 rounded border border-amber-200 flex items-start gap-1.5">
-                          <svg className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          <div><span className="font-bold">Multi-card Warning:</span> {selectedCard.metadata.multi_card_notes}</div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 space-y-2">
@@ -805,7 +897,7 @@ function ActionCardContent() {
                     <button
                       onClick={() => handleStatusUpdate('approved')}
                       disabled={selectedCard.status === 'approved' || !!getCardValidationWarning(selectedCard)}
-                      className="flex-1 px-3 py-2 bg-emerald-650 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-650 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
+                      className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
                     >
                       Approve
                     </button>
