@@ -4,6 +4,122 @@ import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { getActionCards, updateActionCardStatus, updateActionCard, convertActionCardToOrder } from '@/lib/api';
 import { ActionCard, Item } from '@/types';
+import { format } from 'date-fns';
+import { Calendar as CalendarIcon } from 'lucide-react';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+
+interface CustomDateTimePickerProps {
+  value: string;
+  onChange: (val: string) => void;
+}
+
+function CustomDateTimePicker({ value, onChange }: CustomDateTimePickerProps) {
+  const dateMatch = value ? value.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i) : null;
+  
+  let dateVal: Date | undefined = undefined;
+  let hourVal: string = "";
+  let minuteVal: string = "";
+  let ampmVal: string = "";
+
+  if (dateMatch) {
+    const [_, y, m, d, hh, mm, ampm] = dateMatch;
+    dateVal = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+    hourVal = hh;
+    minuteVal = mm;
+    ampmVal = ampm?.toUpperCase() || "AM";
+  }
+
+  const hoursOptions = Array.from({ length: 12 }, (_, i) => String(i + 1));
+  const minutesOptions = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+
+  const updateValue = (d: Date | undefined, h: string, m: string, ap: string) => {
+    if (!d) {
+      onChange("Immediate");
+      return;
+    }
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hh = h || "12";
+    const mm = m || "00";
+    const ampm = ap || "AM";
+    onChange(`${year}-${month}-${day} ${hh}:${mm} ${ampm}`);
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-2 items-center">
+        {/* Popover Date Selection */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="flex-1 flex items-center justify-between bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-3 py-2 text-xs font-bold text-slate-700 cursor-pointer transition-all shadow-3xs"
+            >
+              <span className="flex items-center gap-2">
+                <CalendarIcon className="h-4 w-4 text-slate-400" />
+                {dateVal ? format(dateVal, "PPP") : "Select Date (Immediate)"}
+              </span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="single"
+              selected={dateVal}
+              onSelect={(d) => updateValue(d, hourVal || "12", minuteVal || "00", ampmVal || "AM")}
+            />
+          </PopoverContent>
+        </Popover>
+
+        {/* Time Select Dropdowns */}
+        <div className="flex gap-1.5 items-center">
+          <select
+            value={hourVal}
+            onChange={(e) => updateValue(dateVal || new Date(), e.target.value, minuteVal || "00", ampmVal || "AM")}
+            className="bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+          >
+            <option value="">Hour</option>
+            {hoursOptions.map((h) => (
+              <option key={h} value={h}>{h}</option>
+            ))}
+          </select>
+          <span className="text-slate-400 font-bold">:</span>
+          <select
+            value={minuteVal}
+            onChange={(e) => updateValue(dateVal || new Date(), hourVal || "12", e.target.value, ampmVal || "AM")}
+            className="bg-white border border-slate-350 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+          >
+            <option value="">Min</option>
+            {minutesOptions.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          <select
+            value={ampmVal}
+            onChange={(e) => updateValue(dateVal || new Date(), hourVal || "12", minuteVal || "00", e.target.value)}
+            className="bg-white border border-slate-350 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+          >
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </select>
+        </div>
+      </div>
+
+      {value && value !== 'Immediate' && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            className="text-[10px] text-slate-500 hover:text-slate-700 font-bold cursor-pointer transition-colors"
+          >
+            ✕ Clear
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Main content wrapping the search params logic
 function ActionCardContent() {
@@ -198,11 +314,34 @@ function ActionCardContent() {
     if (!selectedCard) return;
     try {
       const validItems = editItems.filter(i => i.name.trim() !== '');
+      let finalDeliveryTime = editTime;
+      if (!finalDeliveryTime || finalDeliveryTime.trim() === '') {
+        finalDeliveryTime = 'Immediate';
+      }
+
+      // Past check warning
+      const dateMatch = finalDeliveryTime.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i);
+      if (dateMatch) {
+        const [_, y, m, d, hh, mm, ampm] = dateMatch;
+        let hour = parseInt(hh, 10);
+        if (ampm) {
+          const up = ampm.toUpperCase();
+          if (up === 'PM' && hour < 12) hour += 12;
+          if (up === 'AM' && hour === 12) hour = 0;
+        }
+        const selectedDate = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, parseInt(mm, 10));
+        const checkTime = new Date();
+        checkTime.setMinutes(checkTime.getMinutes() - 5);
+        if (selectedDate < checkTime) {
+          alert('Warning: The selected delivery date and time is in the past. Saving anyway.');
+        }
+      }
+
       const updated = await updateActionCard(selectedCard.id, {
         customer_name: editName,
         customer_phone: editPhone,
         delivery_address: editAddress,
-        delivery_time: editTime,
+        delivery_time: finalDeliveryTime,
         items: validItems
       });
       setSelectedCard(updated);
@@ -353,39 +492,7 @@ function ActionCardContent() {
             ))
           )}
 
-          {/* Simulated Speech Transcription Box */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4 shadow-sm">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-indigo-750">Simulate Call Transcription</h3>
-            <p className="text-xs text-slate-500 leading-relaxed font-medium">
-              Type or paste sample customer speech transcriptions. Our mock endpoint will simulate AI entity extraction and add a card to the database.
-            </p>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Extraction Engine</label>
-              <select
-                value={extractProvider}
-                onChange={(e) => setExtractProvider(e.target.value)}
-                disabled={isExtracting}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 font-medium focus:outline-none focus:border-indigo-500 mb-2"
-              >
-                <option value="gemini">Gemini Extraction</option>
-                <option value="gliner">GLiNER Extraction</option>
-              </select>
-            </div>
-            <textarea
-              rows={3}
-              value={demoTranscript}
-              onChange={(e) => setDemoTranscript(e.target.value)}
-              placeholder='Example: "Hi this is Kathryn Janeway from USS Voyager. Send 5 dilithium crystals to cargo bay 1 ASAP."'
-              className="w-full bg-white border border-slate-300 rounded-lg p-3 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-medium"
-            />
-            <button
-              onClick={handleSimulateExtraction}
-              disabled={isExtracting || !demoTranscript.trim()}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-705 disabled:bg-indigo-400 text-white rounded-lg text-xs font-bold shadow-sm cursor-pointer"
-            >
-              {isExtracting ? 'Extracting...' : 'Parse Speech with AI'}
-            </button>
-          </div>
+
         </div>
 
         {/* Right 1 Col: Detailed Inspect Sidebar Panel */}
@@ -428,12 +535,10 @@ function ActionCardContent() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Delivery Time</label>
-                    <input
-                      type="text"
+                    <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5">Delivery Time</label>
+                    <CustomDateTimePicker
                       value={editTime}
-                      onChange={(e) => setEditTime(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
+                      onChange={(val) => setEditTime(val)}
                     />
                   </div>
 
@@ -741,106 +846,16 @@ function ActionCardContent() {
 
                     {isAiAnalysisExpanded && (
                       <div className="mt-3 p-4 bg-slate-50 border border-slate-150 rounded-lg space-y-4">
-                        {/* Review Readiness & Confidence Scores */}
-                        <div className="grid grid-cols-2 gap-3 text-xs">
-                          <div>
-                            <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider block">Review Readiness</span>
-                            {selectedCard.confidence_score !== undefined && selectedCard.confidence_label ? (
-                              <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold border mt-1 ${
-                                selectedCard.confidence_label === 'High' ? 'bg-emerald-50 text-emerald-805 border-emerald-200' :
-                                selectedCard.confidence_label === 'Medium' ? 'bg-amber-50 text-amber-805 border-amber-200' :
-                                'bg-red-50 text-red-805 border-red-200'
-                              }`}>
-                                {selectedCard.confidence_score}% {selectedCard.confidence_label}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 italic">Not available</span>
-                            )}
-                          </div>
-                          <div>
-                            <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Model Confidence</span>
-                            {selectedCard.confidence !== undefined ? (
-                              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 mt-1">
-                                {(selectedCard.confidence * 100).toFixed(0)}%
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 italic">Not available</span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Pipeline and STT/Extraction Info */}
-                        <div className="grid grid-cols-2 gap-3 text-xs">
-                          <div>
-                            <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Pipeline</span>
-                            <span className="text-slate-700 font-mono text-[11px] block mt-1">
-                              {selectedCard.metadata?.pipeline || 'N/A'}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Engine / Provider</span>
-                            <span className="text-slate-700 text-xs block mt-1">
-                              STT: {selectedCard.stt_provider || 'N/A'} | Extraction: {selectedCard.extraction_provider || 'N/A'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Original Delivery Time & Address (Raw) */}
-                        <div className="space-y-2 text-xs">
-                          {selectedCard.delivery_time_raw && (
-                            <div>
-                              <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Original Delivery Time (Raw)</span>
-                              <code className="text-[11px] text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded block mt-1 font-mono">
-                                "{selectedCard.delivery_time_raw}"
-                              </code>
-                            </div>
-                          )}
-                          {selectedCard.delivery_address_raw && (
-                            <div>
-                              <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Original Delivery Address (Raw)</span>
-                              <code className="text-[11px] text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded block mt-1 font-mono">
-                                "{selectedCard.delivery_address_raw}"
-                              </code>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Review Reasons */}
-                        {selectedCard.confidence_reasons && selectedCard.confidence_reasons.length > 0 && (
-                          <div className="pt-2 border-t border-slate-200">
-                            <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block mb-1">Review Reasons</span>
-                            <ul className="text-xs space-y-1 pl-4 list-disc text-slate-600">
-                              {selectedCard.confidence_reasons.map((reason, idx) => (
-                                <li key={idx}>{reason}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
                         {/* Original AI Transcript */}
-                        {selectedCard.transcript && (
-                          <div className="pt-2 border-t border-slate-200">
+                        {selectedCard.transcript ? (
+                          <div>
                             <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block mb-1">Original AI Transcript</span>
                             <blockquote className="text-xs text-slate-650 bg-white p-2.5 rounded border border-slate-200 italic leading-relaxed font-medium">
                               "{selectedCard.transcript}"
                             </blockquote>
                           </div>
-                        )}
-
-                        {/* Extraction & Multi-card Notes */}
-                        {(selectedCard.metadata?.extraction_notes || selectedCard.metadata?.multi_card_notes) && (
-                          <div className="pt-2 border-t border-slate-200 space-y-2 text-xs">
-                            {selectedCard.metadata?.extraction_notes && (
-                              <div className="text-[10px] text-blue-700 bg-blue-50/50 p-2 rounded border border-blue-100">
-                                <span className="font-bold">Extraction Notes:</span> {selectedCard.metadata.extraction_notes}
-                              </div>
-                            )}
-                            {selectedCard.metadata?.multi_card_notes && (
-                              <div className="text-[10px] text-amber-700 bg-amber-50/50 p-2 rounded border border-amber-100">
-                                <span className="font-bold">Multi-card Warning:</span> {selectedCard.metadata.multi_card_notes}
-                              </div>
-                            )}
-                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-500 italic">No transcript available.</p>
                         )}
                       </div>
                     )}
