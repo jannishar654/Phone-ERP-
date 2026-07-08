@@ -70,7 +70,11 @@ class FakeTable:
 
     def update(self, *args, **kwargs):
         self.calls.append(("update", self.name, args, kwargs))
-        return FakeQuery([{"id": "test"}])
+        if self.name == "orders":
+            p = dict(ORDER_PAYLOAD)
+            p.update(args[0])
+            return FakeQuery([p])
+        return FakeQuery([{"id": "test", **args[0]}])
 
     def insert(self, *args, **kwargs):
         self.calls.append(("insert", self.name, args, kwargs))
@@ -212,7 +216,16 @@ def test_whatsapp_missing_phone_does_not_rollback():
                 return FakeQuery([{"phone": None}])
             return original_select(self, *args, **kwargs)
             
-        with patch.object(FakeTable, 'select', mock_select):
+        original_update = FakeTable.update
+        def mock_update(self, *args, **kwargs):
+            if self.name == "orders":
+                p = dict(ORDER_PAYLOAD)
+                p["customer_phone"] = None
+                p.update(args[0])
+                return FakeQuery([p])
+            return original_update(self, *args, **kwargs)
+            
+        with patch.object(FakeTable, 'select', mock_select), patch.object(FakeTable, 'update', mock_update):
             response = client.post("/staff/orders/order-1/status", json={"lifecycle_status": "delivered"})
             assert response.status_code == 200
             resp_json = response.json()

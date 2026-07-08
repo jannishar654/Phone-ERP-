@@ -87,7 +87,9 @@ def get_delivery_orders(req: StaffOrderRequest, user_id: Optional[str] = Depends
 
 class UpdateLifecycleStatusStaff(BaseModel):
     token: Optional[str] = None
-    lifecycle_status: str
+    lifecycle_status: Optional[str] = None
+    status: Optional[str] = None
+    lifecycleStatus: Optional[str] = None
 
 @router.post("/orders/{order_id}/status", response_model=OrderResponse)
 def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff, user_id: Optional[str] = Depends(get_optional_user_id)):
@@ -95,9 +97,14 @@ def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff, u
     if not ctx:
         raise HTTPException(status_code=401, detail="Invalid token or session")
         
-    new_status = data.lifecycle_status
+    new_status = data.lifecycle_status or data.status or data.lifecycleStatus
+    if not new_status:
+        raise HTTPException(status_code=422, detail="Missing status field")
+        
     role = ctx["role"]
     shop_id = ctx["shop_id"]
+    
+    print(f"STAFF_STATUS_UPDATE_RECEIVED order_id={order_id} role={role} payload_status={new_status}", flush=True)
     
     # Packer can only move to out_for_delivery
     if role == "packer" and new_status != "out_for_delivery":
@@ -113,6 +120,8 @@ def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff, u
         
     order = res.data[0]
     current_status = order.get("lifecycle_status")
+    
+    print(f"STAFF_STATUS_UPDATE_RECEIVED order_id={order_id} role={role} payload_status={new_status} current_status={current_status}", flush=True)
     
     # Validate transition
     if role == "packer":
@@ -135,9 +144,20 @@ def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff, u
     if not update_res.data:
         raise HTTPException(status_code=500, detail="Failed to update order")
         
+    final_order = update_res.data[0]
+    final_lifecycle_status = final_order.get("lifecycle_status")
+    
+    print(f"STAFF_STATUS_UPDATE_APPLIED order_id={order_id} new_status={final_lifecycle_status}", flush=True)
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"STAFF_STATUS_UPDATE_APPLIED order_id={order_id} new_status={final_lifecycle_status}")
+    
     # Send notification if delivered
     notification_info = {}
-    if new_status == "delivered":
+    print(f"STAFF_STATUS_DELIVERED_BRANCH_CHECK new_status={final_lifecycle_status} is_delivered={final_lifecycle_status == 'delivered'}", flush=True)
+    logger.warning(f"STAFF_STATUS_DELIVERED_BRANCH_CHECK new_status={final_lifecycle_status} is_delivered={final_lifecycle_status == 'delivered'}")
+    
+    if final_lifecycle_status == "delivered":
         notification_info = {
             "notification_sent": False,
             "notification_channel": None,
@@ -180,7 +200,7 @@ def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff, u
                 # Get frontend base URL
                 base_url = getattr(settings, "FRONTEND_PUBLIC_BASE_URL", "http://localhost:3000")
                 bill_url = f"{base_url}/bill/{raw_token}"
-                total_amount = order.get("total_amount", 0)
+                total_amount = final_order.get("total_amount", 0)
                 bill_msg = f"Your order has been delivered.\nTotal: ₹{total_amount}\nBill: {bill_url}"
                 
                 # Determine source and fallback channels
@@ -190,7 +210,7 @@ def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff, u
                 card_phone = None
                 telegram_chat_id = None
                 
-                action_card_id = order.get("action_card_id")
+                action_card_id = final_order.get("action_card_id")
                 if action_card_id:
                     card_res = supabase_client.table("action_cards").select("source, customer_phone, metadata").eq("id", action_card_id).execute()
                     if card_res.data:
@@ -214,19 +234,21 @@ def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff, u
                 if not channel_to_use:
                     if telegram_channel: channel_to_use = "telegram"
                     elif whatsapp_channel: channel_to_use = "whatsapp"
-                    elif order.get("customer_phone"): channel_to_use = "whatsapp"
+                    elif final_order.get("customer_phone"): channel_to_use = "whatsapp"
                     
-                print("DELIVERY_NOTIFICATION_DEBUG", {
+                debug_info = {
                     "order_id": order_id_str,
-                    "new_status": new_status,
+                    "new_status": final_lifecycle_status,
                     "customer_id": customer_id,
-                    "customer_phone_present": bool(order.get("customer_phone")),
+                    "customer_phone_present": bool(final_order.get("customer_phone")),
                     "channels_count": len(channels),
                     "channel_names": [c.get("channel") for c in channels],
                     "has_twilio_env": bool(settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN and settings.TWILIO_WHATSAPP_FROM),
                     "has_telegram_env": bool(settings.TELEGRAM_BOT_TOKEN),
                     "has_frontend_url": bool(settings.FRONTEND_PUBLIC_BASE_URL),
-                })
+                }
+                print(f"DELIVERY_NOTIFICATION_DEBUG {debug_info}", flush=True)
+                logger.warning(f"DELIVERY_NOTIFICATION_DEBUG {debug_info}")
                 
                 if channel_to_use == "telegram":
                     chat_id = (telegram_channel.get("channel_chat_id") if telegram_channel else None) or telegram_chat_id
@@ -236,16 +258,19 @@ def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff, u
                             telegram_service.send_message(chat_id, bill_msg)
                             notification_info["notification_sent"] = True
                             notification_info["notification_channel"] = "telegram"
-                            print(f"DELIVERY_NOTIFICATION_SENT channel=telegram chat_id={chat_id}")
+                            print(f"DELIVERY_NOTIFICATION_SENT channel=telegram chat_id={chat_id}", flush=True)
+                            logger.warning(f"DELIVERY_NOTIFICATION_SENT channel=telegram chat_id={chat_id}")
                         except Exception as e:
                             notification_info["notification_error"] = str(e)
-                            print(f"DELIVERY_NOTIFICATION_FAILED safe_error={str(e)}")
+                            print(f"DELIVERY_NOTIFICATION_FAILED safe_error={str(e)}", flush=True)
+                            logger.warning(f"DELIVERY_NOTIFICATION_FAILED safe_error={str(e)}")
                     else:
                         notification_info["notification_error"] = "No Telegram chat ID found"
-                        print("DELIVERY_NOTIFICATION_SKIPPED reason=no_telegram_chat_id")
+                        print("DELIVERY_NOTIFICATION_SKIPPED reason=no_telegram_chat_id", flush=True)
+                        logger.warning("DELIVERY_NOTIFICATION_SKIPPED reason=no_telegram_chat_id")
                         
                 elif channel_to_use == "whatsapp":
-                    phone_to_use = (whatsapp_channel.get("phone") if whatsapp_channel else None) or order.get("customer_phone") or card_phone
+                    phone_to_use = (whatsapp_channel.get("phone") if whatsapp_channel else None) or final_order.get("customer_phone") or card_phone
                     if not phone_to_use and customer_id:
                         cust_res = supabase_client.table("customers").select("phone").eq("id", customer_id).execute()
                         if cust_res.data: phone_to_use = cust_res.data[0].get("phone")
@@ -259,24 +284,30 @@ def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff, u
                             notification_info["notification_sid"] = result.get("sid")
                             if result.get("error"):
                                 notification_info["notification_error"] = result.get("error")
-                                print(f"DELIVERY_NOTIFICATION_FAILED safe_error={result.get('error')}")
+                                print(f"DELIVERY_NOTIFICATION_FAILED safe_error={result.get('error')}", flush=True)
+                                logger.warning(f"DELIVERY_NOTIFICATION_FAILED safe_error={result.get('error')}")
                             else:
-                                print(f"DELIVERY_NOTIFICATION_SENT channel=whatsapp sid={result.get('sid')}")
+                                print(f"DELIVERY_NOTIFICATION_SENT channel=whatsapp sid={result.get('sid')}", flush=True)
+                                logger.warning(f"DELIVERY_NOTIFICATION_SENT channel=whatsapp sid={result.get('sid')}")
                         except Exception as e:
                             notification_info["notification_error"] = str(e)
-                            print(f"DELIVERY_NOTIFICATION_FAILED safe_error={str(e)}")
+                            print(f"DELIVERY_NOTIFICATION_FAILED safe_error={str(e)}", flush=True)
+                            logger.warning(f"DELIVERY_NOTIFICATION_FAILED safe_error={str(e)}")
                     else:
                         notification_info["notification_error"] = "No customer phone found"
-                        print("DELIVERY_NOTIFICATION_SKIPPED reason=no_whatsapp_phone")
+                        print("DELIVERY_NOTIFICATION_SKIPPED reason=no_whatsapp_phone", flush=True)
+                        logger.warning("DELIVERY_NOTIFICATION_SKIPPED reason=no_whatsapp_phone")
                 else:
                     notification_info["notification_error"] = "No notification channel identified"
-                    print("DELIVERY_NOTIFICATION_SKIPPED reason=no_channel_identified")
+                    print("DELIVERY_NOTIFICATION_SKIPPED reason=no_channel_identified", flush=True)
+                    logger.warning("DELIVERY_NOTIFICATION_SKIPPED reason=no_channel_identified")
         except Exception as e:
-            print(f"Warning: Failed to process delivery notifications: {str(e)}")
+            print(f"Warning: Failed to process delivery notifications: {str(e)}", flush=True)
+            logger.warning(f"Warning: Failed to process delivery notifications: {str(e)}")
             
     final_res = supabase_client.table("orders").select("*, order_items(*)").eq("id", order_id).execute()
     final_data = final_res.data[0]
-    if new_status == "delivered":
+    if final_lifecycle_status == "delivered":
         final_data.update(notification_info)
         
     return final_data
