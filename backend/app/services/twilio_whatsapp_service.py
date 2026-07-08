@@ -42,29 +42,51 @@ class TwilioWhatsappService:
     def _generate_twiml(self, message: str) -> str:
         return f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{message}</Message></Response>'
 
-    def send_message(self, to_phone: str, message: str) -> None:
+    def send_whatsapp_message(self, to_phone: str, body: str) -> dict:
         if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN:
             logger.warning("Twilio credentials not set. Cannot send WhatsApp message.")
-            return
+            return {"sent": False, "error": "Twilio credentials not set"}
 
         try:
             from twilio.rest import Client
             client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
             
-            # Ensure number is prefixed with 'whatsapp:'
-            to_formatted = to_phone if to_phone.startswith("whatsapp:") else f"whatsapp:{to_phone}"
+            # Ensure number is prefixed with 'whatsapp:' and properly formatted
+            norm_phone = normalize_phone(to_phone)
+            if not norm_phone:
+                return {"sent": False, "error": "Invalid phone number"}
+                
+            to_formatted = f"whatsapp:{norm_phone}"
             from_formatted = settings.TWILIO_WHATSAPP_FROM
             if not from_formatted.startswith("whatsapp:"):
                 from_formatted = f"whatsapp:{from_formatted}"
                 
-            client.messages.create(
-                body=message,
+            message = client.messages.create(
+                body=body,
                 from_=from_formatted,
                 to=to_formatted
             )
-            logger.info(f"WhatsApp message sent to {to_phone}")
+            
+            # Mask phone for safe logging
+            masked = to_formatted[:-4] + "****" if len(to_formatted) > 4 else "****"
+            logger.info(f"WhatsApp message {message.sid} sent to {masked}. Status: {message.status}")
+            
+            return {
+                "sent": True,
+                "sid": message.sid,
+                "status": message.status,
+                "error": None
+            }
         except Exception as e:
-            logger.error(f"Failed to send WhatsApp message: {e}")
+            logger.error(f"Failed to send WhatsApp message: {str(e)}")
+            return {
+                "sent": False,
+                "error": str(e)
+            }
+            
+    def send_message(self, to_phone: str, message: str) -> None:
+        # Legacy fallback that doesn't return anything
+        self.send_whatsapp_message(to_phone, message)
 
     def get_or_create_customer(self, wa_id: str, from_phone: str) -> Optional[Dict[str, Any]]:
         if not supabase_client:

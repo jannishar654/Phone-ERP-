@@ -38,9 +38,10 @@ class FakeQuery:
         return m
 
 class FakeTable:
-    def __init__(self, name, calls):
+    def __init__(self, name, calls, mock_phone=None):
         self.name = name
         self.calls = calls
+        self.mock_phone = mock_phone
 
     def select(self, *args, **kwargs):
         self.calls.append(("select", self.name, args, kwargs))
@@ -51,11 +52,17 @@ class FakeTable:
                 p["lifecycle_status"] = "delivered"
             return FakeQuery([p])
         if self.name == "customer_channels":
-            return FakeQuery([{"channel": "telegram", "channel_chat_id": "chat-1"}, {"channel": "whatsapp", "channel_phone_number": "+1234567890"}])
+            channels = []
+            if "telegram" not in self.calls:
+                channels.append({"channel": "telegram", "channel_chat_id": "chat-1"})
+            if "whatsapp" not in self.calls:
+                channels.append({"channel": "whatsapp", "phone": self.mock_phone})
+            return FakeQuery(channels)
         if self.name == "action_cards":
-            return FakeQuery([{"source": "telegram"}])
+            return FakeQuery([{"source": "whatsapp", "customer_phone": "+919876543210"}])
+        if self.name == "customers":
+            return FakeQuery([{"phone": "+910000000000"}])
         if self.name == "order_public_links":
-            # For update test, return existing
             if "mock_existing_link" in self.calls:
                 return FakeQuery([{"id": "link-1", "order_id": "order-1"}])
             return FakeQuery([])
@@ -70,11 +77,12 @@ class FakeTable:
         return FakeQuery([{"id": "test"}])
 
 class FakeSupabase:
-    def __init__(self):
+    def __init__(self, mock_phone="9876543210"):
         self.calls = []
+        self.mock_phone = mock_phone
         
     def table(self, name):
-        return FakeTable(name, self.calls)
+        return FakeTable(name, self.calls, self.mock_phone)
 
 @pytest.fixture
 def mock_deps():
@@ -98,40 +106,79 @@ def test_delivery_marks_delivered_creates_bill_link(mock_deps):
 @patch("app.config.settings.settings.REQUIRE_AUTH", False)
 @patch("app.services.telegram_service.telegram_service.send_message")
 def test_telegram_origin_sends_message(mock_send, mock_deps):
-    response = client.post("/staff/orders/order-1/status", json={"lifecycle_status": "delivered"})
-    assert response.status_code == 200
-    
-    mock_send.assert_called_once()
-    args, _ = mock_send.call_args
-    assert args[0] == "chat-1"
-    assert "Your order has been delivered." in args[1]
-    assert "Total: ₹500" in args[1]
-    assert "Bill: http" in args[1]
-
-@patch("app.config.settings.settings.REQUIRE_AUTH", False)
-@patch("app.services.twilio_whatsapp_service.twilio_whatsapp_service.send_message")
-def test_whatsapp_origin_sends_message(mock_send, mock_deps):
-    # Mock action_cards to return source=whatsapp
     original_select = FakeTable.select
     def mock_select(self, *args, **kwargs):
         if self.name == "action_cards":
-            return FakeQuery([{"source": "whatsapp"}])
+            return FakeQuery([{"source": "telegram"}])
         return original_select(self, *args, **kwargs)
         
     with patch.object(FakeTable, 'select', mock_select):
         response = client.post("/staff/orders/order-1/status", json={"lifecycle_status": "delivered"})
         assert response.status_code == 200
+        assert response.json()["notification_sent"] is True
+        assert response.json()["notification_channel"] == "telegram"
         
         mock_send.assert_called_once()
         args, _ = mock_send.call_args
-        assert args[0] == "+1234567890"
+        assert args[0] == "chat-1"
+        assert "Your order has been delivered." in args[1]
+        assert "Total: ₹500" in args[1]
+        assert "Bill: http" in args[1]
 
 @patch("app.config.settings.settings.REQUIRE_AUTH", False)
-@patch("app.services.telegram_service.telegram_service.send_message", side_effect=Exception("Network Error"))
-def test_notification_failure_does_not_rollback(mock_send, mock_deps):
+@patch("app.services.twilio_whatsapp_service.twilio_whatsapp_service.send_whatsapp_message", return_value={"sent": True, "sid": "SM123", "status": "sent", "error": None})
+def test_whatsapp_origin_sends_message(mock_send, mock_deps):
     response = client.post("/staff/orders/order-1/status", json={"lifecycle_status": "delivered"})
     assert response.status_code == 200
-    assert response.json()["lifecycle_status"] == "delivered"
+    resp_json = response.json()
+    assert resp_json["notification_sent"] is True
+    assert resp_json["notification_channel"] == "whatsapp"
+    assert resp_json["notification_sid"] == "SM123"
+    
+    mock_send.assert_called_once()
+    args, _ = mock_send.call_args
+    assert args[0] == "9876543210" # This is mock_phone passed into FakeSupabase
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", False)
+@patch("app.services.twilio_whatsapp_service.twilio_whatsapp_service.send_whatsapp_message", return_value={"sent": False, "error": "Twilio API Error"})
+def test_notification_failure_does_not_rollback_whatsapp(mock_send, mock_deps):
+    response = client.post("/staff/orders/order-1/status", json={"lifecycle_status": "delivered"})
+    assert response.status_code == 200
+    resp_json = response.json()
+    assert resp_json["lifecycle_status"] == "delivered"
+    assert resp_json["notification_sent"] is False
+    assert resp_json["notification_error"] == "Twilio API Error"
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", False)
+def test_whatsapp_missing_phone_does_not_rollback():
+    fake_db = FakeSupabase(mock_phone=None)
+    with patch("app.dependencies.auth.supabase_client", fake_db), \
+         patch("app.routes.staff.supabase_client", fake_db), \
+         patch("app.routes.staff.get_staff_context", return_value={"shop_id": "shop-123", "role": "delivery"}), \
+         patch("app.routes.staff.get_optional_user_id", return_value="user-123"):
+        
+        # We also need to strip customer_phone from the order to test true missing phone
+        original_select = FakeTable.select
+        def mock_select(self, *args, **kwargs):
+            if self.name == "orders":
+                p = dict(ORDER_PAYLOAD)
+                p["customer_phone"] = None
+                if args and "order_items" in args[0]:
+                    p["lifecycle_status"] = "delivered"
+                return FakeQuery([p])
+            if self.name == "action_cards":
+                return FakeQuery([{"source": "whatsapp", "customer_phone": None}])
+            if self.name == "customers":
+                return FakeQuery([{"phone": None}])
+            return original_select(self, *args, **kwargs)
+            
+        with patch.object(FakeTable, 'select', mock_select):
+            response = client.post("/staff/orders/order-1/status", json={"lifecycle_status": "delivered"})
+            assert response.status_code == 200
+            resp_json = response.json()
+            assert resp_json["lifecycle_status"] == "delivered"
+            assert resp_json["notification_sent"] is False
+            assert "No customer phone found" in resp_json.get("notification_error", "")
 
 @patch("app.config.settings.settings.REQUIRE_AUTH", False)
 def test_existing_bill_link_updates_instead_of_duplicate(mock_deps):
@@ -153,3 +200,28 @@ def test_token_hashing():
     h = hash_token(token)
     assert h != token
     assert len(h) == 64
+
+@patch("twilio.rest.Client")
+def test_twilio_whatsapp_normalization(mock_client_class):
+    from app.services.twilio_whatsapp_service import twilio_whatsapp_service
+    from app.config.settings import settings
+    settings.TWILIO_ACCOUNT_SID = "AC123"
+    settings.TWILIO_AUTH_TOKEN = "token"
+    settings.TWILIO_WHATSAPP_FROM = "+14155238886"
+    
+    mock_client_instance = mock_client_class.return_value
+    mock_message = MagicMock()
+    mock_message.sid = "SM123"
+    mock_message.status = "queued"
+    mock_client_instance.messages.create.return_value = mock_message
+    
+    res = twilio_whatsapp_service.send_whatsapp_message("9876543210", "Test")
+    assert res["sent"] is True
+    assert res["sid"] == "SM123"
+    
+    mock_client_instance.messages.create.assert_called_once_with(
+        body="Test",
+        from_="whatsapp:+14155238886",
+        to="whatsapp:+919876543210"
+    )
+
