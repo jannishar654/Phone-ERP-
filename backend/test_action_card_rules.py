@@ -22,18 +22,19 @@ def run_tests():
     tomorrow_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
     today_date = datetime.now().strftime('%Y-%m-%d')
     time_tests = [
-        ("kal 5 baje, nahi aaj 8 baje", f"{today_date} 8 baje", "AM/PM ambiguity detected. Please confirm."),
-        ("kal sade 8", f"{tomorrow_date} 8:30", None),
+        ("kal 5 baje, nahi aaj 8 baje", f"{today_date} 8:00", "AM/PM ambiguity detected. Please confirm."),
+        ("kal sade 8", f"{tomorrow_date} 8:30", "AM/PM ambiguity detected. Please confirm."),
         ("sawa chhe", None, "Missing specific day"),
         ("paune 5", None, "Missing specific day"),
         ("dhai baje", None, "Missing specific day"),
-        ("kal 10:15 pe", f"{tomorrow_date} 10:15 pe", None),
-        ("kal 5:30 baje", f"{tomorrow_date} 5:30 baje", None),
-        ("kal aisa karna 8:30 baje", f"{tomorrow_date} 8:30 baje", None),
-        ("kalle esa karna 5:30 baje", f"{tomorrow_date} 5:30 baje", "Interpreted 'kalle' as 'kal'"),
-        ("kal ka order cancel karo, aaj 5 baje naya bhejna", f"{today_date} 5 baje", None),
+        ("kal 10:15 pe", f"{tomorrow_date} 10:15", "AM/PM ambiguity detected. Please confirm."),
+        ("kal 5:30 baje", f"{tomorrow_date} 5:30", "AM/PM ambiguity detected. Please confirm."),
+        ("kal aisa karna 8:30 baje", f"{tomorrow_date} 8:30", "AM/PM ambiguity detected. Please confirm."),
+        ("kalle esa karna 5:30 baje", f"{tomorrow_date} 5:30", "Interpreted 'kalle' as 'kal'"),
+        ("kal ka order cancel karo, aaj 5 baje naya bhejna", f"{today_date} 5:00", "AM/PM ambiguity detected. Please confirm."),
         ("5:30 baje bhejna", None, "Missing specific day"),
         ("kalle", None, "Uncertain delivery time"), # unrelated kalle without clock
+        ("kal 5:30 raat ko", f"{tomorrow_date} 5:30 PM", None),
     ]
     print("1. Time Parsing:")
     for raw, expected_time, expected_warning in time_tests:
@@ -54,15 +55,15 @@ def run_tests():
 
     # 2. QUANTITY PARSING
     quantity_tests = [
-        ("aadha kilo", 0.5, "kilo"),
-        ("dhai kilo", 2.5, "kilo"),
-        ("sawa kilo", 1.25, "kilo"),
+        ("aadha kilo", 0.5, "kg"),
+        ("dhai kilo", 2.5, "kg"),
+        ("sawa kilo", 1.25, "kg"),
         ("paanch packet", 5.0, "packet"),
         ("sawa 2 litre", 2.25, "litre"),
-        ("saade paanch kilo", 5.5, "kilo"),
+        ("saade paanch kilo", 5.5, "kg"),
         ("dhai litre", 2.5, "litre"),
-        ("sare saath kilo", 7.5, "kilo"),
-        ("do kilo", 2.0, "kilo"),
+        ("sare saath kilo", 7.5, "kg"),
+        ("do kilo", 2.0, "kg"),
         ("missing", None, None)
     ]
     print("\n2. Quantity Parsing:")
@@ -188,30 +189,70 @@ def run_tests():
 
     # 8. NAME CLEANUP PARSING
     print("\n8. Name Cleanup Parsing:")
-    import re
-    def mock_extract_name(transcript):
-        cust_name = "Unknown"
-        t_lower = transcript.lower()
-        if not cust_name or cust_name.lower() == "unknown":
-            name_match = re.search(r'(?:unka naam|naam|customer ka naam|party ka naam)\s+(.*?)(?:\s+hai|\s+tha|\s+aur|$)', t_lower)
-            if name_match:
-                cust_name = name_match.group(1).strip().title()
-        if cust_name and cust_name != "Unknown":
-            cust_name = re.sub(r'(?:\s+(?:likhna|likh\s*dena|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
-        return cust_name
+    from app.services.gemini import GeminiService
 
     name_cleanup_tests = [
+        ("mohan", "Mohan"),
+        ("naam likhna mohan", "Mohan"),
+        ("naam jo rahega danish rahega", "Danish"),
+        ("UNKNOWN", "UNKNOWN"),
         ("unka naam Danish Likhna", "Danish"),
-        ("naam danish likhna", "Danish"),
         ("party ka naam Ram hai theek hai", "Ram")
     ]
     for transcript, expected in name_cleanup_tests:
-        cleaned = mock_extract_name(transcript)
+        cleaned = GeminiService.clean_customer_name(transcript)
         if cleaned == expected:
             print(f"  [PASS] '{transcript}' -> '{cleaned}'")
             passed += 1
         else:
             print(f"  [FAIL] '{transcript}' -> '{cleaned}' (Expected '{expected}')")
+        total += 1
+
+    # 8b. ADDRESS FORMATTING PARSING
+    print("\n8b. Address Formatting Parsing:")
+    address_format_tests = [
+        ("defense colony gol chakkar ke paas new delhi", "Defence Colony, Gol Chakkar Ke Paas, New Delhi"),
+        ("defense colony gol chakkar ke paas new delhi mein", "Defence Colony, Gol Chakkar Ke Paas, New Delhi"),
+        ("gupta house shahin bagh jamia nagar okhla", "Gupta House, Shaheen Bagh, Jamia Nagar, Okhla"),
+        ("bhatla house kalkaji mandir ke paas", "Batla House, Kalkaji Mandir Ke Paas"),
+        ("gupta ji ke yahan shahine bagh okhla new delhi", "Gupta Ji Ke Yahan, Shaheen Bagh, Okhla, New Delhi"),
+        ("batla house bishruddin masjid ke paas", "Batla House, Bishruddin Masjid Ke Paas"),
+        ("okhla", "Okhla"),
+        ("random gali no 5 near metro", "Random Gali No 5 Near Metro"),
+        ("gupta house, shahin bagh", "Gupta House, Shaheen Bagh"),
+        ("milan kalyan mandap jamia nagar", "Milan Kalyan Mandap, Jamia Nagar"),
+    ]
+    for raw_addr, expected in address_format_tests:
+        cleaned, _ = GeminiService.normalize_delivery_address(raw_addr)
+        if cleaned == expected:
+            print(f"  [PASS] '{raw_addr}' -> '{cleaned}'")
+            passed += 1
+        else:
+            print(f"  [FAIL] '{raw_addr}' -> '{cleaned}' (Expected '{expected}')")
+        total += 1
+
+    # 8c. PRODUCT NAME CLEANUP PARSING
+    print("\n8c. Product Name Cleanup Parsing:")
+    from app.services.gemini import GeminiService
+
+    product_cleanup_tests = [
+        ("sarf ka", "sarf"),
+        ("surf ka packet", "surf"),
+        ("doodh ki theli", "doodh"),
+        ("chai patti ka packet", "chai patti"),
+        ("parle g ka packet", "parle g"),
+        ("lal sarf wala", "lal sarf"),
+        ("10 rupiya wala parle g", "10 rupiya wala parle g"),
+        ("surf ka packet wala", "surf"),
+        ("parle ji ka packet 10 wala", "parle ji 10 wala")
+    ]
+    for raw_prod, expected in product_cleanup_tests:
+        cleaned = GeminiService.clean_product_name(raw_prod)
+        if cleaned == expected:
+            print(f"  [PASS] '{raw_prod}' -> '{cleaned}'")
+            passed += 1
+        else:
+            print(f"  [FAIL] '{raw_prod}' -> '{cleaned}' (Expected '{expected}')")
         total += 1
 
     # 9. DETERMINISTIC AGGREGATION
@@ -248,6 +289,26 @@ def run_tests():
         (
             [{"name": "atta", "quantity": 65, "unit": "kg"}],
             [{"name": "atta", "quantity": 65, "unit": "kg"}]
+        ),
+        # 5 kg aata + 5 kg aata aur jod dena = 10 kg
+        (
+            [{"name": "aata", "quantity": 5, "unit": "kg"}, {"name": "aata", "quantity": 5, "unit": "kg"}],
+            [{"name": "aata", "quantity": 10, "unit": "kg"}]
+        ),
+        # 5 kg chini + 10 kg chini aur jod dena + 10 kg sugar aur jod dena = 25 kg sugar
+        # (Assuming canonical resolution mapped "chini" and "sugar" to "sugar")
+        (
+            [
+                {"name": "sugar", "quantity": 5, "unit": "kg", "raw_name": "chini"},
+                {"name": "sugar", "quantity": 10, "unit": "kg", "raw_name": "chini"},
+                {"name": "sugar", "quantity": 10, "unit": "kg", "raw_name": "sugar"}
+            ],
+            [{"name": "sugar", "quantity": 25, "unit": "kg", "raw_name": "chini"}] # uses raw_name of the first one
+        ),
+        # 5 kg cheeni + 10 kg cheeni aur jod dena = 15 kg sugar
+        (
+            [{"name": "cheeni", "quantity": 5, "unit": "kg"}, {"name": "cheeni", "quantity": 10, "unit": "kg"}],
+            [{"name": "cheeni", "quantity": 15, "unit": "kg"}]
         )
     ]
 
@@ -599,6 +660,253 @@ def run_tests():
     else:
         print(f"  [FAIL] 'Online' not overridden to 'Cash': {res_pay4['payment_method']}")
     total += 1
+    # ---------------------------------------------------------
+    # CONFIDENCE SCORER TESTS
+    # ---------------------------------------------------------
+    print("\n--- Testing Confidence Scorer ---")
+    from app.services.confidence_scorer import ConfidenceScorer
+
+    def test_scorer(scenario_name, card_data, expected_label, expected_min_score=None):
+        nonlocal passed, total
+        score, label, reasons = ConfidenceScorer.calculate_confidence(card_data)
+        
+        success = True
+        if label != expected_label:
+            print(f"  [FAIL] {scenario_name}: Expected label '{expected_label}', got '{label}' (Score: {score})")
+            success = False
+        elif expected_min_score is not None and score < expected_min_score:
+            print(f"  [FAIL] {scenario_name}: Expected score >= {expected_min_score}, got {score}")
+            success = False
+            
+        if success:
+            print(f"  [PASS] {scenario_name} (Score: {score}, Label: {label})")
+            passed += 1
+        total += 1
+
+    # 1. Perfect card
+    perfect_card = {
+        "customer_name": "Danish",
+        "delivery_address": "Batla House",
+        "delivery_time": "2026-06-25 10:00",
+        "items": [
+            {"name": "atta", "quantity": 5, "unit": "kg", "price": 50},
+            {"name": "sugar", "quantity": 2, "unit": "kg", "price": 45}
+        ],
+        "validation_warnings": [],
+        "confidence": 0.95
+    }
+    test_scorer("Perfect Card -> High", perfect_card, "High", 100)
+
+    # 2. Missing customer
+    missing_cust = dict(perfect_card)
+    missing_cust["customer_name"] = "unknown"
+    test_scorer("Missing Customer -> drops score", missing_cust, "Medium", 80)
+
+    # 3. Missing catalog price
+    missing_price = dict(perfect_card)
+    missing_price["items"] = [
+        {"name": "atta", "quantity": 5, "unit": "kg", "price": 0.0},
+        {"name": "sugar", "quantity": 2, "unit": "kg", "price": 45}
+    ]
+    # -12 for missing price -> 88
+    test_scorer("Missing Catalog Price -> drops score", missing_price, "Medium", 88)
+
+    # 4. AM/PM ambiguity
+    ampm_card = dict(perfect_card)
+    ampm_card["validation_warnings"] = ["AM/PM ambiguity in delivery time surfaced"]
+    # -12 for AM/PM -> 88
+    test_scorer("AM/PM Ambiguity -> drops score", ampm_card, "Medium", 88)
+
+    # 5. Missing quantity/unit
+    missing_qty = dict(perfect_card)
+    missing_qty["items"] = [
+        {"name": "atta", "unit": "kg", "price": 50}, # no quantity (-20)
+    ]
+    test_scorer("Missing Quantity -> drops score", missing_qty, "Medium", 80)
+
+    # 6. Empty items -> Low confidence
+    empty_items = dict(perfect_card)
+    empty_items["items"] = []
+    # -40 for empty items -> 60 (Low)
+    test_scorer("Empty Items -> Low", empty_items, "Low", 60)
+    
+    # 7. Low raw LLM confidence (0.5 -> penalty 10)
+    low_llm = dict(perfect_card)
+    low_llm["confidence"] = 0.5
+    # penalty = int((0.8 - 0.5) * 35) = int(10.5) = 10
+    # 100 - 10 = 90
+    test_scorer("Low LLM Confidence -> score drops", low_llm, "High", 90)
+
+    # 8. Large quantity only -> High
+    large_qty_card = dict(perfect_card)
+    large_qty_card["validation_warnings"] = ["large_quantity for atta"]
+    # 100 - 2 = 98 (High)
+    test_scorer("Large Quantity Only -> High", large_qty_card, "High", 98)
+
+    # 9. Combined Risk -> Low
+    combined_card = dict(perfect_card)
+    combined_card["customer_name"] = "unknown" # -20
+    combined_card["delivery_address"] = "" # -20
+    combined_card["validation_warnings"] = ["AM/PM ambiguity in delivery time surfaced"] # -12
+    combined_card["items"] = [
+        {"name": "atta", "quantity": 5, "unit": "kg", "price": 0.0}, # -12
+    ]
+    # 100 - 20 - 20 - 12 - 12 = 36 (Low)
+    test_scorer("Combined Risk -> Low", combined_card, "Low", 36)
+
+    # 10. Mixed Priced and Unpriced Items
+    mixed_card = dict(perfect_card)
+    mixed_card["items"] = [
+        {"name": "atta", "quantity": 5, "unit": "kg", "price": 50},
+        {"name": "sugar", "quantity": 5, "unit": "kg", "price": 40},
+        {"name": "chawal", "quantity": 5, "unit": "kg", "price": 0},
+        {"name": "surf", "quantity": 5, "unit": "kg", "price": 0}
+    ]
+    # 100 - 12 - 12 = 76 (Medium)
+    test_scorer("Mixed Priced/Unpriced -> Medium", mixed_card, "Medium", 76)
+
+    print("\n--- Testing Stale Warning Cleanup (Endpoints Logic) ---")
+    extracted_mock = {
+        "validation_warnings": ["Ambiguous product 'atta'. No catalog match found.", "Missing quantity for sugar"],
+        "customer_name": "Danish",
+        "items": []
+    }
+    
+    # Simulate the logic in endpoints.py
+    def clean_warnings(extracted, items):
+        def _item_get(item, key, default=None):
+            if isinstance(item, dict):
+                return item.get(key, default)
+            return getattr(item, key, default)
+
+        validation_warnings = extracted.get("validation_warnings", [])
+        final_warnings = []
+        
+        matched_names = []
+        for i in items:
+            res_status = _item_get(i, "resolution_status")
+            price = _item_get(i, "price")
+            try:
+                price_val = float(price or 0)
+            except (TypeError, ValueError):
+                price_val = 0
+                
+            if res_status in ("matched", "suggested") or price_val > 0:
+                name_val = _item_get(i, "raw_name", _item_get(i, "name"))
+                if name_val:
+                    matched_names.append(name_val)
+        for w in validation_warnings:
+            if "No catalog match found" in w or "Ambiguous product" in w:
+                is_stale = False
+                for mn in matched_names:
+                    if mn and (f"'{mn}'" in w or f"'{mn.lower()}'" in w.lower()):
+                        is_stale = True
+                        break
+                if is_stale:
+                    continue
+            final_warnings.append(w)
+        return final_warnings
+
+    from pydantic import BaseModel
+    class MockItem(BaseModel):
+        name: str
+        raw_name: str
+        price: float
+        resolution_status: str
+
+    items_mock = [
+        MockItem(name="atta", raw_name="atta", price=50.0, resolution_status="matched")
+    ]
+    cleaned = clean_warnings(extracted_mock, items_mock)
+    if "Ambiguous product 'atta'. No catalog match found." not in cleaned and "Missing quantity for sugar" in cleaned:
+        print("  [PASS] Stale catalog warning cleaned up for matched item")
+        passed += 1
+    else:
+        print(f"  [FAIL] Warning cleanup failed: {cleaned}")
+    total += 1
+
+    print("\n--- Testing Name Cleanup Numeric Phrase Preservation ---")
+    from app.services.gemini import GeminiService
+    cleaned_name = GeminiService.clean_product_name("5 rupaye wala toffee ka")
+    if cleaned_name == "5 rupaye wala toffee":
+        print(f"  [PASS] Numeric variant phrase preserved: {cleaned_name}")
+        passed += 1
+    else:
+        print(f"  [FAIL] Numeric variant phrase not preserved: {cleaned_name}")
+    total += 1
+
+    print("\n--- Testing ConfidenceScorer with Pydantic and Mixed Items ---")
+    from app.services.confidence_scorer import ConfidenceScorer
+    class ScorerMockItem(BaseModel):
+        name: str
+        quantity: float | None = None
+        unit: str | None = None
+        price: float | None = None
+
+    # 1. Dict only
+    dict_card = dict(perfect_card)
+    s1, l1, _ = ConfidenceScorer.calculate_confidence(dict_card)
+    if s1 == 100 and l1 == "High":
+        print("  [PASS] ConfidenceScorer works with dict items")
+        passed += 1
+    else:
+        print(f"  [FAIL] ConfidenceScorer failed with dict items: {s1}")
+    total += 1
+
+    # 2. Pydantic only
+    pydantic_card = dict(perfect_card)
+    pydantic_card["items"] = [
+        ScorerMockItem(name="atta", quantity=5, unit="kg", price=50),
+        ScorerMockItem(name="sugar", quantity=10, unit="kg", price=40)
+    ]
+    s2, l2, _ = ConfidenceScorer.calculate_confidence(pydantic_card)
+    if s2 == 100 and l2 == "High":
+        print("  [PASS] ConfidenceScorer works with Pydantic items")
+        passed += 1
+    else:
+        print(f"  [FAIL] ConfidenceScorer failed with Pydantic items: {s2}")
+    total += 1
+
+    # 3. Pydantic missing price
+    pydantic_missing_card = dict(perfect_card)
+    pydantic_missing_card["items"] = [
+        ScorerMockItem(name="atta", quantity=5, unit="kg", price=None)
+    ]
+    s3, l3, _ = ConfidenceScorer.calculate_confidence(pydantic_missing_card)
+    if s3 == 88:
+        print("  [PASS] ConfidenceScorer handles Pydantic item with missing price (Score drops)")
+        passed += 1
+    else:
+        print(f"  [FAIL] ConfidenceScorer failed on missing price Pydantic item: {s3}")
+    total += 1
+
+    # 4. Mixed dict + Pydantic
+    mixed_type_card = dict(perfect_card)
+    mixed_type_card["items"] = [
+        ScorerMockItem(name="atta", quantity=5, unit="kg", price=50),
+        {"name": "sugar", "quantity": 10, "unit": "kg", "price": 40}
+    ]
+    s4, l4, _ = ConfidenceScorer.calculate_confidence(mixed_type_card)
+    if s4 == 100:
+        print("  [PASS] ConfidenceScorer works with mixed dict + Pydantic items")
+        passed += 1
+    else:
+        print(f"  [FAIL] ConfidenceScorer failed with mixed items: {s4}")
+    total += 1
+
+    # 5. Review readiness reasons
+    reason_card = dict(perfect_card)
+    reason_card["delivery_time_warning"] = "Time needs confirmation"
+    reason_card["missing_fields"] = ["product_variant_unclear"]
+    reason_card["items"] = [{"name": "sugar", "quantity": 10, "unit": "kg", "price": 0}]
+    
+    s5, l5, reasons = ConfidenceScorer.calculate_confidence(reason_card)
+    if "Delivery time needs confirmation" in reasons and "Product variant needs review." in reasons and "Price missing for sugar" in reasons:
+        print("  [PASS] ConfidenceScorer reason tests passed")
+        passed += 1
+    else:
+        print(f"  [FAIL] ConfidenceScorer reason tests failed. Got reasons: {reasons}")
+    total += 1
+
 if __name__ == "__main__":
     run_tests()
-

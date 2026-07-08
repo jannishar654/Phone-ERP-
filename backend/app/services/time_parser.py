@@ -120,13 +120,41 @@ def parse_delivery_time(raw_text: Optional[str], reference_datetime: Optional[da
     has_dopahar = bool(re.search(r'\b(dopahar|afternoon|दोपहर)\b', text))
     has_shaam = bool(re.search(r'\b(shaam|evening|शाम)\b', text))
     has_raat = bool(re.search(r'\b(raat|night|रात)\b', text))
+    has_din_mein = bool(re.search(r'\b(din me|din mein|din mai|दिन में)\b', text))
 
     time_str = None
     if exact_time_match:
-        time_str = exact_time_match.group(1)
+        time_str = exact_time_match.group(1).strip()
         confidence = 0.9
-        if "am" not in time_str.lower() and "pm" not in time_str.lower() and not has_subah and not has_shaam and not has_raat and not has_dopahar:
-            warning = "AM/PM ambiguity detected. Please confirm."
+        time_lower = time_str.lower()
+        
+        # Clean up trailing words
+        clean_time = re.sub(r'\s*(?:baje|ke baad|after|बजे|pe|पे)$', '', time_str, flags=re.IGNORECASE).strip()
+        
+        # Format bare hours "8" to "8:00"
+        time_parts = clean_time.split()
+        if ':' not in time_parts[0] and time_parts[0].isdigit():
+            time_parts[0] += ":00"
+        clean_time = " ".join(time_parts)
+
+        if "am" not in time_lower and "pm" not in time_lower:
+            hour = None
+            try:
+                hour = int(clean_time.split(":")[0])
+            except ValueError:
+                pass
+
+            if has_raat or has_shaam or has_dopahar:
+                time_str = f"{clean_time} PM"
+            elif has_subah:
+                time_str = f"{clean_time} AM"
+            elif has_din_mein and hour is not None and 1 <= hour <= 6:
+                time_str = f"{clean_time} PM"
+            else:
+                time_str = clean_time
+                warning = "AM/PM ambiguity detected. Please confirm."
+        else:
+            time_str = clean_time.upper()
     elif has_subah:
         time_str = "Morning"
         confidence = 0.8

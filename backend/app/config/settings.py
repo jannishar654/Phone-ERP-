@@ -31,6 +31,19 @@ class Settings(BaseSettings):
     # Security: Require JWT Auth for backend routes
     REQUIRE_AUTH: bool = False
 
+    # Telegram Integration
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_WEBHOOK_SECRET: str = ""
+    TELEGRAM_DEFAULT_OWNER_ID: Optional[str] = None
+    TELEGRAM_DEFAULT_SHOP_ID: Optional[str] = None
+    TELEGRAM_DEFAULT_OWNER_EMAIL: Optional[str] = None
+
+    # Twilio WhatsApp Integration
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_WHATSAPP_FROM: str = ""
+    TWILIO_DEFAULT_OWNER_ID: Optional[str] = None
+    TWILIO_DEFAULT_SHOP_ID: Optional[str] = None
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: Any) -> List[str]:

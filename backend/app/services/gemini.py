@@ -14,6 +14,7 @@ from app.utils.aliases import BUSINESS_ALIASES, normalize_alias
 from app.services.business_memory import business_memory
 from app.services.time_parser import parse_delivery_time
 from app.services.action_card_validator import validate_action_card
+from app.services.confidence_scorer import ConfidenceScorer
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,121 @@ class GeminiService:
         return re.sub(r"\s+", " ", transcript).strip()
 
     @staticmethod
-    async def transcribe_audio_file(file_content: bytes, filename: str) -> str:
+    def clean_customer_name(raw_name: str) -> str:
+        cust_name = str(raw_name).strip()
+        if not cust_name or cust_name.upper() == "UNKNOWN":
+            return cust_name
+            
+        # Strip leading filler words before trimming trailing command words.
+        cust_name = re.sub(
+            r'^(?:unka\s+naam\s+|party\s+ka\s+naam\s+|naam\s+jo\s+rahega\s+|naam\s+(?:likhna|likh\s*do|likhdo|rahega)\s+|naam\s+)',
+            '',
+            cust_name,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        # Strip trailing filler words
+        cust_name = re.sub(r'(?:\s+(?:rahega|likhna|likh\s*dena|likh\s*do|likhdo|rakhna|karna|bhejna|dena|hai|theek\s*hai))+$', '', cust_name, flags=re.IGNORECASE).strip()
+        
+        return cust_name.title()
+
+    @staticmethod
+    def normalize_delivery_address(raw_address: str) -> tuple[str, dict]:
+        clean_address = str(raw_address).strip()
+        if not clean_address:
+            return "", {"raw_delivery_address": raw_address}
+            
+        # Basic cleanup: remove extraction filler phrases
+        filler_phrases = [
+            r'\baddress\s+rahega\b', r'\baddress\s+likh\s*lo\b', 
+            r'\blocation\s+rahega\b', r'\bpahuncha\s+dena\b', r'\bbhej\s+dena\b'
+        ]
+        for phrase in filler_phrases:
+            clean_address = re.sub(phrase, '', clean_address, flags=re.IGNORECASE)
+            
+        # trim spaces and collapse repeated spaces
+        clean_address = re.sub(r'\s+', ' ', clean_address).strip()
+        clean_address = clean_address.title()
+        
+        # Known locality mapping (longest phrases first)
+        locality_map = {
+            "Shahine Bagh": "Shaheen Bagh",
+            "Shahin Bagh": "Shaheen Bagh",
+            "Shain Bagh": "Shaheen Bagh",
+            "Shainbag": "Shaheen Bagh",
+            "Shaheen Bagh": "Shaheen Bagh",
+            "Batla House": "Batla House",
+            "Bhatla House": "Batla House",
+            "Kalkaji Mandir": "Kalkaji Mandir",
+            "Kalka Ji Mandir": "Kalkaji Mandir",
+            "Kalkaji": "Kalkaji",
+            "Kalka Ji": "Kalkaji",
+            "New Delhi": "New Delhi",
+            "Delhi": "Delhi",
+            "Defence Colony": "Defence Colony",
+            "Defense Colony": "Defence Colony",
+            "Jamia Nagar": "Jamia Nagar",
+            "Zakir Nagar": "Zakir Nagar",
+            "Okhla": "Okhla"
+        }
+        
+        # Build case-insensitive lookup
+        lookup_map = {k.lower(): v for k, v in locality_map.items()}
+        keys_sorted = sorted(locality_map.keys(), key=len, reverse=True)
+        
+        # Replace occurrences with comma-wrapped standard variants
+        pattern = re.compile(r'\b(' + '|'.join(map(re.escape, keys_sorted)) + r')\b', flags=re.IGNORECASE)
+        clean_address = pattern.sub(lambda m: f", {lookup_map[m.group(1).lower()]}, ", clean_address)
+                
+        # Remove trailing particles
+        clean_address = re.sub(r'\b(?:mein|me|pe)\s*$', '', clean_address, flags=re.IGNORECASE).strip()
+                
+        # Cleanup double commas, leading commas, and weird spacing
+        clean_address = re.sub(r'\s*,\s*', ', ', clean_address)
+        clean_address = re.sub(r'(?:,\s*)+', ', ', clean_address)
+        clean_address = re.sub(r',\s+(Ke\s+Paas\b)', r' \1', clean_address)
+        clean_address = clean_address.strip(', ')
+        
+        return clean_address, {"raw_delivery_address": raw_address}
+
+    @staticmethod
+    def clean_product_name(raw_name: str) -> str:
+        safe_name = str(raw_name).strip()
+        if not safe_name:
+            return safe_name
+
+        # 1. Remove intermediate or trailing container phrases (ka packet, ki theli, etc.)
+        container_regex = r'\b(?:ka|ki|ke)\s+(?:packet|dabba|dabbi|theli|pouch|pack)\b'
+        clean_name = re.sub(container_regex, ' ', safe_name, flags=re.IGNORECASE).strip()
+
+        # 2. Remove trailing connector words (ka, ki, ke)
+        connector_regex = r'(?:\s+(?:ka|ki|ke))+$'
+        while True:
+            new_name = re.sub(connector_regex, '', clean_name, flags=re.IGNORECASE).strip()
+            if new_name == clean_name or not new_name:
+                break
+            clean_name = new_name
+
+        # 3. Remove trailing wala/wali/wale ONLY IF NOT preceded by a number (e.g. preserve '10 wala')
+        wala_regex = r'(?:\s+(?:wala|wali|wale))+$'
+        wala_match = re.search(wala_regex, clean_name, flags=re.IGNORECASE)
+        if wala_match:
+            # Check the string before wala
+            prefix = clean_name[:wala_match.start()].strip()
+            # If prefix ends with a number or "rupiya", do not strip
+            if not re.search(r'(\d+|rupi[y]a|rs\.?)$', prefix, flags=re.IGNORECASE):
+                clean_name = prefix
+
+        # Cleanup extra spaces
+        clean_name = re.sub(r'\s+', ' ', clean_name).strip()
+            
+        if not clean_name:
+            clean_name = safe_name
+            
+        return clean_name
+
+    @staticmethod
+    async def transcribe_audio_file(file_content: bytes, filename: str, mime_type: str = None) -> str:
         """Upload audio to Gemini and return its transcript."""
 
         if not file_content:
@@ -112,10 +227,12 @@ class GeminiService:
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-        file_extension, mime_type = GeminiService._detect_audio_format(
+        file_extension, detected_mime_type = GeminiService._detect_audio_format(
             file_content,
             filename,
         )
+        final_mime_type = mime_type or detected_mime_type
+        
         temporary_path = None
         uploaded_file = None
 
@@ -131,7 +248,7 @@ class GeminiService:
                 client.files.upload,
                 file=temporary_path,
                 config=types.UploadFileConfig(
-                    mime_type=mime_type,
+                    mime_type=final_mime_type,
                     display_name=filename,
                 ),
             )
@@ -343,6 +460,8 @@ Return only the transcript text.
     "Do NOT resolve corrections. Do NOT compute final state. Return every step.\n\n"
     "Self-correction: '5 kilo sugar... nahi 2 kilo sugar' "
     "→ ADD(sugar,5) then SET_QUANTITY(sugar,2). Return both.\n"
+    "Add more: '5 kilo sugar... 10 kilo aur jod dena' "
+    "→ ADD(sugar,5) then ADD(sugar,10). Do NOT use SET_QUANTITY for adding more.\n"
     "Cancel spoken: 'chips cancel kar do' → CANCEL operation. No ADD for chips.\n"
     "Return: 'kal ke biscuits wapas lo' → RETURN(biscuits).\n"
     "Substitute: 'Parle nahi toh Britannia' → SUBSTITUTE(Parle→Britannia). Not a normal ADD.\n"
@@ -351,6 +470,7 @@ Return only the transcript text.
     "## EXAMPLES\n"
     "'lal Surf dena' → name:'lal Surf'\n"
     "'dus wala Parle' → name:'dus wala Parle'\n"
+    "'paanch rupaye wala toffee ka packet das dabba' → name:'5 rupaye wala toffee', quantity:10, unit:'dabba'\n"
     "'udhaar mein likh dena' → payment_method:'Credit (Udhaar)'\n"
     "'kal 5:30 baje Guptastore... unka naam Shayam hai' "
     "→ customer_name:'Shayam', delivery_time_raw:'kal 5:30 baje', delivery_address:'Guptastore'\n"
@@ -492,9 +612,14 @@ Return only the transcript text.
                         qty = None
                         break
 
+                raw_name_original = safe_name
+                clean_name = GeminiService.clean_product_name(safe_name)
+                safe_name = clean_name
+
                 res = business_memory.resolve_product_detailed(safe_name, customer_id=cust_phone)
                 normalized_items.append({
                     "name": res["name"],
+                    "raw_name_original": raw_name_original,
                     "raw_name": res.get("raw_name", safe_name),
                     "canonical_name": res.get("canonical_name"),
                     "resolution_status": res.get("resolution_status", "unresolved"),
@@ -549,8 +674,14 @@ Return only the transcript text.
                     normalized_items = [{"name": "Unknown Item", "quantity": 1, "unit": "", "price": 0.0}]
 
             raw_cust_name = primary_card.get("customer_name", "")
-            cust_name = raw_cust_name.strip() if isinstance(raw_cust_name, str) else ""
+            cust_name = GeminiService.clean_customer_name(raw_cust_name)
             normalized_cust = normalize_alias(cust_name, BUSINESS_ALIASES["customer_aliases"])
+
+            raw_delivery_address = str(primary_card.get("delivery_address") or "").strip()
+            clean_address, address_meta = GeminiService.normalize_delivery_address(raw_delivery_address)
+            
+            # Merge address metadata into normalization metadata
+            normalization_metadata.update(address_meta)
 
             raw_delivery_time = primary_card.get("delivery_time_raw", primary_card.get("delivery_time", ""))
             safe_delivery_time = raw_delivery_time.strip() if isinstance(raw_delivery_time, str) else ""
@@ -560,7 +691,7 @@ Return only the transcript text.
             final_data = {
                 "customer_name": normalized_cust,
                 "customer_phone": cust_phone,
-                "delivery_address": str(primary_card.get("delivery_address") or "").strip(),
+                "delivery_address": clean_address,
                 "delivery_time_raw": raw_delivery_time,
                 "delivery_time_normalized": time_data["normalized"],
                 "delivery_time_confidence": time_data["confidence"],
@@ -587,6 +718,7 @@ Return only the transcript text.
                     "invalid_operations": normalization_metadata.get("invalid_operations", []),
                     "operation_warnings": normalization_metadata.get("operation_warnings", []),
                     "operations": operations,
+                    "raw_delivery_address": raw_delivery_address,
                     "stt_provider": "gemini_audio",
                     "extraction_provider": "gemini",
                     "pipeline": pipeline,
@@ -608,6 +740,11 @@ Return only the transcript text.
                 validation_data["warnings"] = []
             validation_data["warnings"].extend(final_data.pop("validation_warnings", []))
             final_data.update(validation_data)
+
+            c_score, c_label, c_reasons = ConfidenceScorer.calculate_confidence(final_data)
+            final_data["confidence_score"] = c_score
+            final_data["confidence_label"] = c_label
+            final_data["confidence_reasons"] = c_reasons
 
             return final_data
 
@@ -871,7 +1008,9 @@ Return only the transcript text.
             "12. DETECT PAYMENT METHOD/UDHAAR: If the user says 'udhaar', 'paisa udhaar rahega', 'baad mein denge', 'credit', or 'khata mein likh do', set `payment_method` to 'Credit/Udhaar' and add a note in `extraction_notes`.\n"
             "13. FLAG UNKNOWN/AMBIGUOUS FIELDS: Add warnings to extraction_notes if product/quantity is ambiguous.\n"
             "14. IN-FLIGHT CANCELLATIONS: If an item is added but later cancelled in the same transcript (e.g. 'ek tight surf add karo... nahi surf cancel kar dena'), DO NOT include it in `items`. Place it in `metadata.cancelled_items` instead.\n"
-            "15. EXTRACT OPERATIONS: Extract an ordered sequence of events from the transcript into the `operations` array using ADD, SET_QUANTITY, CANCEL, RETURN, SUBSTITUTE, or PREVIOUS_ORDER_REFERENCE.\n\n"
+            "15. EXTRACT OPERATIONS: Extract an ordered sequence of events from the transcript into the `operations` array using ADD, SET_QUANTITY, CANCEL, RETURN, SUBSTITUTE, or PREVIOUS_ORDER_REFERENCE.\n"
+            "    - MUST USE ADD for 'aur jod dena' or 'add more'. If a product is mentioned twice with quantities to be added, output multiple ADD operations. Do NOT do math and do NOT use SET_QUANTITY for 'aur jod dena'.\n"
+            "    - Example: '5 kilo aata... 5 kilo aata aur jod dena' -> ADD(atta, 5) then ADD(atta, 5).\n\n"
             "## OUTPUT FORMAT\n"
             "Return ONLY a JSON object containing `transcript_normalized` and a `cards` array. No markdown, no explanation.\n"
             "{\n"
@@ -907,6 +1046,7 @@ Return only the transcript text.
             "## EXAMPLES\n"
             "- Local alias: 'lal Surf dena' -> name: 'lal Surf'\n"
             "- Pack variant: 'dus wala Parle' -> name: 'dus wala Parle'\n"
+            "- Numeric variant: 'paanch rupaye wala toffee ka packet das dabba' -> name: '5 rupaye wala toffee', quantity: 10, unit: 'dabba'\n"
             "- Credit: 'udhaar mein likh dena' -> payment_method: 'Credit/Udhaar', extraction_notes: 'User requested udhaar/credit'\n"
             "- Time & Name: 'kal aisa karna 5:30 baje Guptastore... unka naam Shayam hai' -> customer_name: 'Shayam', delivery_time_raw: 'kal 5:30 baje', delivery_address: 'Guptastore'\n"
             "- Cancellation: 'kal wala chips cancel kar do' -> type: 'CANCEL', extraction_notes: 'Cancelling previous chips order'\n"
@@ -1297,5 +1437,10 @@ Return only the transcript text.
         validation_data["validation_warnings"].extend(final_data.pop("validation_warnings", []))
 
         final_data.update(validation_data)
+
+        c_score, c_label, c_reasons = ConfidenceScorer.calculate_confidence(final_data)
+        final_data["confidence_score"] = c_score
+        final_data["confidence_label"] = c_label
+        final_data["confidence_reasons"] = c_reasons
 
         return final_data

@@ -28,12 +28,23 @@ class ActionCardController:
             
         if SupabaseService.is_available():
             card_id = card_data.get("id") or f"ac_{uuid.uuid4().hex[:8]}"
+            
+            # Fetch and attach shop_id to ensure catalog matching works for this card
+            if user_id and not card_data.get("shop_id"):
+                try:
+                    res = SupabaseService.supabase.table("shops").select("id").eq("owner_id", user_id).execute()
+                    if res.data:
+                        card_data["shop_id"] = res.data[0]["id"]
+                except Exception as e:
+                    pass
+
             items = card_data.get("items", [])
             items_dict = [i.model_dump() if hasattr(i, "model_dump") else i for i in items]
             
             insert_data = {
                 "id": card_id,
                 "user_id": card_data.get("user_id"),
+                "shop_id": card_data.get("shop_id"),
                 "customer_name": card_data.get("customer_name"),
                 "customer_phone": card_data.get("customer_phone"),
                 "items": items_dict,
@@ -51,6 +62,9 @@ class ActionCardController:
                 "source": card_data.get("source", "text"),
                 "message_type": card_data.get("message_type", "ORDER"),
                 "confidence": card_data.get("confidence"),
+                "confidence_score": card_data.get("confidence_score"),
+                "confidence_label": card_data.get("confidence_label"),
+                "confidence_reasons": card_data.get("confidence_reasons", []),
                 "stt_provider": card_data.get("stt_provider"),
                 "extraction_provider": card_data.get("extraction_provider"),
                 "metadata": card_data.get("metadata", {}),
@@ -60,7 +74,7 @@ class ActionCardController:
             insert_data = {k: v for k, v in insert_data.items() if v is not None}
             
             result = SupabaseService.create(insert_data)
-            return ActionCardController._parse_supabase_card(result) if result else store.create(card_data)
+            return ActionCardController._parse_supabase_card(result)
         
         return store.create(card_data)
 
@@ -71,8 +85,7 @@ class ActionCardController:
             if "items" in update_data:
                 update_data["items"] = [i.model_dump() if hasattr(i, "model_dump") else i for i in update_data["items"]]
             result = SupabaseService.update(card_id, update_data, user_id)
-            if result:
-                return ActionCardController._parse_supabase_card(result)
+            return ActionCardController._parse_supabase_card(result)
             
         return store.update(card_id, card_data)
 
@@ -80,16 +93,13 @@ class ActionCardController:
     def update_card_status(card_id: str, status: str, user_id: Optional[str] = None) -> Optional[ActionCard]:
         if SupabaseService.is_available():
             result = SupabaseService.update(card_id, {"status": status}, user_id)
-            if result:
-                return ActionCardController._parse_supabase_card(result)
+            return ActionCardController._parse_supabase_card(result)
         return store.update_status(card_id, status)
 
     @staticmethod
     def delete_card(card_id: str, user_id: Optional[str] = None) -> bool:
         if SupabaseService.is_available():
-            success = SupabaseService.delete(card_id, user_id)
-            if success:
-                return True
+            return SupabaseService.delete(card_id, user_id)
         return store.delete(card_id)
 
     @staticmethod

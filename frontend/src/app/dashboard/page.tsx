@@ -2,20 +2,25 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getActionCards } from '@/lib/api';
+import { getActionCards, getOrders } from '@/lib/api';
 import { ActionCard } from '@/types';
 import MetricCard from '@/components/dashboard/MetricCard';
 
 export default function Dashboard() {
   const [cards, setCards] = useState<ActionCard[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadDashboardData() {
       try {
-        const data = await getActionCards();
-        setCards(data);
+        const [cardsData, ordersData] = await Promise.all([
+          getActionCards(),
+          getOrders().catch(() => []) // fallback safely
+        ]);
+        setCards(cardsData);
+        setOrders(ordersData);
       } catch (err: any) {
         setError('Failed to fetch dashboard metrics from backend.');
         console.error(err);
@@ -27,16 +32,20 @@ export default function Dashboard() {
     loadDashboardData();
   }, []);
 
-  // Compute metric values dynamically based on live mock backend store
-  const totalOrders = cards.length;
-  const pendingOrders = cards.filter(c => c.status.toLowerCase() === 'pending').length;
-  const approvedOrders = cards.filter(c => c.status.toLowerCase() === 'approved').length;
-  const deliveredOrders = cards.filter(c => c.status.toLowerCase() === 'delivered' || c.status.toLowerCase() === 'completed').length;
+  const pendingActionCards = cards.filter(c => c.status.toLowerCase() === 'pending').length;
+  
+  const packingOrders = orders.filter(o => {
+    const s = o.lifecycle_status;
+    return !s || s === 'pending_review' || s === 'packing';
+  }).length;
+
+  const outForDeliveryOrders = orders.filter(o => o.lifecycle_status === 'out_for_delivery').length;
+  const deliveredOrders = orders.filter(o => o.lifecycle_status === 'delivered').length;
 
   const metrics = [
-    { name: 'Total Orders', value: totalOrders, color: 'text-indigo-650' },
-    { name: 'Pending Orders', value: pendingOrders, color: 'text-amber-600' },
-    { name: 'Approved Orders', value: approvedOrders, color: 'text-emerald-600' },
+    { name: 'Pending Review (Action Cards)', value: pendingActionCards, color: 'text-amber-600' },
+    { name: 'Packing Orders', value: packingOrders, color: 'text-indigo-650' },
+    { name: 'Out for Delivery Orders', value: outForDeliveryOrders, color: 'text-emerald-600' },
     { name: 'Delivered Orders', value: deliveredOrders, color: 'text-cyan-600' },
   ];
 
@@ -159,6 +168,15 @@ export default function Dashboard() {
                 <span>Review Action Cards</span>
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                </svg>
+              </Link>
+              <Link
+                href="/access"
+                className="flex items-center justify-between w-full px-4 py-3 rounded-lg bg-emerald-100 hover:bg-emerald-200/80 text-emerald-800 font-semibold text-sm transition-all border border-emerald-200 mt-3"
+              >
+                <span>Manage Staff Access</span>
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                 </svg>
               </Link>
             </div>
