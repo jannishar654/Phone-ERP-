@@ -14,7 +14,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 // Auth API
 export async function getMe(): Promise<any> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`${API_BASE_URL}/auth/me`, { headers });
+  const res = await fetch(`${API_BASE_URL}/auth/me`, { headers, cache: "no-store" });
   if (!res.ok) throw new Error('Failed to fetch user profile');
   return res.json();
 }
@@ -47,14 +47,14 @@ export async function createStaffInvite(shopId: string, role: string, label: str
 
 export async function listStaffInvites(): Promise<any[]> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`${API_BASE_URL}/invites/staff`, { headers });
+  const res = await fetch(`${API_BASE_URL}/invites/staff`, { headers, cache: "no-store" });
   if (!res.ok) throw new Error('Failed to fetch staff invites');
   return res.json();
 }
 
 export async function revokeStaffInvite(id: string): Promise<any> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`${API_BASE_URL}/invites/staff/${id}/revoke`, { method: 'POST', headers });
+  const res = await fetch(`${API_BASE_URL}/invites/staff/${id}/revoke`, { method: 'POST', headers, cache: "no-store" });
   if (!res.ok) throw new Error('Failed to revoke staff invite');
   return res.json();
 }
@@ -73,14 +73,14 @@ export async function createStaffAccess(shopId: string, role: string, label: str
 
 export async function listStaffAccess(): Promise<any[]> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`${API_BASE_URL}/access/staff`, { headers });
+  const res = await fetch(`${API_BASE_URL}/access/staff`, { headers, cache: "no-store" });
   if (!res.ok) throw new Error('Failed to fetch staff access');
   return res.json();
 }
 
 export async function revokeStaffAccess(id: string): Promise<any> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`${API_BASE_URL}/access/staff/${id}/revoke`, { method: 'POST', headers });
+  const res = await fetch(`${API_BASE_URL}/access/staff/${id}/revoke`, { method: 'POST', headers, cache: "no-store" });
   if (!res.ok) throw new Error('Failed to revoke staff access');
   return res.json();
 }

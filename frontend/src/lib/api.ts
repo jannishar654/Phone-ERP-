@@ -155,7 +155,7 @@ export async function extractActionCard(
 export async function getActionCards(): Promise<ActionCard[]> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`${API_BASE_URL}/action-cards`, { headers });
+    const res = await fetch(`${API_BASE_URL}/action-cards`, { headers, cache: "no-store" });
     if (!res.ok) throw new Error();
     const data = await res.json();
     setLocalDB(data);
@@ -168,7 +168,7 @@ export async function getActionCards(): Promise<ActionCard[]> {
 export async function getActionCard(cardId: string): Promise<ActionCard> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`${API_BASE_URL}/action-cards/${cardId}`, { headers });
+    const res = await fetch(`${API_BASE_URL}/action-cards/${cardId}`, { headers, cache: "no-store" });
     if (!res.ok) throw new Error();
     return res.json();
   } catch (err) {
@@ -293,7 +293,7 @@ export async function deleteActionCard(cardId: string): Promise<void> {
 // Catalog API
 export async function getCatalogItems(): Promise<any[]> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`${API_BASE_URL}/catalog/`, { headers });
+  const res = await fetch(`${API_BASE_URL}/catalog/`, { headers, cache: "no-store" });
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
     throw new Error(errorBody?.detail || 'Failed to fetch catalog items.');
@@ -350,7 +350,7 @@ export async function deleteCatalogItem(itemId: string): Promise<any> {
 
 export async function getOrders(): Promise<any[]> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`${API_BASE_URL}/orders/`, { headers });
+  const res = await fetch(`${API_BASE_URL}/orders/`, { headers, cache: "no-store" });
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
     throw new Error(errorBody?.detail || 'Failed to fetch orders.');
