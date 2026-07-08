@@ -24,11 +24,17 @@ app.add_middleware(
 
 from app.routes.telegram import router as telegram_router
 from app.routes.twilio_whatsapp import router as twilio_whatsapp_router
+from app.routes.access import router as access_router
+from app.routes.staff import router as staff_router
+from app.routes.public import router as public_router
 
 # Register routes
 app.include_router(api_router)
 app.include_router(telegram_router)
 app.include_router(twilio_whatsapp_router)
+app.include_router(access_router)
+app.include_router(staff_router)
+app.include_router(public_router)
 
 @app.get("/")
 def read_root():
