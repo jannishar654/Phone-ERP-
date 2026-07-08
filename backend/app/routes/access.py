@@ -72,22 +72,28 @@ def create_customer_link(order_id: str, data: OrderPublicLinkCreate, user_id: st
     if not order_res.data:
         raise HTTPException(status_code=404, detail="Order not found")
         
-    # Check if there is already an active link, if so just return it (although without raw token since we don't store it)
-    # Wait, for customer links, maybe we just generate a new one
-    
-    raw_token = secrets.token_urlsafe(32)
+    from app.utils.security import generate_deterministic_bill_token, hash_token
+    raw_token = generate_deterministic_bill_token(order_id, shop_id)
     token_hash = hash_token(raw_token)
     
     expires_at = None
     if data.expires_in_days:
         expires_at = (datetime.utcnow() + timedelta(days=data.expires_in_days)).isoformat()
         
-    res = supabase_client.table("order_public_links").insert({
-        "order_id": order_id,
-        "shop_id": shop_id,
-        "token_hash": token_hash,
-        "expires_at": expires_at
-    }).execute()
+    # Check if there is already an active link, if so update it, else insert
+    link_res = supabase_client.table("order_public_links").select("id").eq("order_id", order_id).execute()
+    if link_res.data:
+        res = supabase_client.table("order_public_links").update({
+            "token_hash": token_hash,
+            "expires_at": expires_at
+        }).eq("id", link_res.data[0]["id"]).execute()
+    else:
+        res = supabase_client.table("order_public_links").insert({
+            "order_id": order_id,
+            "shop_id": shop_id,
+            "token_hash": token_hash,
+            "expires_at": expires_at
+        }).execute()
     
     if not res.data:
         raise HTTPException(status_code=500, detail="Failed to create customer link")

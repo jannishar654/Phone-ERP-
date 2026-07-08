@@ -42,6 +42,30 @@ class TwilioWhatsappService:
     def _generate_twiml(self, message: str) -> str:
         return f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{message}</Message></Response>'
 
+    def send_message(self, to_phone: str, message: str) -> None:
+        if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN:
+            logger.warning("Twilio credentials not set. Cannot send WhatsApp message.")
+            return
+
+        try:
+            from twilio.rest import Client
+            client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+            
+            # Ensure number is prefixed with 'whatsapp:'
+            to_formatted = to_phone if to_phone.startswith("whatsapp:") else f"whatsapp:{to_phone}"
+            from_formatted = settings.TWILIO_WHATSAPP_FROM
+            if not from_formatted.startswith("whatsapp:"):
+                from_formatted = f"whatsapp:{from_formatted}"
+                
+            client.messages.create(
+                body=message,
+                from_=from_formatted,
+                to=to_formatted
+            )
+            logger.info(f"WhatsApp message sent to {to_phone}")
+        except Exception as e:
+            logger.error(f"Failed to send WhatsApp message: {e}")
+
     def get_or_create_customer(self, wa_id: str, from_phone: str) -> Optional[Dict[str, Any]]:
         if not supabase_client:
             return None

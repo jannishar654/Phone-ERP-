@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     TWILIO_WHATSAPP_FROM: str = ""
     TWILIO_DEFAULT_OWNER_ID: Optional[str] = None
     TWILIO_DEFAULT_SHOP_ID: Optional[str] = None
+    
+    # Public Bill Configuration
+    FRONTEND_PUBLIC_BASE_URL: str = "http://localhost:3000"
+    BILL_LINK_SIGNING_SECRET: str = "default-secret-change-in-production"
+    
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: Any) -> List[str]:

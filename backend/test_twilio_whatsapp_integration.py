@@ -16,9 +16,26 @@ from fastapi.testclient import TestClient
 from twilio.request_validator import RequestValidator
 
 @pytest.fixture(autouse=True)
-def mock_supabase():
+def mock_setup():
+    from app.config.settings import settings
+    
     with patch("app.services.supabase.supabase_client") as mock:
+        original_auth_token = settings.TWILIO_AUTH_TOKEN
+        original_account_sid = settings.TWILIO_ACCOUNT_SID
+        original_owner_id = settings.TWILIO_DEFAULT_OWNER_ID
+        original_shop_id = settings.TWILIO_DEFAULT_SHOP_ID
+        
+        settings.TWILIO_AUTH_TOKEN = "testtoken"
+        settings.TWILIO_ACCOUNT_SID = "testaccount"
+        settings.TWILIO_DEFAULT_OWNER_ID = "4f4ea61e-3f37-4e90-9a47-0c98fe2036e1"
+        settings.TWILIO_DEFAULT_SHOP_ID = "44b5785d-a428-492e-a109-02b417d3ac59"
+        
         yield mock
+        
+        settings.TWILIO_AUTH_TOKEN = original_auth_token
+        settings.TWILIO_ACCOUNT_SID = original_account_sid
+        settings.TWILIO_DEFAULT_OWNER_ID = original_owner_id
+        settings.TWILIO_DEFAULT_SHOP_ID = original_shop_id
 
 @pytest.fixture
 def client():

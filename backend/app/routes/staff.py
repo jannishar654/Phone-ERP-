@@ -145,12 +145,12 @@ def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff, u
                 channels_res = supabase_client.table("customer_channels").select("*").eq("customer_id", customer_id).execute()
                 channels = channels_res.data if channels_res.data else []
                 
-                # Check for public bill link
-                bill_msg = ""
-                
-                import secrets
+                # Use deterministic HMAC token
+                from app.utils.security import generate_deterministic_bill_token, hash_token
+                from app.config.settings import settings
                 from datetime import timedelta
-                raw_token = secrets.token_urlsafe(32)
+                
+                raw_token = generate_deterministic_bill_token(order_id_str, shop_id)
                 token_hash = hash_token(raw_token)
                 expires_at = (datetime.utcnow() + timedelta(days=30)).isoformat()
                 
@@ -169,19 +169,33 @@ def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff, u
                         "expires_at": expires_at
                     }).execute()
                 
-                bill_url = f"http://localhost:3000/bill/{raw_token}" # In production, use env var
-                bill_msg = f"\nView your bill & status: {bill_url}"
+                # Get frontend base URL
+                base_url = getattr(settings, "FRONTEND_PUBLIC_BASE_URL", "http://localhost:3000")
+                bill_url = f"{base_url}/bill/{raw_token}"
+                total_amount = order.get("total_amount", 0)
+                bill_msg = f"Your order has been delivered.\nTotal: ₹{total_amount}\nBill: {bill_url}"
                 
-                for channel in channels:
-                    if channel["channel"] == "telegram" and channel.get("channel_chat_id"):
-                        from app.services.telegram_service import telegram_service
-                        telegram_service.send_message(
-                            channel["channel_chat_id"], 
-                            f"Your order #{order.get('order_number', '...')} has been delivered!{bill_msg}"
-                        )
-                    # Add WhatsApp if needed
+                # Send to original channel
+                action_card_id = order.get("action_card_id")
+                if action_card_id:
+                    card_res = supabase_client.table("action_cards").select("source").eq("id", action_card_id).execute()
+                    if card_res.data:
+                        source = card_res.data[0].get("source")
+                        for channel in channels:
+                            try:
+                                if channel["channel"] == "telegram" and source == "telegram":
+                                    if channel.get("channel_chat_id"):
+                                        from app.services.telegram_service import telegram_service
+                                        telegram_service.send_message(channel["channel_chat_id"], bill_msg)
+                                        
+                                elif channel["channel"] == "whatsapp" and source == "whatsapp":
+                                    if channel.get("channel_phone_number"):
+                                        from app.services.twilio_whatsapp_service import twilio_whatsapp_service
+                                        twilio_whatsapp_service.send_message(channel["channel_phone_number"], bill_msg)
+                            except Exception as e:
+                                print(f"Warning: Failed to send {channel['channel']} notification: {e}")
         except Exception as e:
-            print(f"Warning: Failed to send notification: {e}")
+            print(f"Warning: Failed to process delivery notifications: {e}")
             
     final_res = supabase_client.table("orders").select("*, order_items(*)").eq("id", order_id).execute()
     return final_res.data[0]
