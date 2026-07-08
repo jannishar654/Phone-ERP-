@@ -115,6 +115,7 @@ def test_telegram_origin_sends_message(mock_send, mock_deps):
     with patch.object(FakeTable, 'select', mock_select):
         response = client.post("/staff/orders/order-1/status", json={"lifecycle_status": "delivered"})
         assert response.status_code == 200
+        assert response.json()["notification_attempted"] is True
         assert response.json()["notification_sent"] is True
         assert response.json()["notification_channel"] == "telegram"
         
@@ -131,6 +132,7 @@ def test_whatsapp_origin_sends_message(mock_send, mock_deps):
     response = client.post("/staff/orders/order-1/status", json={"lifecycle_status": "delivered"})
     assert response.status_code == 200
     resp_json = response.json()
+    assert resp_json["notification_attempted"] is True
     assert resp_json["notification_sent"] is True
     assert resp_json["notification_channel"] == "whatsapp"
     assert resp_json["notification_sid"] == "SM123"
@@ -140,14 +142,53 @@ def test_whatsapp_origin_sends_message(mock_send, mock_deps):
     assert args[0] == "9876543210" # This is mock_phone passed into FakeSupabase
 
 @patch("app.config.settings.settings.REQUIRE_AUTH", False)
+@patch("app.services.twilio_whatsapp_service.twilio_whatsapp_service.send_whatsapp_message", return_value={"sent": True, "sid": "SM123", "status": "sent", "error": None})
+def test_whatsapp_order_only_customer_phone(mock_send):
+    fake_db = FakeSupabase(mock_phone=None) # No channel phone
+    with patch("app.dependencies.auth.supabase_client", fake_db), \
+         patch("app.routes.staff.supabase_client", fake_db), \
+         patch("app.routes.staff.get_staff_context", return_value={"shop_id": "shop-123", "role": "delivery"}), \
+         patch("app.routes.staff.get_optional_user_id", return_value="user-123"):
+        
+        response = client.post("/staff/orders/order-1/status", json={"lifecycle_status": "delivered"})
+        assert response.status_code == 200
+        resp_json = response.json()
+        assert resp_json["notification_attempted"] is True
+        assert resp_json["notification_sent"] is True
+        assert resp_json["notification_channel"] == "whatsapp"
+        
+        mock_send.assert_called_once()
+        args, _ = mock_send.call_args
+        assert args[0] == "1234567890" # from order.customer_phone
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", False)
 @patch("app.services.twilio_whatsapp_service.twilio_whatsapp_service.send_whatsapp_message", return_value={"sent": False, "error": "Twilio API Error"})
 def test_notification_failure_does_not_rollback_whatsapp(mock_send, mock_deps):
     response = client.post("/staff/orders/order-1/status", json={"lifecycle_status": "delivered"})
     assert response.status_code == 200
     resp_json = response.json()
     assert resp_json["lifecycle_status"] == "delivered"
+    assert resp_json["notification_attempted"] is True
     assert resp_json["notification_sent"] is False
     assert resp_json["notification_error"] == "Twilio API Error"
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", False)
+@patch("app.services.telegram_service.telegram_service.send_message", side_effect=Exception("Telegram API Error"))
+def test_telegram_failure_does_not_rollback(mock_send, mock_deps):
+    original_select = FakeTable.select
+    def mock_select(self, *args, **kwargs):
+        if self.name == "action_cards":
+            return FakeQuery([{"source": "telegram"}])
+        return original_select(self, *args, **kwargs)
+        
+    with patch.object(FakeTable, 'select', mock_select):
+        response = client.post("/staff/orders/order-1/status", json={"lifecycle_status": "delivered"})
+        assert response.status_code == 200
+        resp_json = response.json()
+        assert resp_json["lifecycle_status"] == "delivered"
+        assert resp_json["notification_attempted"] is True
+        assert resp_json["notification_sent"] is False
+        assert resp_json["notification_error"] == "Telegram API Error"
 
 @patch("app.config.settings.settings.REQUIRE_AUTH", False)
 def test_whatsapp_missing_phone_does_not_rollback():
@@ -157,7 +198,6 @@ def test_whatsapp_missing_phone_does_not_rollback():
          patch("app.routes.staff.get_staff_context", return_value={"shop_id": "shop-123", "role": "delivery"}), \
          patch("app.routes.staff.get_optional_user_id", return_value="user-123"):
         
-        # We also need to strip customer_phone from the order to test true missing phone
         original_select = FakeTable.select
         def mock_select(self, *args, **kwargs):
             if self.name == "orders":
@@ -177,6 +217,7 @@ def test_whatsapp_missing_phone_does_not_rollback():
             assert response.status_code == 200
             resp_json = response.json()
             assert resp_json["lifecycle_status"] == "delivered"
+            assert resp_json["notification_attempted"] is True
             assert resp_json["notification_sent"] is False
             assert "No customer phone found" in resp_json.get("notification_error", "")
 

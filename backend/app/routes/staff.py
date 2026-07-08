@@ -183,49 +183,94 @@ def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff, u
                 total_amount = order.get("total_amount", 0)
                 bill_msg = f"Your order has been delivered.\nTotal: ₹{total_amount}\nBill: {bill_url}"
                 
-                # Send to original channel
+                # Determine source and fallback channels
+                notification_info["notification_attempted"] = True
+                
+                source = None
+                card_phone = None
+                telegram_chat_id = None
+                
                 action_card_id = order.get("action_card_id")
                 if action_card_id:
-                    card_res = supabase_client.table("action_cards").select("source, customer_phone").eq("id", action_card_id).execute()
+                    card_res = supabase_client.table("action_cards").select("source, customer_phone, metadata").eq("id", action_card_id).execute()
                     if card_res.data:
                         card_data = card_res.data[0]
                         source = card_data.get("source")
                         card_phone = card_data.get("customer_phone")
+                        meta = card_data.get("metadata") or {}
+                        if source == "telegram":
+                            telegram_chat_id = meta.get("telegram_chat_id")
+                            
+                whatsapp_channel = None
+                telegram_channel = None
+                
+                for ch in channels:
+                    if ch.get("channel") == "whatsapp":
+                        whatsapp_channel = ch
+                    elif ch.get("channel") == "telegram":
+                        telegram_channel = ch
                         
-                        for channel in channels:
-                            try:
-                                if channel["channel"] == "telegram" and source == "telegram":
-                                    if channel.get("channel_chat_id"):
-                                        from app.services.telegram_service import telegram_service
-                                        telegram_service.send_message(channel["channel_chat_id"], bill_msg)
-                                        notification_info["notification_sent"] = True
-                                        notification_info["notification_channel"] = "telegram"
-                                        
-                                elif channel["channel"] == "whatsapp" and source == "whatsapp":
-                                    # Fallback strategy for phone
-                                    phone_to_use = channel.get("phone") or order.get("customer_phone") or card_phone
-                                    
-                                    # We might need to get customer data directly if still missing
-                                    if not phone_to_use:
-                                        cust_res = supabase_client.table("customers").select("phone").eq("id", customer_id).execute()
-                                        if cust_res.data:
-                                            phone_to_use = cust_res.data[0].get("phone")
-
-                                    if phone_to_use:
-                                        from app.services.twilio_whatsapp_service import twilio_whatsapp_service
-                                        result = twilio_whatsapp_service.send_whatsapp_message(phone_to_use, bill_msg)
-                                        notification_info["notification_sent"] = result.get("sent", False)
-                                        notification_info["notification_channel"] = "whatsapp"
-                                        notification_info["notification_sid"] = result.get("sid")
-                                        notification_info["notification_status"] = result.get("status")
-                                        notification_info["notification_error"] = result.get("error")
-                                    else:
-                                        notification_info["notification_error"] = "No customer phone found"
-                                        print("Warning: Missing phone number for WhatsApp delivery notification.")
-                            except Exception as e:
-                                error_msg = f"Failed to send {channel['channel']} notification: {str(e)}"
-                                notification_info["notification_error"] = error_msg
-                                print(f"Warning: {error_msg}")
+                channel_to_use = source
+                if not channel_to_use:
+                    if telegram_channel: channel_to_use = "telegram"
+                    elif whatsapp_channel: channel_to_use = "whatsapp"
+                    elif order.get("customer_phone"): channel_to_use = "whatsapp"
+                    
+                print("DELIVERY_NOTIFICATION_DEBUG", {
+                    "order_id": order_id_str,
+                    "new_status": new_status,
+                    "customer_id": customer_id,
+                    "customer_phone_present": bool(order.get("customer_phone")),
+                    "channels_count": len(channels),
+                    "channel_names": [c.get("channel") for c in channels],
+                    "has_twilio_env": bool(settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN and settings.TWILIO_WHATSAPP_FROM),
+                    "has_telegram_env": bool(settings.TELEGRAM_BOT_TOKEN),
+                    "has_frontend_url": bool(settings.FRONTEND_PUBLIC_BASE_URL),
+                })
+                
+                if channel_to_use == "telegram":
+                    chat_id = (telegram_channel.get("channel_chat_id") if telegram_channel else None) or telegram_chat_id
+                    if chat_id:
+                        try:
+                            from app.services.telegram_service import telegram_service
+                            telegram_service.send_message(chat_id, bill_msg)
+                            notification_info["notification_sent"] = True
+                            notification_info["notification_channel"] = "telegram"
+                            print(f"DELIVERY_NOTIFICATION_SENT channel=telegram chat_id={chat_id}")
+                        except Exception as e:
+                            notification_info["notification_error"] = str(e)
+                            print(f"DELIVERY_NOTIFICATION_FAILED safe_error={str(e)}")
+                    else:
+                        notification_info["notification_error"] = "No Telegram chat ID found"
+                        print("DELIVERY_NOTIFICATION_SKIPPED reason=no_telegram_chat_id")
+                        
+                elif channel_to_use == "whatsapp":
+                    phone_to_use = (whatsapp_channel.get("phone") if whatsapp_channel else None) or order.get("customer_phone") or card_phone
+                    if not phone_to_use and customer_id:
+                        cust_res = supabase_client.table("customers").select("phone").eq("id", customer_id).execute()
+                        if cust_res.data: phone_to_use = cust_res.data[0].get("phone")
+                        
+                    if phone_to_use:
+                        try:
+                            from app.services.twilio_whatsapp_service import twilio_whatsapp_service
+                            result = twilio_whatsapp_service.send_whatsapp_message(phone_to_use, bill_msg)
+                            notification_info["notification_sent"] = result.get("sent", False)
+                            notification_info["notification_channel"] = "whatsapp"
+                            notification_info["notification_sid"] = result.get("sid")
+                            if result.get("error"):
+                                notification_info["notification_error"] = result.get("error")
+                                print(f"DELIVERY_NOTIFICATION_FAILED safe_error={result.get('error')}")
+                            else:
+                                print(f"DELIVERY_NOTIFICATION_SENT channel=whatsapp sid={result.get('sid')}")
+                        except Exception as e:
+                            notification_info["notification_error"] = str(e)
+                            print(f"DELIVERY_NOTIFICATION_FAILED safe_error={str(e)}")
+                    else:
+                        notification_info["notification_error"] = "No customer phone found"
+                        print("DELIVERY_NOTIFICATION_SKIPPED reason=no_whatsapp_phone")
+                else:
+                    notification_info["notification_error"] = "No notification channel identified"
+                    print("DELIVERY_NOTIFICATION_SKIPPED reason=no_channel_identified")
         except Exception as e:
             print(f"Warning: Failed to process delivery notifications: {str(e)}")
             

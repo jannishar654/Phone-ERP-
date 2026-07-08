@@ -46,6 +46,7 @@ class OrderResponse(OrderBase):
     created_at: datetime
     updated_at: datetime
     order_items: List[OrderItemResponse] = Field(default_factory=list)
+    notification_attempted: Optional[bool] = None
     notification_sent: Optional[bool] = None
     notification_channel: Optional[str] = None
     notification_sid: Optional[str] = None
