@@ -332,3 +332,82 @@ def test_api_me_returns_staff_member(mock_supabase):
     data = response.json()
     assert data["role"] == "packer"
     assert data["shop_id"] == "shop456"
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", True)
+def test_packer_gets_403_on_catalog(mock_supabase):
+    mock_sc = mock_supabase["catalog"]
+    
+    def mock_table_select(table_name):
+        mock_obj = MagicMock()
+        if table_name == "shop_members":
+            mock_obj.select().eq().eq().execute.return_value = MagicMock(data=[{
+                "shop_id": "shop123",
+                "role": "packer"
+            }])
+        return mock_obj
+        
+    mock_sc.table.side_effect = mock_table_select
+    
+    response = client.get("/catalog/", headers={"Authorization": "Bearer session_token"})
+    assert response.status_code == 403
+    assert "owner privileges" in response.json()["detail"]
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", True)
+def test_delivery_gets_403_on_catalog(mock_supabase):
+    mock_sc = mock_supabase["catalog"]
+    
+    def mock_table_select(table_name):
+        mock_obj = MagicMock()
+        if table_name == "shop_members":
+            mock_obj.select().eq().eq().execute.return_value = MagicMock(data=[{
+                "shop_id": "shop123",
+                "role": "delivery"
+            }])
+        return mock_obj
+        
+    mock_sc.table.side_effect = mock_table_select
+    
+    response = client.get("/catalog/", headers={"Authorization": "Bearer session_token"})
+    assert response.status_code == 403
+    assert "owner privileges" in response.json()["detail"]
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", True)
+def test_packer_cannot_access_action_cards(mock_supabase):
+    mock_cat_sc = mock_supabase["catalog"]
+    
+    def mock_table_select(table_name):
+        mock_obj = MagicMock()
+        if table_name == "shop_members":
+            mock_obj.select().eq().eq().execute.return_value = MagicMock(data=[{
+                "shop_id": "shop123",
+                "role": "packer"
+            }])
+        return mock_obj
+        
+    mock_cat_sc.table.side_effect = mock_table_select
+    
+    response = client.get("/action-cards", headers={"Authorization": "Bearer session_token"})
+    assert response.status_code == 403
+    assert "owner privileges" in response.json()["detail"]
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", True)
+def test_delivery_cannot_mark_packing(mock_supabase):
+    mock_sc = mock_supabase["staff"]
+    
+    def mock_table_select(table_name):
+        mock_obj = MagicMock()
+        if table_name == "shop_members":
+            mock_obj.select().eq().eq().execute.return_value = MagicMock(data=[{
+                "shop_id": "shop123",
+                "role": "delivery"
+            }])
+        return mock_obj
+    mock_sc.table.side_effect = mock_table_select
+    
+    response = client.post("/staff/orders/order123/status", json={
+        "token": None,
+        "lifecycle_status": "out_for_delivery"
+    }, headers={"Authorization": "Bearer session_token"})
+    
+    assert response.status_code == 403
+    assert "Delivery staff can only mark orders as delivered or cancelled" in response.json()["detail"]

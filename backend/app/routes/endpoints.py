@@ -396,11 +396,15 @@ async def extract_action_card(payload: ExtractRequest, user_id: Optional[str] = 
 # Get all orders/cards
 @router.get("/action-cards", response_model=List[ActionCard], status_code=status.HTTP_200_OK)
 async def get_action_cards(user_id: Optional[str] = Depends(get_current_user_id)) -> List[ActionCard]:
+    from app.routes.catalog import get_user_shop_id
+    if user_id: get_user_shop_id(user_id) # Enforce owner status
     return ActionCardController.get_all_cards(user_id)
 
 # Get card by ID
 @router.get("/action-cards/{card_id}", response_model=ActionCard, status_code=status.HTTP_200_OK)
 async def get_action_card(card_id: str, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
+    from app.routes.catalog import get_user_shop_id
+    if user_id: get_user_shop_id(user_id) # Enforce owner status
     card = ActionCardController.get_card_by_id(card_id, user_id)
     if not card:
         raise HTTPException(
@@ -412,6 +416,8 @@ async def get_action_card(card_id: str, user_id: Optional[str] = Depends(get_cur
 # Create manual card
 @router.post("/action-cards", response_model=ActionCard, status_code=status.HTTP_201_CREATED)
 async def create_action_card(payload: ActionCardCreate, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
+    from app.routes.catalog import get_user_shop_id
+    if user_id: get_user_shop_id(user_id) # Enforce owner status
     try:
         return ActionCardController.create_card(payload.model_dump(), user_id)
     except Exception as e:
@@ -421,6 +427,8 @@ async def create_action_card(payload: ActionCardCreate, user_id: Optional[str] =
 # Edit card
 @router.put("/action-cards/{card_id}", response_model=ActionCard, status_code=status.HTTP_200_OK)
 async def update_action_card(card_id: str, payload: ActionCardUpdate, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
+    from app.routes.catalog import get_user_shop_id
+    if user_id: get_user_shop_id(user_id) # Enforce owner status
     try:
         updated_card = ActionCardController.update_card(card_id, payload.model_dump(exclude_unset=True), user_id)
         if not updated_card:
@@ -438,6 +446,8 @@ async def update_action_card(card_id: str, payload: ActionCardUpdate, user_id: O
 # Quick status update
 @router.patch("/action-cards/{card_id}/status", response_model=ActionCard, status_code=status.HTTP_200_OK)
 async def update_action_card_status(card_id: str, payload: StatusUpdate, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
+    from app.routes.catalog import get_user_shop_id
+    if user_id: get_user_shop_id(user_id) # Enforce owner status
     try:
         updated_card = ActionCardController.update_card_status(card_id, payload.status, user_id)
         if not updated_card:
@@ -455,6 +465,8 @@ async def update_action_card_status(card_id: str, payload: StatusUpdate, user_id
 # Delete card
 @router.delete("/action-cards/{card_id}", status_code=status.HTTP_200_OK)
 async def delete_action_card(card_id: str, user_id: Optional[str] = Depends(get_current_user_id)):
+    from app.routes.catalog import get_user_shop_id
+    if user_id: get_user_shop_id(user_id) # Enforce owner status
     try:
         success = ActionCardController.delete_card(card_id, user_id)
         if not success:

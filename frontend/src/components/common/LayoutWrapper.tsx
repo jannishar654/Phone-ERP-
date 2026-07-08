@@ -10,12 +10,36 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
+  const [isCheckingRole, setIsCheckingRole] = useState(true);
 
   const isAuthOrLanding = pathname === '/' || pathname === '/login' || pathname === '/signup';
 
   useEffect(() => {
     authClient.getUser().then(setUser);
-  }, [pathname]);
+    
+    if (!isAuthOrLanding) {
+      setIsCheckingRole(true);
+      import('@/lib/api_access').then(({ getMe }) => {
+        getMe().then(me => {
+          setRole(me.role);
+          if (me.role === 'packer' && !pathname.startsWith('/staff/packing')) {
+            router.replace('/staff/packing');
+          } else if (me.role === 'delivery' && !pathname.startsWith('/staff/delivery')) {
+            router.replace('/staff/delivery');
+          } else if (me.role === 'owner' && pathname.startsWith('/staff/')) {
+             router.replace('/dashboard');
+          } else {
+            setIsCheckingRole(false);
+          }
+        }).catch(() => {
+          router.replace('/login');
+        });
+      });
+    } else {
+       setIsCheckingRole(false);
+    }
+  }, [pathname, isAuthOrLanding]);
 
   const handleSignOut = async () => {
     await authClient.signOut();
@@ -26,6 +50,36 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
     return <div className="min-h-screen w-full bg-white text-slate-900">{children}</div>;
   }
 
+  if (isCheckingRole) {
+    return <div className="min-h-screen flex items-center justify-center bg-white text-slate-900">Loading workspace...</div>;
+  }
+
+  const isStaff = role === 'packer' || role === 'delivery';
+
+  if (isStaff) {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+        <header className="h-16 border-b border-slate-200 flex items-center justify-between px-4 sm:px-8 bg-white sticky top-0 z-10 shadow-sm">
+          <div className="flex items-center space-x-4">
+             <span className="text-xl font-extrabold tracking-tight">Phone<span className="text-indigo-600">ERP</span></span>
+             <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-md uppercase border border-indigo-100 shadow-sm">
+               {role}
+             </span>
+          </div>
+          <button 
+             onClick={handleSignOut} 
+             className="text-slate-600 hover:text-red-600 font-semibold transition-colors cursor-pointer text-sm bg-slate-100 hover:bg-red-50 px-4 py-2 rounded-lg"
+          >
+             Sign Out
+          </button>
+        </header>
+        <main className="flex-1 p-4 sm:p-8">
+          {children}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex bg-white text-slate-900">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
@@ -33,7 +87,6 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
       <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
         <header className="h-16 border-b border-slate-200 flex items-center justify-between px-4 sm:px-8 bg-white sticky top-0 z-10">
           <div className="flex items-center space-x-3 sm:space-x-4">
-            {/* Hamburger button on mobile */}
             <button
               onClick={() => setIsSidebarOpen(true)}
               className="lg:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100 focus:outline-none cursor-pointer"
@@ -66,7 +119,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-8 bg-white">
+        <main className="flex-1 p-4 sm:p-8 bg-slate-50">
           {children}
         </main>
       </div>
