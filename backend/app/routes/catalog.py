@@ -37,7 +37,12 @@ def get_user_shop_id(user_id: str) -> str:
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
         
-    # Helper to get the first shop_id for the user
+    # Check shop_members first
+    mem_res = supabase_client.table("shop_members").select("shop_id").eq("user_id", user_id).eq("status", "active").execute()
+    if mem_res.data:
+        return mem_res.data[0]["shop_id"]
+
+    # Fallback to shops owner_id
     res = supabase_client.table("shops").select("id").eq("owner_id", user_id).execute()
     if not res.data:
         # If no shop exists, let's create a default one to avoid unhandled exceptions

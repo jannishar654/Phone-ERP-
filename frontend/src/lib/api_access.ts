@@ -11,7 +11,55 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   return {};
 }
 
-// Access API
+// Auth API
+export async function getMe(): Promise<any> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/auth/me`, { headers });
+  if (!res.ok) throw new Error('Failed to fetch user profile');
+  return res.json();
+}
+
+export async function registerStaff(inviteCode: string): Promise<any> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/auth/register-staff`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ invite_code: inviteCode })
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to register staff');
+  }
+  return res.json();
+}
+
+// Invites API
+export async function createStaffInvite(shopId: string, role: string, label: string): Promise<any> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/invites/staff`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ shop_id: shopId, role, label, expires_in_days: 7 })
+  });
+  if (!res.ok) throw new Error('Failed to create staff invite');
+  return res.json();
+}
+
+export async function listStaffInvites(): Promise<any[]> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/invites/staff`, { headers });
+  if (!res.ok) throw new Error('Failed to fetch staff invites');
+  return res.json();
+}
+
+export async function revokeStaffInvite(id: string): Promise<any> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/invites/staff/${id}/revoke`, { method: 'POST', headers });
+  if (!res.ok) throw new Error('Failed to revoke staff invite');
+  return res.json();
+}
+
+// Access API (Legacy tokens)
 export async function createStaffAccess(shopId: string, role: string, label: string): Promise<any> {
   const headers = await getAuthHeaders();
   const res = await fetch(`${API_BASE_URL}/access/staff`, {
@@ -59,22 +107,28 @@ export async function validateStaffToken(token: string): Promise<any> {
   return res.json();
 }
 
-export async function getStaffOrders(token: string, role: string): Promise<any[]> {
+export async function getStaffOrders(token: string | null, role: string): Promise<any[]> {
+  const headers = await getAuthHeaders();
   const endpoint = role === 'packer' ? 'packing' : 'delivery';
+  const body: any = {};
+  if (token) body.token = token;
   const res = await fetch(`${API_BASE_URL}/staff/orders/${endpoint}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token })
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error('Failed to fetch staff orders');
   return res.json();
 }
 
-export async function updateStaffOrderStatus(token: string, orderId: string, lifecycle_status: string): Promise<any> {
+export async function updateStaffOrderStatus(token: string | null, orderId: string, lifecycle_status: string): Promise<any> {
+  const headers = await getAuthHeaders();
+  const body: any = { lifecycle_status };
+  if (token) body.token = token;
   const res = await fetch(`${API_BASE_URL}/staff/orders/${orderId}/status`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token, lifecycle_status })
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error('Failed to update staff order status');
   return res.json();

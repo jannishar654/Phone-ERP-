@@ -43,38 +43,61 @@ def validate_staff_access(req: StaffAccessValidateRequest):
     )
 
 class StaffOrderRequest(BaseModel):
-    token: str
+    token: Optional[str] = None
+
+def get_staff_context(token: Optional[str], user_id: Optional[str]):
+    # Try session first
+    if user_id:
+        mem_res = supabase_client.table("shop_members").select("*").eq("user_id", user_id).eq("status", "active").execute()
+        if mem_res.data:
+            member = mem_res.data[0]
+            return {"shop_id": member["shop_id"], "role": member["role"]}
+        # Check owner fallback
+        shop_res = supabase_client.table("shops").select("id").eq("owner_id", user_id).execute()
+        if shop_res.data:
+            return {"shop_id": shop_res.data[0]["id"], "role": "owner"}
+    
+    # Try token fallback
+    if token:
+        access = get_staff_access_by_token(token)
+        if access:
+            return {"shop_id": access["shop_id"], "role": access["role"]}
+            
+    return None
+
+from app.dependencies.auth import get_optional_user_id
 
 @router.post("/orders/packing", response_model=List[OrderResponse])
-def get_packing_orders(req: StaffOrderRequest):
-    access = get_staff_access_by_token(req.token)
-    if not access or access["role"] not in ["owner", "packer"]:
+def get_packing_orders(req: StaffOrderRequest, user_id: Optional[str] = Depends(get_optional_user_id)):
+    ctx = get_staff_context(req.token, user_id)
+    if not ctx or ctx["role"] not in ["owner", "packer"]:
         raise HTTPException(status_code=403, detail="Invalid token or insufficient permissions")
         
-    res = supabase_client.table("orders").select("*, order_items(*)").eq("shop_id", access["shop_id"]).eq("lifecycle_status", "packing").order("created_at", desc=False).execute()
+    res = supabase_client.table("orders").select("*, order_items(*)").eq("shop_id", ctx["shop_id"]).eq("lifecycle_status", "packing").order("created_at", desc=False).execute()
     return res.data if res.data else []
 
 @router.post("/orders/delivery", response_model=List[OrderResponse])
-def get_delivery_orders(req: StaffOrderRequest):
-    access = get_staff_access_by_token(req.token)
-    if not access or access["role"] not in ["owner", "delivery"]:
+def get_delivery_orders(req: StaffOrderRequest, user_id: Optional[str] = Depends(get_optional_user_id)):
+    ctx = get_staff_context(req.token, user_id)
+    if not ctx or ctx["role"] not in ["owner", "delivery"]:
         raise HTTPException(status_code=403, detail="Invalid token or insufficient permissions")
         
-    res = supabase_client.table("orders").select("*, order_items(*)").eq("shop_id", access["shop_id"]).eq("lifecycle_status", "out_for_delivery").order("created_at", desc=False).execute()
+    res = supabase_client.table("orders").select("*, order_items(*)").eq("shop_id", ctx["shop_id"]).eq("lifecycle_status", "out_for_delivery").order("created_at", desc=False).execute()
     return res.data if res.data else []
 
 class UpdateLifecycleStatusStaff(BaseModel):
-    token: str
+    token: Optional[str] = None
     lifecycle_status: str
 
 @router.post("/orders/{order_id}/status", response_model=OrderResponse)
-def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff):
-    access = get_staff_access_by_token(data.token)
-    if not access:
-        raise HTTPException(status_code=401, detail="Invalid token")
+def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff, user_id: Optional[str] = Depends(get_optional_user_id)):
+    ctx = get_staff_context(data.token, user_id)
+    if not ctx:
+        raise HTTPException(status_code=401, detail="Invalid token or session")
         
     new_status = data.lifecycle_status
-    role = access["role"]
+    role = ctx["role"]
+    shop_id = ctx["shop_id"]
     
     # Packer can only move to out_for_delivery
     if role == "packer" and new_status != "out_for_delivery":
@@ -84,7 +107,7 @@ def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff):
     if role == "delivery" and new_status not in ["delivered", "cancelled"]:
         raise HTTPException(status_code=403, detail="Delivery staff can only mark orders as delivered or cancelled")
         
-    res = supabase_client.table("orders").select("*").eq("id", order_id).eq("shop_id", access["shop_id"]).execute()
+    res = supabase_client.table("orders").select("*").eq("id", order_id).eq("shop_id", shop_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Order not found")
         
@@ -141,7 +164,7 @@ def staff_update_order_status(order_id: str, data: UpdateLifecycleStatusStaff):
                 else:
                     supabase_client.table("order_public_links").insert({
                         "order_id": order_id_str,
-                        "shop_id": access["shop_id"],
+                        "shop_id": shop_id,
                         "token_hash": token_hash,
                         "expires_at": expires_at
                     }).execute()

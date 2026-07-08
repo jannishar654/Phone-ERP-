@@ -1,12 +1,18 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authClient } from '@/lib/supabase/client';
 
-export default function SignupPage() {
+function SignupContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const inviteFromUrl = searchParams.get('invite');
+  
+  const [role, setRole] = useState<'owner' | 'staff'>(inviteFromUrl ? 'staff' : 'owner');
+  const [inviteCode, setInviteCode] = useState(inviteFromUrl || '');
+  
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -22,6 +28,11 @@ export default function SignupPage() {
       setError('Passwords do not match.');
       return;
     }
+    
+    if (role === 'staff' && !inviteCode.trim()) {
+      setError('Invite code is required for staff registration.');
+      return;
+    }
 
     setIsLoading(true);
 
@@ -30,8 +41,25 @@ export default function SignupPage() {
       if (authError) {
         setError(authError);
       } else if (user) {
-        router.replace('/dashboard');
-        router.refresh();
+        if (role === 'staff') {
+          try {
+            const { registerStaff } = await import('@/lib/api_access');
+            const res = await registerStaff(inviteCode);
+            let redirectTo = '/dashboard';
+            if (res.role === 'packer') {
+              redirectTo = '/staff/packing';
+            } else if (res.role === 'delivery') {
+              redirectTo = '/staff/delivery';
+            }
+            router.replace(redirectTo);
+            router.refresh();
+          } catch (staffErr: any) {
+            setError(staffErr.message || 'Failed to link staff account. Your account was created, but you need a valid invite.');
+          }
+        } else {
+          router.replace('/dashboard');
+          router.refresh();
+        }
       }
     } catch (err: any) {
       setError('An unexpected error occurred. Please try again.');
@@ -48,16 +76,49 @@ export default function SignupPage() {
             Phone<span className="text-indigo-600">ERP</span>
           </Link>
           <h2 className="text-xl font-bold text-slate-900">Create your account</h2>
-          <p className="text-xs text-slate-500 mt-1">Get started with our AI-powered order management</p>
+          <p className="text-xs text-slate-500 mt-1">Join as an owner or staff member</p>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 rounded-lg bg-red-55/10 border border-red-200 text-red-650 text-sm font-medium">
+          <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-red-650 text-sm font-medium">
             {error}
           </div>
         )}
+        
+        <div className="flex gap-2 mb-6">
+          <button 
+            type="button" 
+            onClick={() => setRole('owner')}
+            className={`flex-1 py-2 text-sm font-semibold rounded-lg border ${role === 'owner' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+          >
+            Owner
+          </button>
+          <button 
+            type="button" 
+            onClick={() => setRole('staff')}
+            className={`flex-1 py-2 text-sm font-semibold rounded-lg border ${role === 'staff' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+          >
+            Staff Member
+          </button>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {role === 'staff' && (
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                Invite Code
+              </label>
+              <input
+                type="text"
+                required
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                className="w-full bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
+                placeholder="Paste your invite code here"
+              />
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
               Full Name
@@ -131,5 +192,13 @@ export default function SignupPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center p-4">Loading...</div>}>
+      <SignupContent />
+    </Suspense>
   );
 }

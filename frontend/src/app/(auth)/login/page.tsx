@@ -23,9 +23,31 @@ function LoginContent() {
       if (authError) {
         setError(authError);
       } else if (user) {
-        const redirectTo = searchParams.get('redirectTo') || '/dashboard';
-        router.replace(redirectTo);
-        router.refresh();
+        try {
+          const { getMe } = await import('@/lib/api_access');
+          const me = await getMe();
+          let redirectTo = '/dashboard';
+          if (me.role === 'packer') {
+            redirectTo = '/staff/packing';
+          } else if (me.role === 'delivery') {
+            redirectTo = '/staff/delivery';
+          } else if (me.role === 'owner') {
+            redirectTo = '/dashboard';
+          }
+          
+          const paramRedirect = searchParams.get('redirectTo');
+          if (paramRedirect) {
+            redirectTo = paramRedirect;
+          }
+          
+          router.replace(redirectTo);
+          router.refresh();
+        } catch (meErr) {
+          console.error("Failed to fetch role", meErr);
+          // Default fallback
+          router.replace('/dashboard');
+          router.refresh();
+        }
       }
     } catch (err: any) {
       setError('An unexpected error occurred. Please try again.');
@@ -42,7 +64,7 @@ function LoginContent() {
             Phone<span className="text-indigo-600">ERP</span>
           </Link>
           <h2 className="text-xl font-bold text-slate-900">Sign in to your account</h2>
-          <p className="text-xs text-slate-500 mt-1">Access with any mock credentials (password 6+ chars)</p>
+          <p className="text-xs text-slate-500 mt-1">Access dashboard or staff portals</p>
         </div>
 
         {error && (

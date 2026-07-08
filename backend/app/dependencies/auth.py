@@ -47,3 +47,15 @@ async def get_current_user_id(credentials: Optional[HTTPAuthorizationCredentials
             detail="Invalid or expired authorization token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+async def get_optional_user_id(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> Optional[str]:
+    if not settings.REQUIRE_AUTH or not credentials:
+        return None
+    try:
+        response = supabase_client.auth.get_user(credentials.credentials)
+        if response and response.user:
+            return response.user.id
+    except:
+        pass
+    return None
+
