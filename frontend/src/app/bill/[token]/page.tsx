@@ -1,17 +1,30 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { getPublicBill } from '@/lib/api_access';
 
-export default function PublicBillPage({ params }: { params: { token: string } }) {
+export default function PublicBillPage() {
+  const params = useParams();
+  const rawToken = params?.token;
+  const token = Array.isArray(rawToken) ? rawToken[0] : rawToken;
+  
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    console.log("Public bill token present:", Boolean(token));
+    
     async function load() {
+      if (!token) {
+        setError('Invalid bill link.');
+        setLoading(false);
+        return;
+      }
+      
       try {
-        const billData = await getPublicBill(params.token);
+        const billData = await getPublicBill(token as string);
         setData(billData);
       } catch (err) {
         setError('Invalid or expired bill link.');
@@ -20,7 +33,7 @@ export default function PublicBillPage({ params }: { params: { token: string } }
       }
     }
     load();
-  }, [params.token]);
+  }, [token]);
 
   if (loading) return <div className="p-8 text-center text-slate-500">Loading your bill...</div>;
   if (error) return <div className="p-8 text-center text-red-500 font-bold">{error}</div>;
