@@ -136,7 +136,9 @@ export async function updateStaffOrderStatus(token: string | null, orderId: stri
 
 // Public API
 export async function getPublicBill(token: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/public/bill/${token}`);
+  const res = await fetch(`${API_BASE_URL}/public/bill/${token}`, {
+    cache: 'no-store'
+  });
   if (!res.ok) throw new Error('Failed to fetch public bill');
   return res.json();
 }

@@ -13,12 +13,12 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   const [role, setRole] = useState<string | null>(null);
   const [isCheckingRole, setIsCheckingRole] = useState(true);
 
-  const isAuthOrLanding = pathname === '/' || pathname === '/login' || pathname === '/signup';
+  const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname.startsWith('/bill/');
 
   useEffect(() => {
     authClient.getUser().then(setUser);
     
-    if (!isAuthOrLanding) {
+    if (!isPublicRoute) {
       setIsCheckingRole(true);
       import('@/lib/api_access').then(({ getMe }) => {
         getMe().then(me => {
@@ -39,14 +39,14 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
     } else {
        setIsCheckingRole(false);
     }
-  }, [pathname, isAuthOrLanding]);
+  }, [pathname, isPublicRoute]);
 
   const handleSignOut = async () => {
     await authClient.signOut();
     router.push('/');
   };
 
-  if (isAuthOrLanding) {
+  if (isPublicRoute) {
     return <div className="min-h-screen w-full bg-white text-slate-900">{children}</div>;
   }
 
