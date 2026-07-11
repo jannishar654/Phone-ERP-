@@ -64,5 +64,17 @@ def update_order_status(order_id: str, update_data: OrderLifecycleUpdate, user_i
     if not update_res.data:
         raise HTTPException(status_code=500, detail="Failed to update order")
         
+    final_order = update_res.data[0]
+    
+    notification_info = {}
+    if new_status == "delivered" and current_status != "delivered":
+        from app.services.delivery_notification_service import send_delivery_notification
+        notification_info = send_delivery_notification(order_id, final_order)
+        
     final_res = supabase_client.table("orders").select("*, order_items(*)").eq("id", order_id).execute()
-    return final_res.data[0]
+    final_data = final_res.data[0]
+    
+    if new_status == "delivered" and notification_info:
+        final_data.update(notification_info)
+        
+    return final_data

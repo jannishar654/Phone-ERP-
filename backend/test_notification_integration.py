@@ -93,8 +93,12 @@ def mock_deps():
     fake_db = FakeSupabase()
     with patch("app.dependencies.auth.supabase_client", fake_db), \
          patch("app.routes.staff.supabase_client", fake_db), \
+         patch("app.routes.orders.supabase_client", fake_db), \
+         patch("app.services.delivery_notification_service.supabase_client", fake_db), \
          patch("app.routes.staff.get_staff_context", return_value={"shop_id": "shop-123", "role": "delivery"}), \
-         patch("app.routes.staff.get_optional_user_id", return_value="user-123"):
+         patch("app.routes.staff.get_optional_user_id", return_value="user-123"), \
+         patch("app.routes.orders.get_user_shop_id", return_value="shop-123"), \
+         patch("app.dependencies.auth.get_current_user_id", return_value="user-123"):
         yield fake_db
 
 @patch("app.config.settings.settings.REQUIRE_AUTH", False)
@@ -151,8 +155,12 @@ def test_whatsapp_order_only_customer_phone(mock_send):
     fake_db = FakeSupabase(mock_phone=None) # No channel phone
     with patch("app.dependencies.auth.supabase_client", fake_db), \
          patch("app.routes.staff.supabase_client", fake_db), \
+         patch("app.routes.orders.supabase_client", fake_db), \
+         patch("app.services.delivery_notification_service.supabase_client", fake_db), \
          patch("app.routes.staff.get_staff_context", return_value={"shop_id": "shop-123", "role": "delivery"}), \
-         patch("app.routes.staff.get_optional_user_id", return_value="user-123"):
+         patch("app.routes.staff.get_optional_user_id", return_value="user-123"), \
+         patch("app.routes.orders.get_user_shop_id", return_value="shop-123"), \
+         patch("app.dependencies.auth.get_current_user_id", return_value="user-123"):
         
         response = client.post("/staff/orders/order-1/status", json={"lifecycle_status": "delivered"})
         assert response.status_code == 200
@@ -199,8 +207,12 @@ def test_whatsapp_missing_phone_does_not_rollback():
     fake_db = FakeSupabase(mock_phone=None)
     with patch("app.dependencies.auth.supabase_client", fake_db), \
          patch("app.routes.staff.supabase_client", fake_db), \
+         patch("app.routes.orders.supabase_client", fake_db), \
+         patch("app.services.delivery_notification_service.supabase_client", fake_db), \
          patch("app.routes.staff.get_staff_context", return_value={"shop_id": "shop-123", "role": "delivery"}), \
-         patch("app.routes.staff.get_optional_user_id", return_value="user-123"):
+         patch("app.routes.staff.get_optional_user_id", return_value="user-123"), \
+         patch("app.routes.orders.get_user_shop_id", return_value="shop-123"), \
+         patch("app.dependencies.auth.get_current_user_id", return_value="user-123"):
         
         original_select = FakeTable.select
         def mock_select(self, *args, **kwargs):
@@ -279,3 +291,80 @@ def test_twilio_whatsapp_normalization(mock_client_class):
         to="whatsapp:+919876543210"
     )
 
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", False)
+@patch("app.services.twilio_whatsapp_service.twilio_whatsapp_service.send_whatsapp_message", return_value={"sent": True, "sid": "SM123", "status": "sent", "error": None})
+def test_owner_marks_delivered_sends_whatsapp(mock_send, mock_deps):
+    response = client.patch("/orders/order-1/status", json={"lifecycle_status": "delivered"})
+    assert response.status_code == 200
+    resp_json = response.json()
+    assert resp_json["notification_attempted"] is True
+    assert resp_json["notification_sent"] is True
+    assert resp_json["notification_channel"] == "whatsapp"
+    assert resp_json["notification_sid"] == "SM123"
+    
+    mock_send.assert_called_once()
+    args, _ = mock_send.call_args
+    assert args[0] == "9876543210"
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", False)
+@patch("app.services.telegram_service.telegram_service.send_message")
+def test_owner_marks_delivered_sends_telegram(mock_send, mock_deps):
+    original_select = FakeTable.select
+    def mock_select(self, *args, **kwargs):
+        if self.name == "action_cards":
+            return FakeQuery([{"source": "telegram"}])
+        return original_select(self, *args, **kwargs)
+        
+    with patch.object(FakeTable, 'select', mock_select):
+        response = client.patch("/orders/order-1/status", json={"lifecycle_status": "delivered"})
+        assert response.status_code == 200
+        assert response.json()["notification_attempted"] is True
+        assert response.json()["notification_sent"] is True
+        assert response.json()["notification_channel"] == "telegram"
+        mock_send.assert_called_once()
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", False)
+@patch("app.services.twilio_whatsapp_service.twilio_whatsapp_service.send_whatsapp_message", return_value={"sent": False, "error": "API Error"})
+def test_owner_notification_failure_does_not_rollback(mock_send, mock_deps):
+    response = client.patch("/orders/order-1/status", json={"lifecycle_status": "delivered"})
+    assert response.status_code == 200
+    resp_json = response.json()
+    assert resp_json["lifecycle_status"] == "delivered"
+    assert resp_json["notification_attempted"] is True
+    assert resp_json["notification_sent"] is False
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", False)
+@patch("app.services.twilio_whatsapp_service.twilio_whatsapp_service.send_whatsapp_message")
+def test_non_delivered_owner_status_update_does_not_send(mock_send, mock_deps):
+    original_select = FakeTable.select
+    def mock_select(self, *args, **kwargs):
+        if self.name == "orders":
+            p = dict(ORDER_PAYLOAD)
+            p["lifecycle_status"] = "out_for_delivery" if (args and "order_items" in args[0]) else "packing"
+            return FakeQuery([p])
+        return original_select(self, *args, **kwargs)
+        
+    with patch.object(FakeTable, 'select', mock_select):
+        response = client.patch("/orders/order-1/status", json={"lifecycle_status": "out_for_delivery"})
+        assert response.status_code == 200
+        assert response.json()["lifecycle_status"] == "out_for_delivery"
+        assert response.json().get("notification_attempted") is None
+        mock_send.assert_not_called()
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", False)
+@patch("app.services.twilio_whatsapp_service.twilio_whatsapp_service.send_whatsapp_message")
+def test_already_delivered_does_not_duplicate_send(mock_send, mock_deps):
+    original_select = FakeTable.select
+    def mock_select(self, *args, **kwargs):
+        if self.name == "orders":
+            p = dict(ORDER_PAYLOAD)
+            p["lifecycle_status"] = "delivered"
+            return FakeQuery([p])
+        return original_select(self, *args, **kwargs)
+        
+    with patch.object(FakeTable, 'select', mock_select):
+        response = client.patch("/orders/order-1/status", json={"lifecycle_status": "delivered"})
+        assert response.status_code == 400
+        assert "notification_attempted" not in response.json()
+        mock_send.assert_not_called()
