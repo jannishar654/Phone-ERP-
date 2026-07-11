@@ -178,10 +178,10 @@ def test_public_bill_link_read_only(mock_supabase):
     response = client.get("/public/bill/sometoken")
     assert response.status_code == 200
     data = response.json()
-    assert "order" in data
-    assert data["order"]["id"] == "order123"
-    assert "shop_info" in data
-    assert data["shop_info"]["name"] == "Test Shop"
+    assert "order_id" in data
+    assert data["order_id"] == "order123"
+    assert "shop_name" in data
+    assert data["shop_name"] == "Test Shop"
 
 def test_public_bill_rejects_missing_token(mock_supabase):
     mock_sc = mock_supabase["public"]
