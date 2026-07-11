@@ -163,7 +163,6 @@ function CustomDateTimePicker({ value, onChange }: CustomDateTimePickerProps) {
   );
 }
 
-// Main content wrapping the search params logic
 function ActionCardContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -173,6 +172,12 @@ function ActionCardContent() {
   const [selectedCard, setSelectedCard] = useState<ActionCard | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<{message: string, type: 'success' | 'error' | 'warning'} | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'error') => {
+    setToastMessage({ message, type });
+    setTimeout(() => setToastMessage(null), 5000);
+  };
 
   // Edit states
   const [isEditing, setIsEditing] = useState(false);
@@ -321,7 +326,7 @@ function ActionCardContent() {
     if (status === 'approved') {
       const warning = getCardValidationWarning(selectedCard);
       if (warning) {
-        alert(`Cannot approve card: ${warning}`);
+        showToast(`Cannot approve card: ${warning}`, 'warning');
         return;
       }
     }
@@ -331,7 +336,7 @@ function ActionCardContent() {
       setSelectedCard(updated);
       setCards(cards.map(c => c.id === selectedCard.id ? updated : c));
     } catch (err) {
-      alert('Failed to update status on the backend.');
+      showToast('Failed to update status on the backend.', 'error');
     }
   };
 
@@ -353,7 +358,7 @@ function ActionCardContent() {
       setSelectedCard(updated);
       setCards(cards.map(c => c.id === selectedCard.id ? updated : c));
     } catch (err) {
-      alert('Failed to update item resolution on the backend.');
+      showToast('Failed to update item resolution on the backend.', 'error');
     }
   };
 
@@ -361,10 +366,10 @@ function ActionCardContent() {
     if (!selectedCard) return;
     try {
       await convertActionCardToOrder(selectedCard.id);
-      alert('Order successfully generated!');
+      showToast('Final order generated successfully.', 'success');
       router.push('/orders');
     } catch (err: any) {
-      alert('Failed to convert to order: ' + err.message);
+      showToast('Could not generate final order. Please try again.', 'error');
     }
   };
 
@@ -423,7 +428,7 @@ function ActionCardContent() {
         const checkTime = new Date();
         checkTime.setMinutes(checkTime.getMinutes() - 5);
         if (selectedDate < checkTime) {
-          alert('Warning: The selected delivery date and time is in the past. Saving anyway.');
+          showToast('Warning: The selected delivery date and time is in the past. Saving anyway.', 'warning');
         }
       }
 
@@ -438,7 +443,7 @@ function ActionCardContent() {
       setCards(cards.map(c => c.id === selectedCard.id ? updated : c));
       setIsEditing(false);
     } catch (err) {
-      alert('Failed to save changes to the backend.');
+      showToast('Failed to save changes to the backend.', 'error');
     }
   };
 
@@ -467,7 +472,7 @@ function ActionCardContent() {
       setSelectedCard(newCard);
       router.replace(`/action-card?id=${newCard.id}`);
     } catch (err) {
-      alert('Failed to simulate extraction. Ensure FastAPI server is running.');
+      showToast('Failed to simulate extraction. Ensure FastAPI server is running.', 'error');
     } finally {
       setIsExtracting(false);
     }
@@ -475,6 +480,11 @@ function ActionCardContent() {
 
   return (
     <div className="space-y-4">
+      {toastMessage && (
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-xl font-bold text-sm ${toastMessage.type === 'success' ? 'bg-emerald-600 text-white' : toastMessage.type === 'error' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'}`}>
+          {toastMessage.message}
+        </div>
+      )}
       {/* Title */}
       <div>
         <h1 className="text-2xl font-extrabold text-slate-900">Action Cards Board</h1>
@@ -587,7 +597,7 @@ function ActionCardContent() {
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  alert(`Action Card is ${card.status.toUpperCase()}. Approved or Converted cards cannot be deleted to preserve data integrity.`);
+                                  showToast(`Action Card is ${card.status.toUpperCase()}. Approved or Converted cards cannot be deleted to preserve data integrity.`, 'warning');
                                 }}
                                 className="w-full text-left px-3 py-1.5 text-slate-300 font-bold flex items-center gap-1.5 cursor-not-allowed border-t border-slate-100"
                                 title="Approved or converted cards cannot be deleted"
@@ -1132,7 +1142,7 @@ function ActionCardContent() {
                       router.replace(`/action-card?${params.toString()}`, { scroll: false });
                     }
                   } catch (err) {
-                    alert('Failed to delete Action Card.');
+                    showToast('Failed to delete Action Card.', 'error');
                   }
                 }}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-all shadow-sm"

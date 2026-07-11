@@ -112,6 +112,8 @@ class OrderService:
                 "id": order_id,
                 "shop_id": shop_id,
                 "customer_id": action_card.get("customer_id"),
+                "customer_name": action_card.get("customer_name"),
+                "customer_phone": action_card.get("customer_phone"),
                 "action_card_id": action_card_id,
                 "total_amount": total_amount,
                 "status": status,

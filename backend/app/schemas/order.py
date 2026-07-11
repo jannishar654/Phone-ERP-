@@ -25,6 +25,8 @@ class OrderItemResponse(OrderItemBase):
 class OrderBase(BaseModel):
     shop_id: str
     customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
     action_card_id: Optional[str] = None
     total_amount: float = Field(default=0.0, ge=0.0)
     status: str = "pending"

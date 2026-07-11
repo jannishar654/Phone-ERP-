@@ -59,15 +59,21 @@ def get_customer_bill(token: str):
     
     order_data = order_res.data[0]
     
-    # We might need to fetch customer details if order_data has customer_id, but the user requested safe fields.
-    # We can fetch customer if customer_id is present.
-    customer_name = None
-    customer_phone = None
-    if order_data.get("customer_id"):
-        cust_res = supabase_client.table("customers").select("name, phone").eq("id", order_data["customer_id"]).execute()
-        if cust_res.data:
-            customer_name = cust_res.data[0].get("name")
-            customer_phone = cust_res.data[0].get("phone")
+    customer_name = order_data.get("customer_name")
+    customer_phone = order_data.get("customer_phone")
+    
+    if not customer_name or not customer_phone:
+        if order_data.get("customer_id"):
+            cust_res = supabase_client.table("customers").select("name, phone").eq("id", order_data["customer_id"]).execute()
+            if cust_res.data:
+                customer_name = customer_name or cust_res.data[0].get("name")
+                customer_phone = customer_phone or cust_res.data[0].get("phone")
+                
+        if (not customer_name or not customer_phone) and order_data.get("action_card_id"):
+            ac_res = supabase_client.table("action_cards").select("customer_name, customer_phone").eq("id", order_data["action_card_id"]).execute()
+            if ac_res.data:
+                customer_name = customer_name or ac_res.data[0].get("customer_name")
+                customer_phone = customer_phone or ac_res.data[0].get("customer_phone")
     
     return PublicBillResponse(
         shop_name=shop_info.get("name", "Store"),
