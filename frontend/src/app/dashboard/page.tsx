@@ -5,32 +5,29 @@ import Link from 'next/link';
 import { getActionCards, getOrders } from '@/lib/api';
 import { ActionCard } from '@/types';
 import MetricCard from '@/components/dashboard/MetricCard';
+import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 
 export default function Dashboard() {
   const [cards, setCards] = useState<ActionCard[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function loadDashboardData() {
-      try {
-        const [cardsData, ordersData] = await Promise.all([
-          getActionCards(),
-          getOrders().catch(() => []) // fallback safely
-        ]);
-        setCards(cardsData);
-        setOrders(ordersData);
-      } catch (err: any) {
-        setError('Failed to fetch dashboard metrics from backend.');
-        console.error(err);
-      } finally {
-        setIsLoading(false);
-      }
+  const { lastUpdated, manualRefresh } = useAutoRefresh(async (isSilent) => {
+    try {
+      if (!isSilent && cards.length === 0 && orders.length === 0) setIsLoading(true);
+      const [cardsData, ordersData] = await Promise.all([
+        getActionCards(),
+        getOrders().catch(() => []) // fallback safely
+      ]);
+      setCards(cardsData);
+      setOrders(ordersData);
+    } catch (err: any) {
+      if (!isSilent) setError('Failed to fetch dashboard metrics from backend.');
+      else console.error("Background refresh failed:", err);
+    } finally {
+      if (!isSilent) setIsLoading(false);
     }
-
-    loadDashboardData();
-  }, []);
+  }, 10000);
 
   const pendingActionCards = cards.filter(c => c.status.toLowerCase() === 'pending').length;
   
@@ -54,11 +51,19 @@ export default function Dashboard() {
   return (
     <div className="space-y-8">
       {/* Title section */}
-      <div>
-        <h1 className="text-2xl font-extrabold text-slate-900">Dashboard Overview</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Monitor your customer phone transcriptions, manual order submissions, and ERP dispatch workflow.
-        </p>
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-900">Dashboard Overview</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Monitor your customer phone transcriptions, manual order submissions, and ERP dispatch workflow.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {lastUpdated && <span className="text-xs text-slate-500 hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>}
+          <button onClick={manualRefresh} className="text-xs px-3 py-1.5 bg-white border border-slate-200 text-slate-700 font-semibold rounded-lg hover:bg-slate-50 transition-colors shadow-sm">
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Metrics Grid */}

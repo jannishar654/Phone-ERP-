@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { getStaffOrders, updateStaffOrderStatus, validateStaffToken, getMe } from '@/lib/api_access';
+import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 
 function PackingDashboard() {
   const searchParams = useSearchParams();
@@ -13,25 +14,21 @@ function PackingDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [logoutVisible, setLogoutVisible] = useState(false);
-
-  useEffect(() => {
-    async function load() {
-      try {
+  const { lastUpdated, manualRefresh, silentRefresh } = useAutoRefresh(async (isSilent) => {
+    try {
+      if (!isSilent) {
+        if (orders.length === 0) setLoading(true);
         if (token) {
-          // Legacy URL token flow
           const val = await validateStaffToken(token);
           if (!val.valid || (val.role !== 'packer' && val.role !== 'owner')) {
             setError('Invalid or expired token.');
-            setLoading(false);
             return;
           }
         } else {
-          // Session flow
           try {
             const me = await getMe();
             if (me.role !== 'packer' && me.role !== 'owner') {
               setError('Insufficient permissions.');
-              setLoading(false);
               return;
             }
             setLogoutVisible(true);
@@ -41,22 +38,23 @@ function PackingDashboard() {
             return;
           }
         }
-        
-        const data = await getStaffOrders(token, 'packer');
-        setOrders(data);
-      } catch (err) {
-        setError('Failed to load packing orders.');
-      } finally {
-        setLoading(false);
       }
+      
+      const data = await getStaffOrders(token, 'packer');
+      setOrders(data);
+    } catch (err) {
+      if (!isSilent) setError('Failed to load packing orders.');
+      else console.error("Background refresh failed:", err);
+    } finally {
+      if (!isSilent) setLoading(false);
     }
-    load();
-  }, [token, router]);
+  }, 10000);
 
   const handleMarkOutForDelivery = async (orderId: string) => {
     try {
       await updateStaffOrderStatus(token, orderId, 'out_for_delivery');
       setOrders(orders.filter(o => o.id !== orderId));
+      silentRefresh();
     } catch (err) {
       alert('Failed to update order status');
     }
@@ -91,6 +89,10 @@ function PackingDashboard() {
           <p className="text-sm text-slate-500 mt-1">Orders ready to be packed.</p>
         </div>
         <div className="flex items-center gap-4">
+          {lastUpdated && <span className="text-xs text-slate-500 hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>}
+          <button onClick={manualRefresh} className="text-xs font-semibold px-3 py-1.5 bg-slate-100 text-slate-700 rounded hover:bg-slate-200 transition-colors">
+            Refresh
+          </button>
           <div className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
             Packer Mode
           </div>

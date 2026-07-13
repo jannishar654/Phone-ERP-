@@ -10,8 +10,19 @@ app = FastAPI(
     version="1.0.0"
 )
 
+from fastapi import Request
+
 # CORS setup
 origins = settings.CORS_ORIGINS
+
+@app.middleware("http")
+async def add_cache_control_header(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/orders") or path.startswith("/action-cards") or path.startswith("/staff/orders"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 app.add_middleware(
     CORSMiddleware,

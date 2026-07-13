@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { getStaffOrders, updateStaffOrderStatus, validateStaffToken, getMe } from '@/lib/api_access';
+import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 
 function DeliveryDashboard() {
   const searchParams = useSearchParams();
@@ -13,15 +14,14 @@ function DeliveryDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [logoutVisible, setLogoutVisible] = useState(false);
-
-  useEffect(() => {
-    async function load() {
-      try {
+  const { lastUpdated, manualRefresh, silentRefresh } = useAutoRefresh(async (isSilent) => {
+    try {
+      if (!isSilent) {
+        if (orders.length === 0) setLoading(true);
         if (token) {
           const val = await validateStaffToken(token);
           if (!val.valid || (val.role !== 'delivery' && val.role !== 'owner')) {
             setError('Invalid or expired token.');
-            setLoading(false);
             return;
           }
         } else {
@@ -29,7 +29,6 @@ function DeliveryDashboard() {
             const me = await getMe();
             if (me.role !== 'delivery' && me.role !== 'owner') {
               setError('Insufficient permissions.');
-              setLoading(false);
               return;
             }
             setLogoutVisible(true);
@@ -39,22 +38,23 @@ function DeliveryDashboard() {
             return;
           }
         }
-        
-        const data = await getStaffOrders(token, 'delivery');
-        setOrders(data);
-      } catch (err) {
-        setError('Failed to load delivery orders.');
-      } finally {
-        setLoading(false);
       }
+      
+      const data = await getStaffOrders(token, 'delivery');
+      setOrders(data);
+    } catch (err) {
+      if (!isSilent) setError('Failed to load delivery orders.');
+      else console.error("Background refresh failed:", err);
+    } finally {
+      if (!isSilent) setLoading(false);
     }
-    load();
-  }, [token, router]);
+  }, 10000);
 
   const handleMarkDelivered = async (orderId: string) => {
     try {
       await updateStaffOrderStatus(token, orderId, 'delivered');
       setOrders(orders.filter(o => o.id !== orderId));
+      silentRefresh();
     } catch (err) {
       alert('Failed to update order status');
     }
@@ -88,6 +88,10 @@ function DeliveryDashboard() {
           <p className="text-sm text-slate-500 mt-1">Orders ready for delivery.</p>
         </div>
         <div className="flex items-center gap-4">
+          {lastUpdated && <span className="text-xs text-slate-500 hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>}
+          <button onClick={manualRefresh} className="text-xs font-semibold px-3 py-1.5 bg-slate-100 text-slate-700 rounded hover:bg-slate-200 transition-colors">
+            Refresh
+          </button>
           <div className="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
             Delivery Mode
           </div>

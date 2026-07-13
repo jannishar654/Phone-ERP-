@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { getOrders, updateOrderLifecycleStatus } from "@/lib/api";
+import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 
 interface OrderItem {
   id: string;
@@ -31,27 +32,25 @@ export default function OrdersPage() {
   const [activeTab, setActiveTab] = useState<string>("packing");
   const [updating, setUpdating] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchOrders();
-  }, []);
-
-  const fetchOrders = async () => {
+  const { lastUpdated, manualRefresh, silentRefresh } = useAutoRefresh(async (isSilent) => {
     try {
-      setLoading(true);
+      if (!isSilent && orders.length === 0) setLoading(true);
       const data = await getOrders();
       setOrders(data || []);
     } catch (err: any) {
-      setError(err.message);
+      if (!isSilent) setError(err.message);
+      else console.error("Background refresh failed:", err);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
-  };
+  }, 10000);
 
   const handleUpdateStatus = async (orderId: string, newStatus: string) => {
     try {
       setUpdating(orderId);
       const updated = await updateOrderLifecycleStatus(orderId, newStatus);
       setOrders(orders.map(o => o.id === orderId ? { ...o, lifecycle_status: updated.lifecycle_status } : o));
+      silentRefresh();
     } catch (err: any) {
       alert(`Failed to update: ${err.message}`);
     } finally {
@@ -70,12 +69,18 @@ export default function OrdersPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <header className="bg-white border-b px-4 py-3 sticky top-0 z-10">
+      <header className="bg-white border-b px-4 py-3 sticky top-0 z-10 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <Link href="/dashboard" className="p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-600 transition-colors text-sm font-bold">
             &larr; Back
           </Link>
           <h1 className="text-lg font-semibold text-gray-900">Final Orders / Bills</h1>
+        </div>
+        <div className="flex items-center gap-3">
+          {lastUpdated && <span className="text-xs text-gray-500 hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>}
+          <button onClick={manualRefresh} className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 font-semibold rounded hover:bg-gray-200 transition-colors">
+            Refresh
+          </button>
         </div>
       </header>
 
