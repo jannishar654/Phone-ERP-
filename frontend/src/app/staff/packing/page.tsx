@@ -14,7 +14,7 @@ function PackingDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [logoutVisible, setLogoutVisible] = useState(false);
-  const { lastUpdated, manualRefresh, silentRefresh } = useAutoRefresh(async (isSilent) => {
+  const { lastUpdated, refreshError, manualRefresh, silentRefresh } = useAutoRefresh(async (isSilent) => {
     try {
       if (!isSilent) {
         if (orders.length === 0) setLoading(true);
@@ -42,9 +42,9 @@ function PackingDashboard() {
       
       const data = await getStaffOrders(token, 'packer');
       setOrders(data);
-    } catch (err) {
-      if (!isSilent) setError('Failed to load packing orders.');
-      else console.error("Background refresh failed:", err);
+    } catch (err: any) {
+      if (!isSilent && orders.length === 0) setError('Failed to load packing orders.');
+      else throw err;
     } finally {
       if (!isSilent) setLoading(false);
     }
@@ -89,7 +89,8 @@ function PackingDashboard() {
           <p className="text-sm text-slate-500 mt-1">Orders ready to be packed.</p>
         </div>
         <div className="flex items-center gap-4">
-          {lastUpdated && <span className="text-xs text-slate-500 hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>}
+          {refreshError && <span className="text-xs text-red-500 hidden sm:inline" title={refreshError}>Unable to refresh. Showing previously loaded data.</span>}
+          {lastUpdated && !refreshError && <span className="text-xs text-slate-500 hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>}
           <button onClick={manualRefresh} className="text-xs font-semibold px-3 py-1.5 bg-slate-100 text-slate-700 rounded hover:bg-slate-200 transition-colors">
             Refresh
           </button>

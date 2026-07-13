@@ -32,14 +32,14 @@ export default function OrdersPage() {
   const [activeTab, setActiveTab] = useState<string>("packing");
   const [updating, setUpdating] = useState<string | null>(null);
 
-  const { lastUpdated, manualRefresh, silentRefresh } = useAutoRefresh(async (isSilent) => {
+  const { lastUpdated, refreshError, manualRefresh, silentRefresh } = useAutoRefresh(async (isSilent) => {
     try {
       if (!isSilent && orders.length === 0) setLoading(true);
       const data = await getOrders();
       setOrders(data || []);
     } catch (err: any) {
-      if (!isSilent) setError(err.message);
-      else console.error("Background refresh failed:", err);
+      if (!isSilent && orders.length === 0) setError(err.message);
+      else throw err;
     } finally {
       if (!isSilent) setLoading(false);
     }
@@ -77,7 +77,8 @@ export default function OrdersPage() {
           <h1 className="text-lg font-semibold text-gray-900">Final Orders / Bills</h1>
         </div>
         <div className="flex items-center gap-3">
-          {lastUpdated && <span className="text-xs text-gray-500 hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>}
+          {refreshError && <span className="text-xs text-red-500 hidden sm:inline" title={refreshError}>Unable to refresh. Showing previously loaded data.</span>}
+          {lastUpdated && !refreshError && <span className="text-xs text-gray-500 hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>}
           <button onClick={manualRefresh} className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 font-semibold rounded hover:bg-gray-200 transition-colors">
             Refresh
           </button>

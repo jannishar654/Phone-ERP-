@@ -12,7 +12,7 @@ export default function Dashboard() {
   const [orders, setOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { lastUpdated, manualRefresh } = useAutoRefresh(async (isSilent) => {
+  const { lastUpdated, refreshError, manualRefresh } = useAutoRefresh(async (isSilent) => {
     try {
       if (!isSilent && cards.length === 0 && orders.length === 0) setIsLoading(true);
       const [cardsData, ordersData] = await Promise.all([
@@ -22,8 +22,11 @@ export default function Dashboard() {
       setCards(cardsData);
       setOrders(ordersData);
     } catch (err: any) {
-      if (!isSilent) setError('Failed to fetch dashboard metrics from backend.');
-      else console.error("Background refresh failed:", err);
+      if (!isSilent && cards.length === 0 && orders.length === 0) {
+        setError('Failed to fetch dashboard metrics from backend.');
+      } else {
+        throw err;
+      }
     } finally {
       if (!isSilent) setIsLoading(false);
     }
@@ -59,7 +62,8 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {lastUpdated && <span className="text-xs text-slate-500 hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>}
+          {refreshError && <span className="text-xs text-red-500 hidden sm:inline" title={refreshError}>Unable to refresh. Showing previously loaded data.</span>}
+          {lastUpdated && !refreshError && <span className="text-xs text-slate-500 hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>}
           <button onClick={manualRefresh} className="text-xs px-3 py-1.5 bg-white border border-slate-200 text-slate-700 font-semibold rounded-lg hover:bg-slate-50 transition-colors shadow-sm">
             Refresh
           </button>

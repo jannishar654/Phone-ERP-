@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 
 export function useAutoRefresh(callback: (isSilent: boolean) => Promise<void>, intervalMs: number = 10000) {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const isFetchingRef = useRef(false);
   const callbackRef = useRef(callback);
 
@@ -15,6 +16,9 @@ export function useAutoRefresh(callback: (isSilent: boolean) => Promise<void>, i
     try {
       await callbackRef.current(isSilent);
       setLastUpdated(new Date());
+      setRefreshError(null);
+    } catch (err: any) {
+      setRefreshError(err.message || 'Background refresh failed');
     } finally {
       isFetchingRef.current = false;
     }
@@ -58,5 +62,5 @@ export function useAutoRefresh(callback: (isSilent: boolean) => Promise<void>, i
   const manualRefresh = () => fetchWithGuard(false);
   const silentRefresh = () => fetchWithGuard(true);
 
-  return { lastUpdated, manualRefresh, silentRefresh };
+  return { lastUpdated, refreshError, manualRefresh, silentRefresh };
 }
