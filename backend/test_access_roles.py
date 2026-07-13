@@ -411,3 +411,96 @@ def test_delivery_cannot_mark_packing(mock_supabase):
     
     assert response.status_code == 403
     assert "Delivery staff can only mark orders as delivered or cancelled" in response.json()["detail"]
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", True)
+def test_packer_gets_packing_orders_for_own_shop(mock_supabase):
+    mock_sc = mock_supabase["staff"]
+    
+    def mock_table_select(table_name):
+        mock_obj = MagicMock()
+        if table_name == "shop_members":
+            mock_obj.select().eq().eq().execute.return_value = MagicMock(data=[{
+                "shop_id": "shop123",
+                "role": "packer"
+            }])
+        elif table_name == "orders":
+            # Simulate returning orders for shop123
+            mock_obj.select().eq().eq().order().execute.return_value = MagicMock(data=[{
+                "id": "order123", "shop_id": "shop123", "lifecycle_status": "packing",
+                "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
+            }])
+        return mock_obj
+    mock_sc.table.side_effect = mock_table_select
+    
+    response = client.post("/staff/orders/packing", json={"token": None}, headers={"Authorization": "Bearer session_token"})
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    assert response.json()[0]["id"] == "order123"
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", True)
+def test_owner_cannot_access_packer_dashboard(mock_supabase):
+    mock_sc = mock_supabase["staff"]
+    
+    def mock_table_select(table_name):
+        mock_obj = MagicMock()
+        if table_name == "shop_members":
+            # Owner has no shop_members row
+            mock_obj.select().eq().eq().execute.return_value = MagicMock(data=[])
+        elif table_name == "shops":
+            mock_obj.select().eq().execute.return_value = MagicMock(data=[{"id": "shop123"}])
+        return mock_obj
+    mock_sc.table.side_effect = mock_table_select
+    
+    response = client.post("/staff/orders/packing", json={"token": None}, headers={"Authorization": "Bearer session_token"})
+    assert response.status_code == 403
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", True)
+def test_delivery_cannot_access_packer_dashboard(mock_supabase):
+    mock_sc = mock_supabase["staff"]
+    
+    def mock_table_select(table_name):
+        mock_obj = MagicMock()
+        if table_name == "shop_members":
+            mock_obj.select().eq().eq().execute.return_value = MagicMock(data=[{
+                "shop_id": "shop123",
+                "role": "delivery"
+            }])
+        return mock_obj
+    mock_sc.table.side_effect = mock_table_select
+    
+    response = client.post("/staff/orders/packing", json={"token": None}, headers={"Authorization": "Bearer session_token"})
+    assert response.status_code == 403
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", True)
+def test_packer_cannot_access_delivery_dashboard(mock_supabase):
+    mock_sc = mock_supabase["staff"]
+    
+    def mock_table_select(table_name):
+        mock_obj = MagicMock()
+        if table_name == "shop_members":
+            mock_obj.select().eq().eq().execute.return_value = MagicMock(data=[{
+                "shop_id": "shop123",
+                "role": "packer"
+            }])
+        return mock_obj
+    mock_sc.table.side_effect = mock_table_select
+    
+    response = client.post("/staff/orders/delivery", json={"token": None}, headers={"Authorization": "Bearer session_token"})
+    assert response.status_code == 403
+
+@patch("app.config.settings.settings.REQUIRE_AUTH", True)
+def test_inactive_member_rejected(mock_supabase):
+    mock_sc = mock_supabase["staff"]
+    
+    def mock_table_select(table_name):
+        mock_obj = MagicMock()
+        if table_name == "shop_members":
+            # No active membership found
+            mock_obj.select().eq().eq().execute.return_value = MagicMock(data=[])
+        elif table_name == "shops":
+            mock_obj.select().eq().execute.return_value = MagicMock(data=[])
+        return mock_obj
+    mock_sc.table.side_effect = mock_table_select
+    
+    response = client.post("/staff/orders/packing", json={"token": None}, headers={"Authorization": "Bearer session_token"})
+    assert response.status_code == 403

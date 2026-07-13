@@ -67,18 +67,6 @@ function DeliveryDashboard() {
   };
 
   if (loading) return <div className="p-8 text-center text-slate-500">Loading...</div>;
-  if (error) {
-    return (
-      <div className="min-h-screen bg-slate-50 p-8 flex flex-col items-center justify-center">
-        <div className="bg-white p-8 rounded-xl shadow-sm text-center border border-slate-200">
-          <p className="text-red-500 font-bold mb-4">{error}</p>
-          <button onClick={() => router.push('/login')} className="px-4 py-2 bg-indigo-600 text-white rounded font-semibold text-sm">
-            Go to Login
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-6">
@@ -104,7 +92,14 @@ function DeliveryDashboard() {
         </div>
       </div>
 
-      {orders.length === 0 ? (
+      {error ? (
+        <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-lg flex justify-between items-center">
+          <span className="font-semibold">{error}</span>
+          <button onClick={() => router.push('/login')} className="px-3 py-1.5 bg-red-600 text-white rounded text-sm font-bold hover:bg-red-700">
+            Go to Login
+          </button>
+        </div>
+      ) : orders.length === 0 ? (
         <div className="text-center py-12 text-slate-500">No orders currently out for delivery.</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

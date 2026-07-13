@@ -52,10 +52,6 @@ def get_staff_context(token: Optional[str], user_id: Optional[str]):
         if mem_res.data:
             member = mem_res.data[0]
             return {"shop_id": member["shop_id"], "role": member["role"]}
-        # Check owner fallback
-        shop_res = supabase_client.table("shops").select("id").eq("owner_id", user_id).execute()
-        if shop_res.data:
-            return {"shop_id": shop_res.data[0]["id"], "role": "owner"}
     
     # Try token fallback
     if token:
@@ -70,7 +66,7 @@ from app.dependencies.auth import get_optional_user_id
 @router.post("/orders/packing", response_model=List[OrderResponse])
 def get_packing_orders(req: StaffOrderRequest, user_id: Optional[str] = Depends(get_optional_user_id)):
     ctx = get_staff_context(req.token, user_id)
-    if not ctx or ctx["role"] not in ["owner", "packer"]:
+    if not ctx or ctx["role"] != "packer":
         raise HTTPException(status_code=403, detail="Invalid token or insufficient permissions")
         
     res = supabase_client.table("orders").select("*, order_items(*)").eq("shop_id", ctx["shop_id"]).eq("lifecycle_status", "packing").order("created_at", desc=False).execute()
@@ -79,7 +75,7 @@ def get_packing_orders(req: StaffOrderRequest, user_id: Optional[str] = Depends(
 @router.post("/orders/delivery", response_model=List[OrderResponse])
 def get_delivery_orders(req: StaffOrderRequest, user_id: Optional[str] = Depends(get_optional_user_id)):
     ctx = get_staff_context(req.token, user_id)
-    if not ctx or ctx["role"] not in ["owner", "delivery"]:
+    if not ctx or ctx["role"] != "delivery":
         raise HTTPException(status_code=403, detail="Invalid token or insufficient permissions")
         
     res = supabase_client.table("orders").select("*, order_items(*)").eq("shop_id", ctx["shop_id"]).eq("lifecycle_status", "out_for_delivery").order("created_at", desc=False).execute()
