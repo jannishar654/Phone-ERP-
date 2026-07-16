@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     # Public Bill Configuration
     FRONTEND_PUBLIC_BASE_URL: str = "http://localhost:3000"
     BILL_LINK_SIGNING_SECRET: str = "default-secret-change-in-production"
+    CUSTOMER_PORTAL_SIGNING_SECRET: Optional[str] = None
     
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

@@ -97,17 +97,17 @@ def future(hours=1):
     return (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
 
 
-def test_magic_link_stores_hash_only_and_revokes_previous_after_insert():
+def test_customer_access_link_is_stable_and_stores_hash_only():
     db = FakeDb(
         {
             ("rpc:issue_customer_portal_magic_link", "rpc"): [["new-link"]],
         }
     )
     with patch(
-        "app.services.customer_portal_service.secrets.token_urlsafe",
+        "app.services.customer_portal_service.generate_deterministic_customer_portal_token",
         return_value="private-raw-token",
     ):
-        url = create_customer_portal_magic_link(
+        first_url = create_customer_portal_magic_link(
             "shop-1", "customer-1", "whatsapp", db_client=db
         )
 
@@ -116,10 +116,34 @@ def test_magic_link_stores_hash_only_and_revokes_previous_after_insert():
     assert issue.payload["p_shop_id"] == "shop-1"
     assert issue.payload["p_customer_id"] == "customer-1"
     assert "private-raw-token" not in str(issue.payload)
-    assert url.endswith("/customer/access#token=private-raw-token")
+    assert first_url.endswith("/customer/access#token=private-raw-token")
 
 
-def test_magic_link_is_one_time_and_exchanges_for_hashed_session():
+def test_customer_access_link_regenerates_the_same_customer_url():
+    db = FakeDb(
+        {
+            ("rpc:issue_customer_portal_magic_link", "rpc"): [
+                ["access-link"],
+                ["access-link"],
+            ],
+        }
+    )
+    with patch(
+        "app.services.customer_portal_service.generate_deterministic_customer_portal_token",
+        return_value="stable-customer-token",
+    ):
+        first_url = create_customer_portal_magic_link(
+            "shop-1", "customer-1", "whatsapp", db_client=db
+        )
+        second_url = create_customer_portal_magic_link(
+            "shop-1", "customer-1", "whatsapp", db_client=db
+        )
+
+    assert first_url == second_url
+    assert len(db.calls) == 2
+
+
+def test_customer_access_exchanges_for_hashed_session():
     db = FakeDb(
         {
             ("rpc:exchange_customer_portal_magic_link", "rpc"): [[{

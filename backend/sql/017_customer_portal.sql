@@ -39,7 +39,12 @@ BEGIN
         shop_id, customer_id, channel, token_hash, expires_at
     ) VALUES (
         p_shop_id, p_customer_id, p_channel, p_token_hash, p_expires_at
-    ) RETURNING id INTO new_link_id;
+    )
+    ON CONFLICT (token_hash) DO UPDATE SET
+        expires_at = EXCLUDED.expires_at,
+        used_at = NULL,
+        revoked_at = NULL
+    RETURNING id INTO new_link_id;
 
     UPDATE public.customer_portal_magic_links
     SET revoked_at = NOW()
@@ -86,7 +91,7 @@ BEGIN
     IF NOT FOUND THEN
         RAISE EXCEPTION 'invalid_link';
     END IF;
-    IF link_row.used_at IS NOT NULL OR link_row.revoked_at IS NOT NULL THEN
+    IF link_row.revoked_at IS NOT NULL THEN
         RAISE EXCEPTION 'link_used';
     END IF;
     IF link_row.expires_at <= NOW() THEN
@@ -102,13 +107,6 @@ BEGIN
     ) VALUES (
         link_row.shop_id, link_row.customer_id, p_session_hash, p_session_expires_at
     ) RETURNING id INTO new_session_id;
-
-    UPDATE public.customer_portal_sessions AS sessions
-    SET revoked_at = NOW()
-    WHERE sessions.shop_id = link_row.shop_id
-      AND sessions.customer_id = link_row.customer_id
-      AND sessions.id <> new_session_id
-      AND sessions.revoked_at IS NULL;
 
     RETURN QUERY SELECT link_row.shop_id, link_row.customer_id;
 END;

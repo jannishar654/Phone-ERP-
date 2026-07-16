@@ -14,6 +14,19 @@ def generate_deterministic_bill_token(order_id: str, shop_id: str) -> str:
     # Use urlsafe base64 and strip padding for a clean URL token
     return base64.urlsafe_b64encode(mac.digest()).decode('utf-8').rstrip('=')
 
+
+def generate_deterministic_customer_portal_token(
+    shop_id: str, customer_id: str, channel: str
+) -> str:
+    """Generate one stable, opaque portal credential per shop/customer/channel."""
+    message = f"customer-portal:{shop_id}:{customer_id}:{channel}".encode("utf-8")
+    secret = (
+        settings.CUSTOMER_PORTAL_SIGNING_SECRET
+        or settings.BILL_LINK_SIGNING_SECRET
+    ).encode("utf-8")
+    mac = hmac.new(secret, message, hashlib.sha256)
+    return base64.urlsafe_b64encode(mac.digest()).decode("utf-8").rstrip("=")
+
 def hash_token(token: str) -> str:
     """
     Hashes a token using SHA-256 for secure database storage.

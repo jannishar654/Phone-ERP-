@@ -4,11 +4,14 @@ from typing import Any, Dict, Optional
 
 from app.config.settings import settings
 from app.services.supabase import supabase_client
-from app.utils.security import hash_token
+from app.utils.security import (
+    generate_deterministic_customer_portal_token,
+    hash_token,
+)
 
 
-MAGIC_LINK_TTL_MINUTES = 60
-PORTAL_SESSION_TTL_HOURS = 24
+CUSTOMER_ACCESS_TTL_DAYS = 30
+PORTAL_SESSION_TTL_DAYS = 30
 
 
 def _now() -> datetime:
@@ -31,8 +34,10 @@ def create_customer_portal_magic_link(
     if client is None:
         raise RuntimeError("Database client is not configured")
 
-    raw_token = secrets.token_urlsafe(32)
-    expires_at = _now() + timedelta(minutes=MAGIC_LINK_TTL_MINUTES)
+    raw_token = generate_deterministic_customer_portal_token(
+        str(shop_id), str(customer_id), str(channel)
+    )
+    expires_at = _now() + timedelta(days=CUSTOMER_ACCESS_TTL_DAYS)
     result = client.rpc(
         "issue_customer_portal_magic_link",
         {
@@ -58,7 +63,7 @@ def exchange_magic_link(raw_token: str, db_client=None) -> Dict[str, Any]:
         raise RuntimeError("Database client is not configured")
 
     raw_session = secrets.token_urlsafe(48)
-    expires_at = _now() + timedelta(hours=PORTAL_SESSION_TTL_HOURS)
+    expires_at = _now() + timedelta(days=PORTAL_SESSION_TTL_DAYS)
     try:
         exchange = client.rpc(
             "exchange_customer_portal_magic_link",
@@ -70,7 +75,12 @@ def exchange_magic_link(raw_token: str, db_client=None) -> Dict[str, Any]:
         ).execute()
     except Exception as exc:
         message = str(exc)
-        for error_code in ("link_used", "link_expired", "invalid_link"):
+        for error_code in (
+            "link_used",
+            "link_revoked",
+            "link_expired",
+            "invalid_link",
+        ):
             if error_code in message:
                 raise ValueError(error_code) from exc
         raise RuntimeError("Failed to exchange customer portal link") from exc
