@@ -4,7 +4,6 @@ import re
 from typing import Optional, Dict, Any
 from app.config.settings import settings
 from app.services.supabase import supabase_client
-from app.controllers.action_card import ActionCardController
 
 logger = logging.getLogger(__name__)
 
@@ -227,14 +226,44 @@ class TelegramService:
                     self.send_message(chat_id, "Sorry, voice order could not be processed. Please send the order as text.")
                     return
                     
-                extracted = await GeminiService.extract_order_details(transcript)
-                self._create_order_card(extracted, transcript, shop_id, owner_id, customer, user_id, chat_id, input_type="voice", message_id=message.get("message_id"))
-                self.send_message(chat_id, "Order received. Shopkeeper will review.\nYou can check recent orders with /orders.")
+                from app.services.intent_router import IntentRouter
+                metadata = {
+                    "source": "telegram",
+                    "telegram_user_id": user_id,
+                    "telegram_chat_id": chat_id,
+                    "customer_id": customer["id"],
+                    "input_type": "voice",
+                    "telegram_message_id": message.get("message_id")
+                }
+
+                telegram_message_id = message.get("message_id")
+                if telegram_message_id is None:
+                    logger.warning("Telegram voice message is missing message_id")
+                    self.send_message(
+                        chat_id, "I could not identify that message. Please resend it."
+                    )
+                    return
+                provider_msg_id = f"{chat_id}_{telegram_message_id}"
+                from app.schemas.inbound import NormalizedInboundMessage
+                msg_obj = NormalizedInboundMessage(
+                    shop_id=shop_id,
+                    customer_id=customer["id"],
+                    channel="telegram",
+                    provider_message_id=provider_msg_id,
+                    message_type="voice",
+                    raw_text=transcript,
+                    metadata=metadata
+                )
+                result = await IntentRouter.process_inbound_message(msg_obj)
+
+                if result.get("reply_message"):
+                    self.send_message(chat_id, result["reply_message"])
+
             except Exception as e:
                 # Sanitize error message in case it contains the URL
                 err_str = str(e).replace(bot_token, "***TOKEN***") if bot_token else str(e)
                 logger.error(f"Failed to process telegram voice order: {err_str}")
-                self.send_message(chat_id, "Sorry, I could not download the voice message. Please try again or send text.")
+                self.send_message(chat_id, "Sorry, I could not process the voice message. Please try again or send text.")
             return
             
         if not text:
@@ -245,14 +274,14 @@ class TelegramService:
         # Handle commands
         if text.startswith("/start"):
             if customer.get("profile_completed"):
-                self.send_message(chat_id, f"Welcome back, {customer.get('name')}. Send your grocery order here.")
+                self.send_message(chat_id, f"Welcome back, {customer.get('name')}. Send your order here.")
             else:
                 self.update_customer(customer["id"], {"telegram_state": "awaiting_name"})
                 self.send_message(chat_id, "Welcome to PhoneERP. Please tell me your name.")
             return
             
         if text.startswith("/help"):
-            msg = "Send your grocery order as text or voice.\nCommands:\n/profile - view your saved details\n/edit - update name, address, or phone\n/orders - view recent orders\n/cancel - cancel current profile edit"
+            msg = "Send your order as text or voice.\nCommands:\n/profile - view your saved details\n/edit - update name, address, or phone\n/orders - view recent orders\n/cancel - cancel current profile edit"
             self.send_message(chat_id, msg)
             return
             
@@ -407,104 +436,42 @@ class TelegramService:
             self.send_message(chat_id, "Please complete your profile setup first.")
             return
             
-        import re
-        def looks_like_order(msg: str) -> bool:
-            t = msg.lower()
-            qty_words = ["kilo", "kg", "litre", "liter", "packet", "dabba", "bottle", "gram", "pcs", "piece"]
-            hindi_nums = ["ek", "do", "teen", "char", "paanch", "chhe", "saat", "aath", "nau", "das", "gyarah", "barah", "pandrah", "bees", "pachas"]
-            verbs = ["bhej dena", "bhejna", "chahiye", "order", "de dena", "deliver", "pahuncha dena", "bhej do", "dedo", "de do"]
-            
-            if any(char.isdigit() for char in t): return True
-            if any(re.search(r'\b' + w + r'\b', t) for w in qty_words + hindi_nums): return True
-            if any(v in t for v in verbs): return True
-            
-            return False
-
-        if not looks_like_order(text):
-            self.send_message(chat_id, "Please send a grocery order, or use /help for options.")
-            return
-            
-        # Extract order using existing pipeline
-        # Extract order using existing pipeline
         try:
-            from app.services.gemini import GeminiService
-            extracted = await GeminiService.extract_order_details(text)
-            self._create_order_card(extracted, text, shop_id, owner_id, customer, user_id, chat_id, input_type="text", message_id=message.get("message_id"))
-            self.send_message(chat_id, "Order received. Shopkeeper will review.\nYou can check recent orders with /orders.")
-        except Exception as e:
-            logger.error(f"Failed to process telegram text order: {e}")
-            self.send_message(chat_id, "Order could not be created. Please try again.")
-
-    def _create_order_card(self, extracted: Dict[str, Any], transcript: str, shop_id: str, owner_id: str, customer: Dict[str, Any], user_id: str, chat_id: str, input_type: str, message_id: Optional[int] = None):
-        # Use profile fallbacks
-        if not extracted.get("customer_name") or extracted.get("customer_name").lower() == "unknown":
-            extracted["customer_name"] = customer.get("name")
-        if not extracted.get("delivery_address") or extracted.get("delivery_address").lower() == "unknown":
-            extracted["delivery_address"] = customer.get("default_address") or customer.get("address")
-        
-        # Phone fallback
-        if not extracted.get("customer_phone") and customer.get("phone"):
-            extracted["customer_phone"] = customer.get("phone")
-        
-        # Fallback for old pipeline that might extract 'phone'
-        if not extracted.get("customer_phone") and extracted.get("phone"):
-            extracted["customer_phone"] = extracted.get("phone")
-        
-        # Prepare card data
-        from app.routes.endpoints import _safe_items_from_extracted
-        safe_items = _safe_items_from_extracted(extracted, shop_id)
-        
-        from app.services.time_parser import parse_delivery_time
-        raw_dt = extracted.get("delivery_time_raw") or extracted.get("delivery_time") or ""
-        time_text = transcript if not raw_dt else raw_dt
-        time_data = parse_delivery_time(time_text)
-        
-        delivery_time_normalized = time_data.get("normalized")
-        delivery_time_confidence = time_data.get("confidence", 0.0)
-        delivery_time_warning = time_data.get("warning")
-        final_delivery_time = delivery_time_normalized or raw_dt
-        
-        card_data = {
-            "shop_id": shop_id,
-            "customer_id": customer["id"],
-            "customer_name": extracted.get("customer_name"),
-            "customer_phone": extracted.get("customer_phone"),
-            "delivery_address": extracted.get("delivery_address"),
-            "delivery_time": final_delivery_time,
-            "delivery_time_raw": raw_dt,
-            "delivery_time_normalized": delivery_time_normalized,
-            "delivery_time_confidence": delivery_time_confidence,
-            "delivery_time_warning": delivery_time_warning,
-            "payment_method": extracted.get("payment_method", "UNKNOWN"),
-            "items": [item.model_dump() for item in safe_items],
-            "operations": extracted.get("operations", []),
-            "status": "pending",
-            "source": "telegram",
-            "message_type": extracted.get("type", "ORDER"),
-            "confidence": extracted.get("confidence", 0.0),
-            "metadata": {
+            from app.services.intent_router import IntentRouter
+            metadata = {
                 "source": "telegram",
                 "telegram_user_id": user_id,
                 "telegram_chat_id": chat_id,
                 "customer_id": customer["id"],
-                "input_type": input_type,
-                "pipeline": "gemini_gemini",
-                "extraction_notes": extracted.get("extraction_notes", ""),
-                "original_delivery_time": raw_dt
-            },
-            "transcript": transcript
+                "input_type": "text",
+                "telegram_message_id": message.get("message_id")
         }
         
-        if message_id:
-            card_data["metadata"]["telegram_message_id"] = message_id
+            telegram_message_id = message.get("message_id")
+            if telegram_message_id is None:
+                logger.warning("Telegram text message is missing message_id")
+                self.send_message(
+                    chat_id, "I could not identify that message. Please resend it."
+                )
+                return
+            provider_msg_id = f"{chat_id}_{telegram_message_id}"
+            from app.schemas.inbound import NormalizedInboundMessage
+            msg_obj = NormalizedInboundMessage(
+                shop_id=shop_id,
+                customer_id=customer["id"],
+                channel="telegram",
+                provider_message_id=provider_msg_id,
+                message_type="text",
+                raw_text=text,
+                metadata=metadata
+            )
+            result = await IntentRouter.process_inbound_message(msg_obj)
 
-        from app.services.confidence_scorer import ConfidenceScorer
-        score, label, reasons = ConfidenceScorer.calculate_confidence(card_data)
-        card_data["confidence_score"] = score
-        card_data["confidence_label"] = label
-        card_data["confidence_reasons"] = reasons
+            if result.get("reply_message"):
+                self.send_message(chat_id, result["reply_message"])
 
-        # Create action card via controller directly to persist correctly with user_id
-        ActionCardController.create_card(card_data, user_id=owner_id)
+        except Exception as e:
+            logger.error(f"Failed to process telegram text message: {e}")
+            self.send_message(chat_id, "Message could not be processed. Please try again.")
 
 telegram_service = TelegramService()
