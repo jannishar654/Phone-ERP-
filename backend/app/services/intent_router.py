@@ -119,13 +119,22 @@ class IntentRouter:
         purchase_patterns = (
             r"\b(?:send|deliver|order|book|buy|purchase|need|want)\b",
             r"\b(?:bhej|bhejna|bhejdo|bhej do|bhej dena|chahiye|de do|dedo|"
-            r"pahuncha|pahucha)\b",
-            r"(?:भेज|चाहिए|दे दो|पहुंचा|ऑर्डर|खरीद)",
+            r"dena|dijiye|de dena|laga do|pahuncha|pahucha)\b",
+            r"(?:भेज|चाहिए|देना|दे दो|दीजिए|पहुंचा|ऑर्डर|खरीद)",
         )
         has_purchase_intent = any(
             re.search(pattern, normalized) for pattern in purchase_patterns
         )
-        if has_purchase_intent and quantity_with_unit:
+        has_product_after_quantity = bool(
+            quantity_with_unit
+            and re.match(
+                r"\s*[\w\u0900-\u097F][\w\u0900-\u097F+&()./'-]*",
+                normalized[quantity_with_unit.end() :],
+            )
+        )
+        if quantity_with_unit and (
+            has_purchase_intent or has_product_after_quantity
+        ):
             return IntentClassification(
                 intent=ConversationIntent.NEW_ORDER, confidence=0.97
             )

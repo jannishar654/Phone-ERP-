@@ -860,13 +860,13 @@ Return only the transcript text.
         if not name_match:
             name_match = re.search(
                 r"(?:mera naam|naam)\s+([A-Za-z][A-Za-z ]+?)"
-                r"(?=\s+(?:hai|address|pata|kal|aaj|today|tomorrow)|[.,]|$)",
+                r"(?=\s+(?:hai|address|pata|kal|kl|aaj|today|tomorrow)|[.,]|$)",
                 transcript,
                 re.I,
             )
         if not name_match:
             name_match = re.search(
-                r"^(?:(?:kal|aaj|today|tomorrow|कल|आज)\s+)?"
+                r"^(?:(?:kal|kl|aaj|today|tomorrow|कल|आज)\s+)?"
                 r"([\w\u0900-\u097F][\w\u0900-\u097F .&'-]{1,60}?)\s+(?:ko|को)(?=\s|$)",
                 transcript,
                 re.I,
@@ -877,7 +877,7 @@ Return only the transcript text.
         address_match = re.search(
             r"(?:deliver(?:y)? to|send it to|send to|address(?:\s+(?:is|hai))?|"
             r"ship to|pahunchao|pahunchana hai|pata(?:\s+(?:hai|is))?)\s+"
-            r"(.+?)(?=\s+(?:kal|aaj|today|tomorrow|subah|shaam|raat|"
+            r"(.+?)(?=\s+(?:kal|kl|aaj|today|tomorrow|subah|shaam|raat|"
             r"\d{1,2}(?::\d{2})?\s*(?:am|pm|baje)|bhej|send|deliver)|[.,]|$)",
             transcript,
             re.I,
@@ -897,7 +897,7 @@ Return only the transcript text.
         else:
             time_parts = []
             for pattern in (
-                r"\b(?:kal|aaj|today|tomorrow|कल|आज)\b",
+                r"\b(?:kal|kl|aaj|today|tomorrow|कल|आज)\b",
                 r"\b(?:subah|shaam|savera|morning|evening|raat|सुबह|शाम|रात)\b",
                 r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm|baje)\b",
             ):
@@ -921,7 +921,7 @@ Return only the transcript text.
         )
 
         item_source = re.sub(
-            r"^(?:(?:kal|aaj|today|tomorrow|कल|आज)\s+)?"
+            r"^(?:(?:kal|kl|aaj|today|tomorrow|कल|आज)\s+)?"
             r"[\w\u0900-\u097F][\w\u0900-\u097F .&'-]{1,60}?\s+(?:ko|को)(?=\s|$)",
             " ",
             transcript,
@@ -934,7 +934,7 @@ Return only the transcript text.
             flags=re.I,
         )
         item_source = re.sub(
-            r"\b(?:kal|aaj|today|tomorrow|subah|shaam|savera|morning|evening|raat|"
+            r"\b(?:kal|kl|aaj|today|tomorrow|subah|shaam|savera|morning|evening|raat|"
             r"कल|आज|सुबह|शाम|रात)\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm|baje)\b",
             " ",
             item_source,
@@ -944,7 +944,8 @@ Return only the transcript text.
             rf"(?<![\w\u0900-\u097F])({quantity_tokens})\s*(?:({unit_tokens})\s+)?"
             rf"([\w\u0900-\u097F₹%+&()./'-]+(?:\s+[\w\u0900-\u097F₹%+&()./'-]+)*?)"
             rf"(?=\s+(?:and|or|aur|और|या|bhej|bhejo|bhejna|bhejdo|bhej dena|भेज|भेजो|भेजना|भेज देना|"
-            rf"send|deliver|delivery|de do|dijiye|chahiye|please)(?![\w\u0900-\u097F])|\s*[.,]|$)",
+            rf"send|deliver|delivery|dena|de dena|de do|dedo|dijiye|chahiye|please|"
+            rf"देना|दे दो|दीजिए)(?![\w\u0900-\u097F])|\s*[.,]|$)",
             item_source.strip(),
             re.I,
         )

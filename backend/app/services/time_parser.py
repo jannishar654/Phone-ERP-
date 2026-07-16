@@ -86,14 +86,14 @@ def parse_delivery_time(raw_text: Optional[str], reference_datetime: Optional[da
     if exact_time_match: # Use the final time match to anchor the day
         clock_start = exact_time_match.start()
         # Find all day matches
-        days = list(re.finditer(r'\b(kal|kall|kalle|tomorrow|कल|aaj|today|आज|parso|day after tomorrow|परसो)\b', text))
+        days = list(re.finditer(r'\b(kal|kl|kall|kalle|tomorrow|कल|aaj|today|आज|parso|day after tomorrow|परसो)\b', text))
         if days:
             # Find nearest day before or after the clock
             # A simple heuristic: find the one closest to clock_start
             closest_day = min(days, key=lambda d: abs(d.start() - clock_start))
             day_text = closest_day.group(0)
             
-            if re.search(r'\b(kal|kall|kalle|tomorrow|कल)\b', day_text):
+            if re.search(r'\b(kal|kl|kall|kalle|tomorrow|कल)\b', day_text):
                 date_str = tomorrow.strftime("%Y-%m-%d")
                 if re.search(r'\b(kall|kalle)\b', day_text):
                     has_kalle = True
@@ -105,7 +105,7 @@ def parse_delivery_time(raw_text: Optional[str], reference_datetime: Optional[da
     if not date_str:
         # Fallback to simple matching if no clock or day wasn't near clock
         has_kalle = bool(re.search(r'\b(kall|kalle)\b', text)) and exact_time_match
-        has_kal = bool(re.search(r'\b(kal|tomorrow|कल)\b', text)) or has_kalle
+        has_kal = bool(re.search(r'\b(kal|kl|tomorrow|कल)\b', text)) or has_kalle
         has_aaj = bool(re.search(r'\b(aaj|today|आज)\b', text))
         has_parso = bool(re.search(r'\b(parso|day after tomorrow|परसो)\b', text))
         

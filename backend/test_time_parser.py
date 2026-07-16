@@ -3,6 +3,11 @@ from datetime import datetime
 from app.services.time_parser import parse_delivery_time
 
 class TestTimeParser(unittest.TestCase):
+    def test_chat_abbreviation_kl_means_tomorrow(self):
+        res = parse_delivery_time("kl 9:30 pm", self.ref)
+        self.assertIn("9:30 PM", res["normalized"])
+        self.assertEqual(res["confidence"], 0.9)
+
     def setUp(self):
         self.ref = datetime(2026, 6, 28, 12, 0, 0)
         self.tomorrow_str = "2026-06-29"

@@ -123,6 +123,8 @@ async def test_model_timeout_invalid_json(mock_supabase, mock_gemini, mock_actio
     [
         ("What is the price of rice?", "price_enquiry", 0.95),
         ("Send 10 kg rice tomorrow", "new_order", 0.95),
+        ("kl 9:30 pm me 5 kilo aata dena", "new_order", 0.95),
+        ("5 kilo aata", "new_order", 0.95),
         (
             "50 kilo aata aur 100 kilo chini or 1 litre oil bhej dena "
             "naam Danish address Batla House Jamia Nagar kal 9:30 pm me bhej dena",
@@ -148,6 +150,7 @@ def test_multilingual_deterministic_intent_fallback(
     ("text", "expected_items"),
     [
         ("Send 10 kg rice tomorrow", [("rice", 10, "kg")]),
+        ("kl 9:30 pm me 5 kilo aata dena", [("aata", 5, "kilo")]),
         (
             "50 kilo aata aur 100 kilo chini or 1 litre oil bhej dena "
             "naam Danish address Batla House Jamia Nagar kal 9:30 pm me bhej dena",
