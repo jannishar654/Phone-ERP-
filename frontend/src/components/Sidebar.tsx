@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { authClient } from '@/lib/supabase/client';
+import { Inbox } from 'lucide-react';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -24,6 +25,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { name: 'Create Order', href: '/create-order', icon: CreateIcon },
     { name: 'Orders List', href: '/orders', icon: ListIcon },
     { name: 'Action Cards', href: '/action-card', icon: CardsIcon },
+    { name: 'Customer Requests', href: '/customer-requests', icon: Inbox },
     { name: 'Catalog', href: '/catalog', icon: CatalogIcon },
   ];
 

@@ -5,11 +5,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 supabase_client: Client = None
+server_supabase_key = settings.SUPABASE_SERVICE_ROLE_KEY or settings.SUPABASE_KEY
 
 if (settings.SUPABASE_URL and settings.SUPABASE_URL != "your-supabase-url-here" and
-    settings.SUPABASE_KEY and settings.SUPABASE_KEY != "your-supabase-anon-key-here"):
+    server_supabase_key and server_supabase_key != "your-supabase-anon-key-here"):
     try:
-        supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+        supabase_client = create_client(settings.SUPABASE_URL, server_supabase_key)
         logger.info("Supabase client initialized successfully.")
     except Exception as e:
         logger.error(f"Failed to initialize Supabase client: {e}")

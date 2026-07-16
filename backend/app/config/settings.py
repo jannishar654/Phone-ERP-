@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     
     SUPABASE_URL: str = "your-supabase-url-here"
     SUPABASE_KEY: str = "your-supabase-anon-key-here"
+    # Server-only. Prefer this on Render; never expose it to Next.js.
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
     
     GEMINI_API_KEY: str = "your-gemini-api-key-here"
     SARVAM_API_KEY: str = ""

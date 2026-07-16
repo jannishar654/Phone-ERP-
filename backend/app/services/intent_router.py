@@ -326,11 +326,10 @@ class IntentRouter:
             }
 
         if intent == ConversationIntent.ORDER_TRACKING:
-            IntentRouter._update_inbound_status(inbound_id, "processed")
-            return {
-                "status": "processed",
-                "reply_message": "Use /orders to check your recent order status.",
-            }
+            if msg:
+                return IntentRouter._handle_tracking_request(
+                    msg, conversation, inbound_id
+                )
 
         if (
             intent == ConversationIntent.PAYMENT_QUERY
@@ -373,6 +372,79 @@ class IntentRouter:
             "status": "needs_review",
             "reply_message": review_messages[intent],
         }
+
+    @staticmethod
+    def _create_portal_link(
+        shop_id: str, customer_id: str, channel: str
+    ) -> Optional[str]:
+        try:
+            from app.services.customer_portal_service import (
+                create_customer_portal_magic_link,
+            )
+
+            return create_customer_portal_magic_link(
+                shop_id,
+                customer_id,
+                channel,
+                db_client=supabase_client,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Customer portal link unavailable for shop_id=%s (%s)",
+                shop_id,
+                type(exc).__name__,
+            )
+            return None
+
+    @staticmethod
+    def _handle_tracking_request(
+        msg: NormalizedInboundMessage,
+        conversation: Dict[str, Any],
+        inbound_id: str,
+    ) -> Dict[str, Any]:
+        try:
+            result = (
+                supabase_client.table("orders")
+                .select("id, order_number, lifecycle_status, total_amount, created_at")
+                .eq("shop_id", msg.shop_id)
+                .eq("customer_id", msg.customer_id)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if not result.data:
+                reply = "Aapke number se abhi koi approved order nahi mila."
+            else:
+                order = result.data[0]
+                status = str(order.get("lifecycle_status") or "received").replace(
+                    "_", " "
+                ).title()
+                order_ref = order.get("order_number") or str(order["id"])[:8]
+                reply = f"Order #{order_ref} abhi {status} stage mein hai."
+                portal_link = IntentRouter._create_portal_link(
+                    msg.shop_id, msg.customer_id, msg.channel.value
+                )
+                if portal_link:
+                    reply = f"{reply}\nTrack all your orders: {portal_link}"
+            IntentRouter._update_conversation(
+                conversation["id"],
+                {"state": "idle", "pending_intent": None, "expires_at": None},
+            )
+            IntentRouter._update_inbound_status(inbound_id, "processed")
+            return {"status": "processed", "reply_message": reply}
+        except Exception as exc:
+            logger.error(
+                "Order tracking failed for inbound_id=%s (%s)",
+                inbound_id,
+                type(exc).__name__,
+            )
+            IntentRouter._update_inbound_status(
+                inbound_id, "failed", last_error=type(exc).__name__
+            )
+            return {
+                "status": "error",
+                "reply_message": "Order status abhi nahi mil saka. Please thodi der baad try karein.",
+            }
 
     @staticmethod
     def _is_bill_request(text: str) -> bool:
@@ -544,7 +616,12 @@ class IntentRouter:
             IntentRouter._update_inbound_status(inbound_id, "processed")
             return {
                 "status": "processed",
-                "reply_message": "Order confirmed. Shopkeeper will review it.",
+                "reply_message": IntentRouter._order_received_reply(
+                    conversation["shop_id"],
+                    conversation["customer_id"],
+                    conversation["channel"],
+                    confirmed=True,
+                ),
             }
         except Exception as exc:
             logger.error(
@@ -594,7 +671,11 @@ class IntentRouter:
             IntentRouter._update_inbound_status(inbound_id, "processed")
             return {
                 "status": "processed",
-                "reply_message": "Order received. Shopkeeper will review it.",
+                "reply_message": IntentRouter._order_received_reply(
+                    msg.shop_id,
+                    msg.customer_id,
+                    msg.channel.value,
+                ),
             }
         except ValueError as exc:
             IntentRouter._update_inbound_status(
@@ -620,6 +701,25 @@ class IntentRouter:
                 "status": "error",
                 "reply_message": "Order processing failed. Please try again.",
             }
+
+    @staticmethod
+    def _order_received_reply(
+        shop_id: str,
+        customer_id: str,
+        channel: str,
+        confirmed: bool = False,
+    ) -> str:
+        prefix = (
+            "Order confirmed. Shopkeeper will review it."
+            if confirmed
+            else "Order received. Shopkeeper will review it."
+        )
+        portal_link = IntentRouter._create_portal_link(
+            shop_id, customer_id, channel
+        )
+        if portal_link:
+            return f"{prefix}\nTrack your orders: {portal_link}"
+        return prefix
 
     @staticmethod
     async def _process_medium_confidence_order(

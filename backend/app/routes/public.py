@@ -50,7 +50,13 @@ def get_customer_bill(token: str):
     order_id = link["order_id"]
     shop_id = link["shop_id"]
     
-    order_res = supabase_client.table("orders").select("*, order_items(*)").eq("id", order_id).execute()
+    order_res = (
+        supabase_client.table("orders")
+        .select("*, order_items(*)")
+        .eq("id", order_id)
+        .eq("shop_id", shop_id)
+        .execute()
+    )
     if not order_res.data:
         raise HTTPException(status_code=404, detail="Order not found")
         

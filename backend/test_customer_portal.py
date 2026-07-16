@@ -1,0 +1,577 @@
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.routes.customer import get_customer_context
+from app.dependencies.auth import get_current_user_id
+from app.services.customer_portal_service import (
+    create_customer_portal_magic_link,
+    exchange_magic_link,
+    validate_customer_session,
+)
+from app.utils.security import hash_token
+
+
+class Result:
+    def __init__(self, data):
+        self.data = data
+
+
+class FakeQuery:
+    def __init__(self, db, table):
+        self.db = db
+        self.table = table
+        self.operation = "select"
+        self.payload = None
+        self.filters = []
+
+    def select(self, *_args):
+        self.operation = "select"
+        return self
+
+    def insert(self, payload):
+        self.operation = "insert"
+        self.payload = payload
+        return self
+
+    def update(self, payload):
+        self.operation = "update"
+        self.payload = payload
+        return self
+
+    def eq(self, field, value):
+        self.filters.append(("eq", field, value))
+        return self
+
+    def neq(self, field, value):
+        self.filters.append(("neq", field, value))
+        return self
+
+    def is_(self, field, value):
+        self.filters.append(("is", field, value))
+        return self
+
+    def in_(self, field, value):
+        self.filters.append(("in", field, value))
+        return self
+
+    def lte(self, field, value):
+        self.filters.append(("lte", field, value))
+        return self
+
+    def order(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, *_args):
+        return self
+
+    def execute(self):
+        self.db.calls.append(self)
+        key = (self.table, self.operation)
+        queue = self.db.responses.get(key, [])
+        value = queue.pop(0) if queue else []
+        if isinstance(value, Exception):
+            raise value
+        return Result(value)
+
+
+class FakeDb:
+    def __init__(self, responses=None):
+        self.responses = responses or {}
+        self.calls = []
+
+    def table(self, name):
+        return FakeQuery(self, name)
+
+    def rpc(self, name, payload):
+        query = FakeQuery(self, f"rpc:{name}")
+        query.operation = "rpc"
+        query.payload = payload
+        return query
+
+
+def future(hours=1):
+    return (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+
+
+def test_magic_link_stores_hash_only_and_revokes_previous_after_insert():
+    db = FakeDb(
+        {
+            ("rpc:issue_customer_portal_magic_link", "rpc"): [["new-link"]],
+        }
+    )
+    with patch(
+        "app.services.customer_portal_service.secrets.token_urlsafe",
+        return_value="private-raw-token",
+    ):
+        url = create_customer_portal_magic_link(
+            "shop-1", "customer-1", "whatsapp", db_client=db
+        )
+
+    issue = db.calls[0]
+    assert issue.payload["p_token_hash"] == hash_token("private-raw-token")
+    assert issue.payload["p_shop_id"] == "shop-1"
+    assert issue.payload["p_customer_id"] == "customer-1"
+    assert "private-raw-token" not in str(issue.payload)
+    assert url.endswith("/customer/access#token=private-raw-token")
+
+
+def test_magic_link_is_one_time_and_exchanges_for_hashed_session():
+    db = FakeDb(
+        {
+            ("rpc:exchange_customer_portal_magic_link", "rpc"): [[{
+                "shop_id": "shop-1",
+                "customer_id": "customer-1",
+            }]],
+        }
+    )
+    with patch(
+        "app.services.customer_portal_service.secrets.token_urlsafe",
+        return_value="raw-session-token",
+    ):
+        result = exchange_magic_link("raw-magic-token", db_client=db)
+
+    exchange = db.calls[0]
+    assert result["session_token"] == "raw-session-token"
+    assert exchange.payload["p_token_hash"] == hash_token("raw-magic-token")
+    assert exchange.payload["p_session_hash"] == hash_token("raw-session-token")
+    assert "raw-session-token" not in str(exchange.payload)
+
+
+def test_expired_magic_link_is_rejected_without_creating_session():
+    db = FakeDb(
+        {
+            ("rpc:exchange_customer_portal_magic_link", "rpc"): [
+                RuntimeError("link_expired")
+            ],
+        }
+    )
+    with pytest.raises(ValueError, match="link_expired"):
+        exchange_magic_link("expired-token", db_client=db)
+    assert len(db.calls) == 1
+
+
+def test_customer_session_validation_is_scoped_and_updates_last_used():
+    db = FakeDb(
+        {
+            ("customer_portal_sessions", "select"): [[{
+                "id": "session-1",
+                "shop_id": "shop-1",
+                "customer_id": "customer-1",
+                "expires_at": future(),
+                "revoked_at": None,
+            }]],
+            ("customer_portal_sessions", "update"): [[{"id": "session-1"}]],
+        }
+    )
+    result = validate_customer_session("raw-session", db_client=db)
+    select = db.calls[0]
+    assert ("eq", "token_hash", hash_token("raw-session")) in select.filters
+    assert result["shop_id"] == "shop-1"
+    assert result["customer_id"] == "customer-1"
+
+
+client = TestClient(app)
+
+
+@pytest.fixture
+def portal_context():
+    context = {
+        "id": "session-1",
+        "shop_id": "shop-1",
+        "customer_id": "customer-1",
+        "expires_at": future(),
+    }
+    app.dependency_overrides[get_customer_context] = lambda: context
+    yield context
+    app.dependency_overrides.pop(get_customer_context, None)
+
+
+def test_customer_orders_are_filtered_by_both_shop_and_customer(portal_context):
+    db = FakeDb(
+        {
+            ("customers", "select"): [[{
+                "id": "customer-1", "shop_id": "shop-1", "name": "Danish", "phone": "+911234567890"
+            }]],
+            ("shops", "select"): [[{"id": "shop-1", "name": "Test Shop"}]],
+            ("orders", "select"): [[{
+                "id": "order-1",
+                "order_number": 101,
+                "total_amount": 675.0,
+                "lifecycle_status": "packing",
+                "delivery_address": "Batla House",
+                "delivery_time": None,
+                "created_at": "2026-07-16T10:00:00+00:00",
+                "updated_at": "2026-07-16T10:05:00+00:00",
+                "packed_at": "2026-07-16T10:05:00+00:00",
+                "out_for_delivery_at": None,
+                "delivered_at": None,
+                "cancelled_at": None,
+                "order_items": [],
+            }]],
+            ("order_status_events", "select"): [[]],
+        }
+    )
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.get("/customer/orders")
+    assert response.status_code == 200
+    order_query = next(call for call in db.calls if call.table == "orders")
+    assert ("eq", "shop_id", "shop-1") in order_query.filters
+    assert ("eq", "customer_id", "customer-1") in order_query.filters
+    assert response.json()["orders"][0]["id"] == "order-1"
+
+
+def test_pending_action_card_appears_as_received_for_same_customer(portal_context):
+    db = FakeDb(
+        {
+            ("customers", "select"): [[{
+                "id": "customer-1", "shop_id": "shop-1", "name": "Danish", "phone": "+911234567890"
+            }]],
+            ("shops", "select"): [[{"id": "shop-1", "name": "Test Shop"}]],
+            ("orders", "select"): [[]],
+            ("action_cards", "select"): [[{
+                "id": "ac-1",
+                "status": "pending",
+                "items": [{"name": "Aata", "raw_name": "aata", "quantity": 5, "unit": "kg", "price": 45}],
+                "delivery_address": "Batla House",
+                "created_at": "2026-07-16T10:00:00+00:00",
+                "updated_at": "2026-07-16T10:00:00+00:00",
+            }]],
+        }
+    )
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.get("/customer/orders")
+
+    assert response.status_code == 200
+    order = response.json()["orders"][0]
+    assert order["record_type"] == "action_card"
+    assert order["lifecycle_status"] == "received"
+    assert order["total_amount"] == 225.0
+    card_query = next(call for call in db.calls if call.table == "action_cards")
+    assert ("eq", "shop_id", "shop-1") in card_query.filters
+    assert ("eq", "customer_id", "customer-1") in card_query.filters
+
+
+def test_customer_cannot_open_bill_for_another_customer(portal_context):
+    db = FakeDb({("orders", "select"): [[]]})
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.post("/customer/orders/other-order/bill")
+    assert response.status_code == 404
+    query = db.calls[0]
+    assert ("eq", "shop_id", "shop-1") in query.filters
+    assert ("eq", "customer_id", "customer-1") in query.filters
+
+
+def test_customer_request_is_idempotent_while_pending(portal_context):
+    db = FakeDb(
+        {
+            ("orders", "select"): [[{"id": "order-1", "lifecycle_status": "packing"}]],
+            ("customer_requests", "select"): [[{"id": "request-1"}]],
+        }
+    )
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.post(
+            "/customer/orders/order-1/requests",
+            json={"request_type": "cancel_order", "payload": {}},
+        )
+    assert response.status_code == 201
+    assert response.json() == {"id": "request-1", "status": "pending", "duplicate": True}
+    assert not any(
+        call.table == "customer_requests" and call.operation == "insert"
+        for call in db.calls
+    )
+
+
+def test_change_request_requires_customer_instructions(portal_context):
+    db = FakeDb()
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.post(
+            "/customer/orders/order-1/requests",
+            json={"request_type": "change_order", "message": "", "payload": {}},
+        )
+    assert response.status_code == 422
+    assert not db.calls
+
+
+def test_support_request_requires_message(portal_context):
+    db = FakeDb()
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.post(
+            "/customer/support",
+            json={"request_type": "support", "message": "   ", "payload": {}},
+        )
+    assert response.status_code == 422
+    assert not db.calls
+
+
+def test_owner_repeat_approval_claims_request_and_creates_one_review_card():
+    request = {
+        "id": "request-1",
+        "shop_id": "shop-1",
+        "customer_id": "customer-1",
+        "order_id": "order-1",
+        "request_type": "repeat_order",
+        "status": "pending",
+        "payload": {},
+    }
+    db = FakeDb(
+        {
+            ("customer_requests", "select"): [[request]],
+            ("customer_requests", "update"): [
+                [{**request, "status": "processing"}],
+                [{**request, "status": "approved", "payload": {"action_card_id": "ac-repeat"}}],
+            ],
+            ("action_cards", "select"): [[]],
+            ("orders", "select"): [[{
+                "id": "order-1",
+                "shop_id": "shop-1",
+                "customer_id": "customer-1",
+                "customer_name": "Danish",
+                "customer_phone": "+911234567890",
+                "delivery_address": "Batla House",
+                "order_items": [{
+                    "raw_name": "aata",
+                    "display_name": "Aashirvaad Atta",
+                    "quantity": 5,
+                    "unit": "kg",
+                    "unit_price": 45,
+                    "catalog_item_id": "catalog-1",
+                }],
+            }]],
+            ("customers", "select"): [[{
+                "name": "Danish", "phone": "+911234567890", "address": "Batla House"
+            }]],
+            ("action_cards", "insert"): [[{"id": "ac-repeat"}]],
+        }
+    )
+    app.dependency_overrides[get_current_user_id] = lambda: "owner-1"
+    try:
+        with patch("app.routes.customer_requests.supabase_client", db), patch(
+            "app.routes.customer_requests.get_user_shop_id", return_value="shop-1"
+        ):
+            response = client.patch(
+                "/customer-requests/request-1",
+                json={"status": "approved"},
+            )
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+
+    assert response.status_code == 200
+    card_insert = next(
+        call for call in db.calls
+        if call.table == "action_cards" and call.operation == "insert"
+    )
+    assert card_insert.payload["customer_request_id"] == "request-1"
+    request_updates = [
+        call for call in db.calls
+        if call.table == "customer_requests" and call.operation == "update"
+    ]
+    assert ("eq", "status", "pending") in request_updates[0].filters
+    assert ("eq", "status", "processing") in request_updates[1].filters
+
+
+def test_owner_cancellation_uses_atomic_shop_scoped_database_function():
+    request = {
+        "id": "request-2",
+        "shop_id": "shop-1",
+        "customer_id": "customer-1",
+        "order_id": "order-2",
+        "request_type": "cancel_order",
+        "status": "pending",
+        "payload": {},
+    }
+    db = FakeDb(
+        {
+            ("customer_requests", "select"): [[request]],
+            ("rpc:approve_customer_cancellation", "rpc"): [[{
+                **request, "status": "approved"
+            }]],
+        }
+    )
+    app.dependency_overrides[get_current_user_id] = lambda: "owner-1"
+    try:
+        with patch("app.routes.customer_requests.supabase_client", db), patch(
+            "app.routes.customer_requests.get_user_shop_id", return_value="shop-1"
+        ):
+            response = client.patch(
+                "/customer-requests/request-2",
+                json={"status": "approved", "owner_note": "Approved"},
+            )
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+
+    assert response.status_code == 200
+    rpc = next(call for call in db.calls if call.operation == "rpc")
+    assert rpc.payload == {
+        "p_request_id": "request-2",
+        "p_shop_id": "shop-1",
+        "p_owner_note": "Approved",
+    }
+
+
+@pytest.mark.parametrize(
+    ("request_type", "decision"),
+    [("support", "approved"), ("repeat_order", "resolved")],
+)
+def test_owner_rejects_invalid_request_decision_for_type(request_type, decision):
+    request = {
+        "id": "request-invalid-decision",
+        "shop_id": "shop-1",
+        "customer_id": "customer-1",
+        "order_id": None if request_type == "support" else "order-1",
+        "request_type": request_type,
+        "status": "pending",
+        "payload": {},
+    }
+    db = FakeDb({("customer_requests", "select"): [[request]]})
+    app.dependency_overrides[get_current_user_id] = lambda: "owner-1"
+    try:
+        with patch("app.routes.customer_requests.supabase_client", db), patch(
+            "app.routes.customer_requests.get_user_shop_id", return_value="shop-1"
+        ):
+            response = client.patch(
+                "/customer-requests/request-invalid-decision",
+                json={"status": decision},
+            )
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+
+    assert response.status_code == 422
+    assert not any(
+        call.table == "customer_requests" and call.operation == "update"
+        for call in db.calls
+    )
+
+
+def test_owner_notifications_are_due_and_shop_scoped():
+    db = FakeDb(
+        {
+            ("owner_notifications", "select"): [[{
+                "id": "notification-1",
+                "notification_type": "order_reminder",
+                "title": "Order still waiting",
+                "message": "Review the order",
+                "scheduled_at": "2026-07-16T10:00:00+00:00",
+                "action_card_id": "ac-1",
+                "customer_request_id": None,
+            }]],
+        }
+    )
+    app.dependency_overrides[get_current_user_id] = lambda: "owner-1"
+    try:
+        with patch("app.routes.owner_notifications.supabase_client", db), patch(
+            "app.routes.owner_notifications.get_user_shop_id", return_value="shop-1"
+        ):
+            response = client.get("/owner-notifications")
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+
+    assert response.status_code == 200
+    query = db.calls[0]
+    assert ("eq", "shop_id", "shop-1") in query.filters
+    assert any(item[0] == "lte" and item[1] == "scheduled_at" for item in query.filters)
+
+
+def test_owner_notification_acknowledgement_is_shop_scoped():
+    notification = {
+        "id": "notification-1",
+        "notification_type": "new_order",
+        "title": "New customer order",
+        "message": "Review the order",
+        "scheduled_at": "2026-07-16T10:00:00+00:00",
+        "action_card_id": "ac-1",
+        "customer_request_id": None,
+    }
+    db = FakeDb({("owner_notifications", "update"): [[notification]]})
+    app.dependency_overrides[get_current_user_id] = lambda: "owner-1"
+    try:
+        with patch("app.routes.owner_notifications.supabase_client", db), patch(
+            "app.routes.owner_notifications.get_user_shop_id", return_value="shop-1"
+        ):
+            response = client.post("/owner-notifications/notification-1/ack")
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+
+    assert response.status_code == 200
+    update = db.calls[0]
+    assert ("eq", "id", "notification-1") in update.filters
+    assert ("eq", "shop_id", "shop-1") in update.filters
+
+
+def test_owner_cannot_acknowledge_another_shops_notification():
+    db = FakeDb(
+        {
+            ("owner_notifications", "update"): [[]],
+            ("owner_notifications", "select"): [[]],
+        }
+    )
+    app.dependency_overrides[get_current_user_id] = lambda: "owner-1"
+    try:
+        with patch("app.routes.owner_notifications.supabase_client", db), patch(
+            "app.routes.owner_notifications.get_user_shop_id", return_value="shop-1"
+        ):
+            response = client.post("/owner-notifications/other-shop-alert/ack")
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+
+    assert response.status_code == 404
+    assert all(("eq", "shop_id", "shop-1") in call.filters for call in db.calls)
+
+
+def test_customer_assistant_prepares_repeat_request_with_owner_approval(portal_context):
+    db = FakeDb(
+        {
+            ("orders", "select"): [[{
+                "id": "order-1",
+                "order_number": 101,
+                "total_amount": 675,
+                "lifecycle_status": "delivered",
+                "created_at": "2026-07-16T10:00:00+00:00",
+            }]],
+            ("customer_requests", "select"): [[]],
+            ("customer_requests", "insert"): [[{
+                "id": "request-1", "status": "pending"
+            }]],
+        }
+    )
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.post(
+            "/customer/assistant",
+            json={"message": "Please repeat my same order again"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["action"] == "request_created"
+    request_insert = next(
+        call for call in db.calls
+        if call.table == "customer_requests" and call.operation == "insert"
+    )
+    assert request_insert.payload["request_type"] == "repeat_order"
+    assert request_insert.payload["shop_id"] == "shop-1"
+    assert request_insert.payload["customer_id"] == "customer-1"
+
+
+def test_customer_assistant_explains_total_from_database(portal_context):
+    db = FakeDb(
+        {
+            ("orders", "select"): [[{
+                "id": "order-1",
+                "order_number": 101,
+                "total_amount": 6920,
+                "lifecycle_status": "packing",
+                "created_at": "2026-07-16T10:00:00+00:00",
+            }]],
+        }
+    )
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.post(
+            "/customer/assistant",
+            json={"message": "Mera order total kitna bana?"},
+        )
+
+    assert response.status_code == 200
+    assert "₹6920.00" in response.json()["reply"]
+    assert "Packing" in response.json()["reply"]

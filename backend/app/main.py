@@ -19,7 +19,13 @@ origins = settings.CORS_ORIGINS
 async def add_cache_control_header(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
-    if path.startswith("/orders") or path.startswith("/action-cards") or path.startswith("/staff/orders"):
+    if (
+        path.startswith("/orders")
+        or path.startswith("/action-cards")
+        or path.startswith("/staff/orders")
+        or path.startswith("/customer")
+        or path.startswith("/owner-notifications")
+    ):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -40,6 +46,9 @@ from app.routes.staff import router as staff_router
 from app.routes.public import router as public_router
 from app.routes.auth import router as auth_router
 from app.routes.invites import router as invites_router
+from app.routes.customer import router as customer_router
+from app.routes.customer_requests import router as customer_requests_router
+from app.routes.owner_notifications import router as owner_notifications_router
 
 # Register routes
 app.include_router(api_router)
@@ -50,6 +59,9 @@ app.include_router(staff_router)
 app.include_router(public_router)
 app.include_router(auth_router)
 app.include_router(invites_router)
+app.include_router(customer_router)
+app.include_router(customer_requests_router)
+app.include_router(owner_notifications_router)
 
 @app.get("/")
 def read_root():

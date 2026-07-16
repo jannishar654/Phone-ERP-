@@ -253,6 +253,46 @@ def test_customer_bill_request_handles_no_orders(mock_supabase):
     assert "koi order nahi mila" in result["reply_message"]
 
 
+def test_tracking_reads_latest_order_from_customer_shop_scope(mock_supabase):
+    query = MagicMock()
+    query.select.return_value = query
+    query.eq.return_value = query
+    query.order.return_value = query
+    query.limit.return_value = query
+    query.execute.return_value = MagicMock(data=[{
+        "id": "order-1",
+        "order_number": 101,
+        "lifecycle_status": "out_for_delivery",
+        "total_amount": 675,
+        "created_at": "2026-07-16T10:00:00+00:00",
+    }])
+    mock_supabase.table.return_value = query
+
+    with patch.object(
+        IntentRouter,
+        "_create_portal_link",
+        return_value="https://phone-erp.vercel.app/customer/access?token=private",
+    ), patch.object(IntentRouter, "_update_conversation"), patch.object(
+        IntentRouter, "_update_inbound_status"
+    ):
+        result = IntentRouter._handle_tracking_request(
+            make_msg("tracking-1", "mera order kaha hai"),
+            {"id": "conv-1"},
+            "inbound-1",
+        )
+
+    query.eq.assert_any_call("shop_id", "shop1")
+    query.eq.assert_any_call("customer_id", "cust1")
+    assert "Out For Delivery" in result["reply_message"]
+    assert "customer/access?token=private" in result["reply_message"]
+
+
+def test_order_received_reply_survives_portal_link_failure():
+    with patch.object(IntentRouter, "_create_portal_link", return_value=None):
+        reply = IntentRouter._order_received_reply("shop1", "cust1", "whatsapp")
+    assert reply == "Order received. Shopkeeper will review it."
+
+
 @pytest.mark.asyncio
 async def test_general_message_never_creates_action_card(
     mock_supabase, mock_gemini, mock_action_card, mock_helpers

@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { authClient, User } from '@/lib/supabase/client';
+import OwnerNotificationCenter from '@/components/OwnerNotificationCenter';
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -13,13 +14,13 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   const [role, setRole] = useState<string | null>(null);
   const [isCheckingRole, setIsCheckingRole] = useState(true);
 
-  const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname.startsWith('/bill/');
+  const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname.startsWith('/bill/') || pathname.startsWith('/customer/');
 
   useEffect(() => {
     authClient.getUser().then(setUser);
     
     if (!isPublicRoute) {
-      setIsCheckingRole(true);
+      queueMicrotask(() => setIsCheckingRole(true));
       import('@/lib/api_access').then(({ getMe }) => {
         getMe().then(me => {
           setRole(me.role);
@@ -36,10 +37,8 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
           router.replace('/login');
         });
       });
-    } else {
-       setIsCheckingRole(false);
     }
-  }, [pathname, isPublicRoute]);
+  }, [pathname, isPublicRoute, router]);
 
   const handleSignOut = async () => {
     await authClient.signOut();
@@ -103,6 +102,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
           </div>
           
           <div className="flex items-center space-x-4 sm:space-x-6 text-xs text-slate-500">
+            {role === 'owner' && <OwnerNotificationCenter />}
             {user && (
               <div className="flex items-center space-x-2">
                 <span className="h-2 w-2 rounded-full bg-indigo-600"></span>

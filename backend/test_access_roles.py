@@ -165,7 +165,9 @@ def test_public_bill_link_read_only(mock_supabase):
             # Return linked order 123
             mock_obj.select().eq().execute.return_value = MagicMock(data=[{"order_id": "order123", "shop_id": "shop123"}])
         elif table_name == "orders":
-            mock_obj.select().eq().execute.return_value = MagicMock(data=[{
+            mock_obj.select.return_value = mock_obj
+            mock_obj.eq.return_value = mock_obj
+            mock_obj.execute.return_value = MagicMock(data=[{
                 "id": "order123", "shop_id": "shop123",
                 "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
             }])

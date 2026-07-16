@@ -142,3 +142,60 @@ export async function getPublicBill(token: string): Promise<any> {
   if (!res.ok) throw new Error('Failed to fetch public bill');
   return res.json();
 }
+
+export async function listCustomerRequests(status: string = 'pending'): Promise<any[]> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/customer-requests?status=${encodeURIComponent(status)}`, {
+    headers,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error('Failed to fetch customer requests');
+  return res.json();
+}
+
+export async function decideCustomerRequest(
+  requestId: string,
+  status: 'approved' | 'rejected' | 'resolved',
+  ownerNote?: string,
+): Promise<any> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/customer-requests/${requestId}`, {
+    method: 'PATCH',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status, owner_note: ownerNote || null }),
+  });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(payload.detail || 'Failed to update customer request');
+  }
+  return res.json();
+}
+
+export type OwnerNotification = {
+  id: string;
+  notification_type: 'new_order' | 'order_reminder' | 'customer_request';
+  title: string;
+  message: string;
+  scheduled_at: string;
+  action_card_id?: string;
+  customer_request_id?: string;
+};
+
+export async function listOwnerNotifications(): Promise<OwnerNotification[]> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/owner-notifications`, {
+    headers,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error('Failed to fetch owner notifications');
+  return res.json();
+}
+
+export async function acknowledgeOwnerNotification(notificationId: string): Promise<void> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/owner-notifications/${notificationId}/ack`, {
+    method: 'POST',
+    headers,
+  });
+  if (!res.ok && res.status !== 404) throw new Error('Failed to acknowledge notification');
+}
