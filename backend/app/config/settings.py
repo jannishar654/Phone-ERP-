@@ -9,8 +9,12 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     
     # CORS origins
-    CORS_ORIGINS: Union[List[str], str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
-    CORS_ORIGIN_REGEX: Optional[str] = None
+    CORS_ORIGINS: Union[List[str], str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://phone-erp.vercel.app",
+    ]
+    CORS_ORIGIN_REGEX: Optional[str] = r"https://phone-erp(?:-[a-z0-9-]+)?\.vercel\.app"
     
     SUPABASE_URL: str = "your-supabase-url-here"
     SUPABASE_KEY: str = "your-supabase-anon-key-here"
