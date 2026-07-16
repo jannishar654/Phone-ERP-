@@ -297,6 +297,48 @@ def test_pending_action_card_appears_as_received_for_same_customer(portal_contex
     assert ("eq", "customer_id", "customer-1") in card_query.filters
 
 
+def test_optional_portal_history_failure_does_not_hide_orders(portal_context):
+    db = FakeDb(
+        {
+            ("customers", "select"): [[{
+                "id": "customer-1", "shop_id": "shop-1", "name": "Danish", "phone": "+911234567890"
+            }]],
+            ("shops", "select"): [[{"id": "shop-1", "name": "Test Shop"}]],
+            ("orders", "select"): [[{
+                "id": "order-1",
+                "total_amount": 225,
+                "lifecycle_status": "packing",
+                "created_at": "2026-07-16T10:00:00+00:00",
+                "updated_at": "2026-07-16T10:00:00+00:00",
+            }]],
+            ("order_items", "select"): [[{
+                "id": "item-1", "order_id": "order-1", "raw_name": "aata",
+                "quantity": 5, "unit": "kg", "unit_price": 45, "line_total": 225,
+            }]],
+            ("action_cards", "select"): [RuntimeError("optional table unavailable")],
+            ("order_status_events", "select"): [RuntimeError("optional table unavailable")],
+        }
+    )
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.get("/customer/orders")
+
+    assert response.status_code == 200
+    assert response.json()["orders"][0]["id"] == "order-1"
+
+
+def test_customer_portal_unhandled_failure_is_cors_safe(portal_context):
+    db = FakeDb({("customers", "select"): [RuntimeError("database unavailable")]})
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.get(
+            "/customer/orders",
+            headers={"Origin": "https://phone-erp.vercel.app"},
+        )
+
+    assert response.status_code == 503
+    assert response.headers["access-control-allow-origin"] == "https://phone-erp.vercel.app"
+    assert response.json()["request_id"]
+
+
 def test_customer_cannot_open_bill_for_another_customer(portal_context):
     db = FakeDb({("orders", "select"): [[]]})
     with patch("app.routes.customer.supabase_client", db):

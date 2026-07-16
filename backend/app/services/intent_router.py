@@ -404,6 +404,9 @@ class IntentRouter:
         conversation: Dict[str, Any],
         inbound_id: str,
     ) -> Dict[str, Any]:
+        portal_link = IntentRouter._create_portal_link(
+            msg.shop_id, msg.customer_id, msg.channel.value
+        )
         try:
             result = (
                 supabase_client.table("orders")
@@ -415,7 +418,20 @@ class IntentRouter:
                 .execute()
             )
             if not result.data:
-                reply = "Aapke number se abhi koi approved order nahi mila."
+                pending = (
+                    supabase_client.table("action_cards")
+                    .select("id, status, created_at")
+                    .eq("shop_id", msg.shop_id)
+                    .eq("customer_id", msg.customer_id)
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                reply = (
+                    "Aapka order shopkeeper review ke liye received hai."
+                    if pending.data
+                    else "Aapke number se abhi koi order nahi mila."
+                )
             else:
                 order = result.data[0]
                 status = str(order.get("lifecycle_status") or "received").replace(
@@ -423,30 +439,34 @@ class IntentRouter:
                 ).title()
                 order_ref = order.get("order_number") or str(order["id"])[:8]
                 reply = f"Order #{order_ref} abhi {status} stage mein hai."
-                portal_link = IntentRouter._create_portal_link(
-                    msg.shop_id, msg.customer_id, msg.channel.value
-                )
-                if portal_link:
-                    reply = f"{reply}\nTrack all your orders: {portal_link}"
-            IntentRouter._update_conversation(
-                conversation["id"],
-                {"state": "idle", "pending_intent": None, "expires_at": None},
-            )
-            IntentRouter._update_inbound_status(inbound_id, "processed")
-            return {"status": "processed", "reply_message": reply}
+            if portal_link:
+                reply = f"{reply}\nTrack all your orders: {portal_link}"
         except Exception as exc:
-            logger.error(
-                "Order tracking failed for inbound_id=%s (%s)",
+            logger.warning(
+                "Order tracking status lookup failed for inbound_id=%s (%s)",
                 inbound_id,
                 type(exc).__name__,
             )
-            IntentRouter._update_inbound_status(
-                inbound_id, "failed", last_error=type(exc).__name__
-            )
-            return {
-                "status": "error",
-                "reply_message": "Order status abhi nahi mil saka. Please thodi der baad try karein.",
-            }
+            if portal_link:
+                reply = (
+                    "Aapka private customer portal ready hai.\n"
+                    f"Track all your orders: {portal_link}"
+                )
+            else:
+                IntentRouter._update_inbound_status(
+                    inbound_id, "failed", last_error=type(exc).__name__
+                )
+                return {
+                    "status": "error",
+                    "reply_message": "Order status abhi nahi mil saka. Please thodi der baad try karein.",
+                }
+
+        IntentRouter._update_conversation(
+            conversation["id"],
+            {"state": "idle", "pending_intent": None, "expires_at": None},
+        )
+        IntentRouter._update_inbound_status(inbound_id, "processed")
+        return {"status": "processed", "reply_message": reply}
 
     @staticmethod
     def _is_bill_request(text: str) -> bool:

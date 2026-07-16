@@ -290,6 +290,62 @@ def test_tracking_reads_latest_order_from_customer_shop_scope(mock_supabase):
     assert "customer/access?token=private" in result["reply_message"]
 
 
+def test_tracking_returns_portal_link_before_owner_approval(mock_supabase):
+    query = MagicMock()
+    query.select.return_value = query
+    query.eq.return_value = query
+    query.order.return_value = query
+    query.limit.return_value = query
+    query.execute.side_effect = [
+        MagicMock(data=[]),
+        MagicMock(data=[{"id": "ac-1", "status": "pending"}]),
+    ]
+    mock_supabase.table.return_value = query
+
+    with patch.object(
+        IntentRouter,
+        "_create_portal_link",
+        return_value="https://phone-erp.vercel.app/customer/access#token=stable",
+    ), patch.object(IntentRouter, "_update_conversation"), patch.object(
+        IntentRouter, "_update_inbound_status"
+    ):
+        result = IntentRouter._handle_tracking_request(
+            make_msg("tracking-pending", "trackmyorder"),
+            {"id": "conv-1"},
+            "inbound-1",
+        )
+
+    assert result["status"] == "processed"
+    assert "review" in result["reply_message"].lower()
+    assert "customer/access#token=stable" in result["reply_message"]
+
+
+def test_tracking_returns_portal_link_when_status_lookup_fails(mock_supabase):
+    query = MagicMock()
+    query.select.return_value = query
+    query.eq.return_value = query
+    query.order.return_value = query
+    query.limit.return_value = query
+    query.execute.side_effect = RuntimeError("status store unavailable")
+    mock_supabase.table.return_value = query
+
+    with patch.object(
+        IntentRouter,
+        "_create_portal_link",
+        return_value="https://phone-erp.vercel.app/customer/access#token=stable",
+    ), patch.object(IntentRouter, "_update_conversation"), patch.object(
+        IntentRouter, "_update_inbound_status"
+    ):
+        result = IntentRouter._handle_tracking_request(
+            make_msg("tracking-fallback", "trackmyorder"),
+            {"id": "conv-1"},
+            "inbound-1",
+        )
+
+    assert result["status"] == "processed"
+    assert "customer/access#token=stable" in result["reply_message"]
+
+
 def test_order_received_reply_survives_portal_link_failure():
     with patch.object(IntentRouter, "_create_portal_link", return_value=None):
         reply = IntentRouter._order_received_reply("shop1", "cust1", "whatsapp")

@@ -30,6 +30,26 @@ router = APIRouter(prefix="/customer", tags=["Customer Portal"])
 logger = logging.getLogger(__name__)
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value if value is not None else default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_optional_query(label: str, callback) -> List[Dict[str, Any]]:
+    try:
+        result = callback()
+        return list(result.data or [])
+    except Exception as exc:
+        logger.warning(
+            "Customer portal optional query failed source=%s error_type=%s",
+            label,
+            type(exc).__name__,
+        )
+        return []
+
+
 def get_customer_context(
     x_customer_session: str | None = Header(default=None),
 ) -> Dict[str, Any]:
@@ -164,64 +184,91 @@ def logout_customer(
 @router.get("/orders", response_model=CustomerPortalOverview)
 def get_customer_orders(context: Dict[str, Any] = Depends(get_customer_context)):
     customer, shop = _customer_and_shop(context)
-    result = (
+    order_rows = (
         supabase_client.table("orders")
-        .select(
-            "id, order_number, total_amount, lifecycle_status, delivery_address, "
-            "delivery_time, created_at, updated_at, packed_at, out_for_delivery_at, "
-            "delivered_at, cancelled_at, "
-            "order_items(id, display_name, raw_name, quantity, unit, unit_price, line_total)"
-        )
+        .select("*")
         .eq("shop_id", context["shop_id"])
         .eq("customer_id", context["customer_id"])
         .order("created_at", desc=True)
         .limit(50)
         .execute()
-    )
-    pending_cards = (
-        supabase_client.table("action_cards")
-        .select(
-            "id, status, items, delivery_address, customer_name, created_at, updated_at"
+    ).data or []
+    order_ids = [str(order["id"]) for order in order_rows]
+
+    items_by_order: Dict[str, List[Dict[str, Any]]] = {
+        order_id: [] for order_id in order_ids
+    }
+    if order_ids:
+        item_rows = _safe_optional_query(
+            "order_items",
+            lambda: (
+                supabase_client.table("order_items")
+                .select("*")
+                .in_("order_id", order_ids)
+                .execute()
+            ),
         )
-        .eq("shop_id", context["shop_id"])
-        .eq("customer_id", context["customer_id"])
-        .order("created_at", desc=True)
-        .limit(50)
-        .execute()
+        for item in item_rows:
+            items_by_order.setdefault(str(item.get("order_id")), []).append(item)
+
+    pending_cards = _safe_optional_query(
+        "action_cards",
+        lambda: (
+            supabase_client.table("action_cards")
+            .select("*")
+            .eq("shop_id", context["shop_id"])
+            .eq("customer_id", context["customer_id"])
+            .order("created_at", desc=True)
+            .limit(50)
+            .execute()
+        ),
     )
-    order_ids = [str(order["id"]) for order in (result.data or [])]
     events_by_order: Dict[str, List[Dict[str, Any]]] = {order_id: [] for order_id in order_ids}
     if order_ids:
-        events = (
-            supabase_client.table("order_status_events")
-            .select("order_id, lifecycle_status, occurred_at")
-            .eq("shop_id", context["shop_id"])
-            .in_("order_id", order_ids)
-            .order("occurred_at")
-            .execute()
+        events = _safe_optional_query(
+            "order_status_events",
+            lambda: (
+                supabase_client.table("order_status_events")
+                .select("order_id, lifecycle_status, occurred_at")
+                .eq("shop_id", context["shop_id"])
+                .in_("order_id", order_ids)
+                .order("occurred_at")
+                .execute()
+            ),
         )
-        for event in events.data or []:
+        for event in events:
             events_by_order.setdefault(str(event["order_id"]), []).append(event)
 
     orders = []
-    for order in result.data or []:
+    for order in order_rows:
         order_payload = dict(order)
         order_payload["record_type"] = "order"
-        order_payload["items"] = order_payload.pop("order_items", [])
+        order_payload["items"] = items_by_order.get(str(order["id"]), [])
         order_payload["events"] = events_by_order.get(str(order["id"]), [])
         order_payload["lifecycle_status"] = order_payload.get("lifecycle_status") or "received"
+        order_payload["updated_at"] = order_payload.get("updated_at") or order_payload["created_at"]
+        for item_index, item in enumerate(order_payload["items"]):
+            item["id"] = str(item.get("id") or f"{order['id']}:{item_index}")
+            item["raw_name"] = item.get("raw_name") or item.get("display_name") or "Item"
         orders.append(CustomerPortalOrder(**order_payload))
 
-    for card in pending_cards.data or []:
+    converted_action_card_ids = {
+        str(order.get("action_card_id"))
+        for order in order_rows
+        if order.get("action_card_id")
+    }
+    for card in pending_cards:
+        if str(card.get("id")) in converted_action_card_ids:
+            continue
         card_status = str(card.get("status") or "pending").lower()
         if card_status not in {"pending", "approved"}:
             continue
         card_items = []
         total_amount = 0.0
         for index, item in enumerate(card.get("items") or []):
-            quantity = float(item.get("quantity") or 0)
-            unit_price = float(item.get("price") or item.get("unit_price") or 0)
-            line_total = float(item.get("line_total") or quantity * unit_price)
+            quantity = _safe_float(item.get("quantity"))
+            unit_price = _safe_float(item.get("price") or item.get("unit_price"))
+            line_total = _safe_float(item.get("line_total"), quantity * unit_price)
             total_amount += line_total
             raw_name = item.get("raw_name") or item.get("name") or "Item"
             card_items.append(

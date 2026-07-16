@@ -3,12 +3,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routes.endpoints import router as api_router
 from app.config.settings import settings
 import uvicorn
+import logging
+import uuid
+
+from fastapi.responses import JSONResponse
 
 app = FastAPI(
     title="PhoneERP API",
     description="AI-powered PhoneERP application backend to extract action cards from phone audio transcripts.",
     version="1.0.0"
 )
+
+logger = logging.getLogger(__name__)
 
 from fastapi import Request
 
@@ -17,8 +23,27 @@ origins = settings.CORS_ORIGINS
 
 @app.middleware("http")
 async def add_cache_control_header(request: Request, call_next):
-    response = await call_next(request)
     path = request.url.path
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        if not path.startswith("/customer"):
+            raise
+        request_id = uuid.uuid4().hex[:12]
+        logger.exception(
+            "Customer portal request failed request_id=%s path=%s error_type=%s",
+            request_id,
+            path,
+            type(exc).__name__,
+        )
+        response = JSONResponse(
+            status_code=503,
+            content={
+                "detail": "Customer portal is temporarily unavailable. Please retry.",
+                "request_id": request_id,
+            },
+            headers={"X-Request-ID": request_id},
+        )
     if (
         path.startswith("/orders")
         or path.startswith("/action-cards")

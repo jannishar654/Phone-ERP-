@@ -1,6 +1,13 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const SESSION_KEY = 'phoneerp_customer_session';
 
+export class CustomerApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = 'CustomerApiError';
+  }
+}
+
 export type CustomerOrderItem = {
   id: string;
   display_name?: string;
@@ -45,9 +52,9 @@ function portalHeaders(): Record<string, string> {
   return token ? { 'X-Customer-Session': token } : {};
 }
 
-async function parseError(response: Response, fallback: string): Promise<Error> {
+async function parseError(response: Response, fallback: string): Promise<CustomerApiError> {
   const payload = await response.json().catch(() => ({}));
-  return new Error(payload.detail || fallback);
+  return new CustomerApiError(payload.detail || fallback, response.status);
 }
 
 export async function exchangeCustomerLink(token: string) {

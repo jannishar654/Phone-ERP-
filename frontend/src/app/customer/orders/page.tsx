@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import {
   askCustomerAssistant,
+  CustomerApiError,
   createCustomerOrderRequest,
   createCustomerSupportRequest,
   CustomerOrder,
@@ -75,6 +76,7 @@ export default function CustomerOrdersPage() {
   const [overview, setOverview] = useState<Awaited<ReturnType<typeof getCustomerOrders>> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [accessExpired, setAccessExpired] = useState(false);
   const [notice, setNotice] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -87,10 +89,11 @@ export default function CustomerOrdersPage() {
   const loadOrders = useCallback(async (isSilent: boolean) => {
     if (!isSilent) setError('');
     try {
-      if (!hasCustomerSession()) throw new Error('Your private session has expired.');
+      if (!hasCustomerSession()) throw new CustomerApiError('Your private session has expired.', 401);
       setOverview(await getCustomerOrders());
     } catch (err) {
       if (!isSilent) {
+        setAccessExpired(err instanceof CustomerApiError && err.status === 401);
         setError(err instanceof Error ? err.message : 'Unable to load orders');
       }
       throw err;
@@ -193,9 +196,21 @@ export default function CustomerOrdersPage() {
     <main className="min-h-screen bg-slate-50 px-4 flex items-center justify-center">
       <section className="w-full max-w-md bg-white border border-red-100 p-6 rounded-lg text-center">
         <AlertCircle className="h-10 w-10 text-red-500 mx-auto" aria-hidden="true" />
-        <h1 className="mt-4 text-xl font-bold text-slate-900">Customer access expired</h1>
+        <h1 className="mt-4 text-xl font-bold text-slate-900">
+          {accessExpired ? 'Customer access expired' : 'Orders temporarily unavailable'}
+        </h1>
         <p className="mt-2 text-sm text-slate-600">{error}</p>
-        <p className="mt-4 text-sm text-slate-500">Send “track my order” on WhatsApp for a new private link.</p>
+        {accessExpired ? (
+          <p className="mt-4 text-sm text-slate-500">Send “track my order” on WhatsApp to reopen your portal.</p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mt-5 inline-flex h-10 items-center justify-center gap-2 bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700"
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden="true" /> Retry
+          </button>
+        )}
       </section>
     </main>
   );
