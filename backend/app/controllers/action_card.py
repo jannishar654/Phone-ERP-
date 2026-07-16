@@ -45,6 +45,7 @@ class ActionCardController:
                 "id": card_id,
                 "user_id": card_data.get("user_id"),
                 "shop_id": card_data.get("shop_id"),
+                "customer_id": card_data.get("customer_id"),
                 "customer_name": card_data.get("customer_name"),
                 "customer_phone": card_data.get("customer_phone"),
                 "items": items_dict,

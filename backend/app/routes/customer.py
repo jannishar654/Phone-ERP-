@@ -50,6 +50,16 @@ def _safe_optional_query(label: str, callback) -> List[Dict[str, Any]]:
         return []
 
 
+def _merge_unique_rows(*row_groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    merged: Dict[str, Dict[str, Any]] = {}
+    for rows in row_groups:
+        for row in rows:
+            row_id = row.get("id")
+            if row_id is not None:
+                merged[str(row_id)] = row
+    return list(merged.values())
+
+
 def get_customer_context(
     x_customer_session: str | None = Header(default=None),
 ) -> Dict[str, Any]:
@@ -184,7 +194,7 @@ def logout_customer(
 @router.get("/orders", response_model=CustomerPortalOverview)
 def get_customer_orders(context: Dict[str, Any] = Depends(get_customer_context)):
     customer, shop = _customer_and_shop(context)
-    order_rows = (
+    customer_orders = (
         supabase_client.table("orders")
         .select("*")
         .eq("shop_id", context["shop_id"])
@@ -193,6 +203,24 @@ def get_customer_orders(context: Dict[str, Any] = Depends(get_customer_context))
         .limit(50)
         .execute()
     ).data or []
+    legacy_orders: List[Dict[str, Any]] = []
+    customer_phone = customer.get("phone")
+    if customer_phone:
+        legacy_orders = _safe_optional_query(
+            "legacy_orders_by_phone",
+            lambda: (
+                supabase_client.table("orders")
+                .select("*")
+                .eq("shop_id", context["shop_id"])
+                .eq("customer_phone", customer_phone)
+                .order("created_at", desc=True)
+                .limit(50)
+                .execute()
+            ),
+        )
+    order_rows = _merge_unique_rows(customer_orders, legacy_orders)
+    order_rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+    order_rows = order_rows[:50]
     order_ids = [str(order["id"]) for order in order_rows]
 
     items_by_order: Dict[str, List[Dict[str, Any]]] = {
@@ -211,7 +239,7 @@ def get_customer_orders(context: Dict[str, Any] = Depends(get_customer_context))
         for item in item_rows:
             items_by_order.setdefault(str(item.get("order_id")), []).append(item)
 
-    pending_cards = _safe_optional_query(
+    customer_cards = _safe_optional_query(
         "action_cards",
         lambda: (
             supabase_client.table("action_cards")
@@ -223,6 +251,21 @@ def get_customer_orders(context: Dict[str, Any] = Depends(get_customer_context))
             .execute()
         ),
     )
+    legacy_cards: List[Dict[str, Any]] = []
+    if customer_phone:
+        legacy_cards = _safe_optional_query(
+            "legacy_action_cards_by_phone",
+            lambda: (
+                supabase_client.table("action_cards")
+                .select("*")
+                .eq("shop_id", context["shop_id"])
+                .eq("customer_phone", customer_phone)
+                .order("created_at", desc=True)
+                .limit(50)
+                .execute()
+            ),
+        )
+    pending_cards = _merge_unique_rows(customer_cards, legacy_cards)
     events_by_order: Dict[str, List[Dict[str, Any]]] = {order_id: [] for order_id in order_ids}
     if order_ids:
         events = _safe_optional_query(

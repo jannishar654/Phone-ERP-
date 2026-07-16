@@ -326,6 +326,62 @@ def test_optional_portal_history_failure_does_not_hide_orders(portal_context):
     assert response.json()["orders"][0]["id"] == "order-1"
 
 
+def test_legacy_phone_linked_action_card_appears_in_customer_portal(portal_context):
+    db = FakeDb(
+        {
+            ("customers", "select"): [[{
+                "id": "customer-1", "shop_id": "shop-1", "name": "Danish",
+                "phone": "+911234567890",
+            }]],
+            ("shops", "select"): [[{"id": "shop-1", "name": "Test Shop"}]],
+            ("orders", "select"): [[], []],
+            ("action_cards", "select"): [[], [{
+                "id": "legacy-card-1",
+                "shop_id": "shop-1",
+                "customer_id": None,
+                "customer_phone": "+911234567890",
+                "status": "pending",
+                "items": [{"name": "Aata", "quantity": 5, "unit": "kg", "price": 45}],
+                "created_at": "2026-07-16T10:00:00+00:00",
+                "updated_at": "2026-07-16T10:00:00+00:00",
+            }]],
+        }
+    )
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.get("/customer/orders")
+
+    assert response.status_code == 200
+    assert response.json()["orders"][0]["id"] == "action-card:legacy-card-1"
+    assert response.json()["orders"][0]["lifecycle_status"] == "received"
+
+
+def test_action_card_controller_persists_customer_id():
+    from app.controllers.action_card import ActionCardController
+
+    created_row = {
+        "id": "card-1",
+        "shop_id": "shop-1",
+        "customer_id": "customer-1",
+        "source": "whatsapp",
+        "message_type": "ORDER",
+        "transcript": "5 kg aata",
+        "items": [],
+        "status": "pending",
+        "created_at": "2026-07-16T10:00:00+00:00",
+    }
+    with patch("app.controllers.action_card.SupabaseService.is_available", return_value=True), patch(
+        "app.controllers.action_card.SupabaseService.create", return_value=created_row
+    ) as create:
+        ActionCardController.create_card(
+            {
+                **created_row,
+                "customer_id": "customer-1",
+            }
+        )
+
+    assert create.call_args.args[0]["customer_id"] == "customer-1"
+
+
 def test_customer_portal_unhandled_failure_is_cors_safe(portal_context):
     db = FakeDb({("customers", "select"): [RuntimeError("database unavailable")]})
     with patch("app.routes.customer.supabase_client", db):
