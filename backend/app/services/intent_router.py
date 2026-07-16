@@ -27,6 +27,125 @@ EXTRACTION_TIMEOUT_SECONDS = 8
 
 class IntentRouter:
     @staticmethod
+    def classify_intent_deterministically(
+        text: str,
+    ) -> Optional[IntentClassification]:
+        """Resolve strong English, Hindi, and Hinglish signals without an AI call."""
+        normalized = re.sub(r"\s+", " ", str(text or "").strip().lower())
+        if not normalized:
+            return IntentClassification(
+                intent=ConversationIntent.UNCERTAIN, confidence=0.0
+            )
+
+        if re.fullmatch(
+            r"(?:hi|hello|hey|namaste|namaskar|thanks|thank you|dhanyavaad|"
+            r"shukriya|नमस्ते|नमस्कार|धन्यवाद)[!. ]*",
+            normalized,
+        ):
+            return IntentClassification(
+                intent=ConversationIntent.GENERAL_MESSAGE, confidence=0.99
+            )
+
+        price_patterns = (
+            r"\b(?:price|rate|cost|kitna|kitne|bhaav|bhav)\b",
+            r"(?:कीमत|दाम|रेट|भाव|कितना|कितने)",
+            r"how much",
+        )
+        if any(re.search(pattern, normalized) for pattern in price_patterns):
+            return IntentClassification(
+                intent=ConversationIntent.PRICE_ENQUIRY, confidence=0.98
+            )
+
+        tracking_patterns = (
+            r"\b(?:track|tracking|status|dispatched|arrive|delivery status)\b",
+            r"\bwhere\b.*\b(?:order|delivery)\b",
+            r"\bwhen\b.*\b(?:arrive|delivered|delivery)\b",
+            r"\b(?:order|delivery)\s+(?:kaha|kahaan|kidhar)\b",
+            r"(?:ऑर्डर|डिलीवरी).*(?:कहाँ|स्थिति|स्टेटस)",
+        )
+        if any(re.search(pattern, normalized) for pattern in tracking_patterns):
+            return IntentClassification(
+                intent=ConversationIntent.ORDER_TRACKING, confidence=0.97
+            )
+
+        cancel_patterns = (
+            r"\b(?:cancel|cancelled|cancellation|nahi bhejna|mat bhejna)\b",
+            r"(?:कैंसिल|रद्द|मत भेजना|नहीं भेजना)",
+        )
+        if any(re.search(pattern, normalized) for pattern in cancel_patterns):
+            return IntentClassification(
+                intent=ConversationIntent.ORDER_CANCEL, confidence=0.98
+            )
+
+        update_patterns = (
+            r"\b(?:change|modify|update|replace|remove|add)\b.*\b(?:order|mera|my)\b",
+            r"\b(?:order|mera|my)\b.*\b(?:change|modify|update|replace|remove|add)\b",
+            r"(?:ऑर्डर).*(?:बदल|जोड़|हटा|अपडेट)",
+        )
+        if any(re.search(pattern, normalized) for pattern in update_patterns):
+            return IntentClassification(
+                intent=ConversationIntent.ORDER_UPDATE, confidence=0.96
+            )
+
+        payment_patterns = (
+            r"\b(?:payment|pay|paid|balance|due|dues|credit|udhaar|udhar|invoice)\b",
+            r"(?:पेमेंट|भुगतान|बकाया|उधार|बिल)",
+        )
+        if any(re.search(pattern, normalized) for pattern in payment_patterns):
+            return IntentClassification(
+                intent=ConversationIntent.PAYMENT_QUERY, confidence=0.94
+            )
+
+        support_patterns = (
+            r"\b(?:complaint|problem|issue|damaged|bad quality|call me|human support|"
+            r"need help|help me|opening time|closing time|shop open)\b",
+            r"(?:शिकायत|समस्या|खराब|कॉल करो|दुकान खुली)",
+        )
+        if any(re.search(pattern, normalized) for pattern in support_patterns):
+            return IntentClassification(
+                intent=ConversationIntent.BUSINESS_SUPPORT, confidence=0.94
+            )
+
+        quantity_with_unit = re.search(
+            r"(?:\b\d+(?:\.\d+)?|\b(?:ek|teen|char|chaar|paanch|chhe|saat|aath|"
+            r"nau|das|bees|pachas|sau|aadha|adhaa|dedh|dhai)\b|"
+            r"(?:एक|दो|तीन|चार|पांच|छह|सात|आठ|नौ|दस|बीस|पचास|सौ|आधा|डेढ़|ढाई))"
+            r"\s*(?:kg|kgs|kilo|kilogram|g|gram|grams|litre|liter|litres|liters|l|"
+            r"ml|packet|packets|pack|packs|piece|pieces|pcs|box|boxes|bottle|bottles|"
+            r"किलो|किलोग्राम|ग्राम|लीटर|मिलीलीटर|पैकेट|पीस|डिब्बा|बोतल)"
+            r"(?=\s|$|[,.!?।])",
+            normalized,
+        )
+        purchase_patterns = (
+            r"\b(?:send|deliver|order|book|buy|purchase|need|want)\b",
+            r"\b(?:bhej|bhejna|bhejdo|bhej do|bhej dena|chahiye|de do|dedo|"
+            r"pahuncha|pahucha)\b",
+            r"(?:भेज|चाहिए|दे दो|पहुंचा|ऑर्डर|खरीद)",
+        )
+        has_purchase_intent = any(
+            re.search(pattern, normalized) for pattern in purchase_patterns
+        )
+        if has_purchase_intent and quantity_with_unit:
+            return IntentClassification(
+                intent=ConversationIntent.NEW_ORDER, confidence=0.97
+            )
+        if has_purchase_intent:
+            return IntentClassification(
+                intent=ConversationIntent.NEW_ORDER, confidence=0.72
+            )
+
+        promotion_patterns = (
+            r"\b(?:earn money|limited offer|click here|promo code|investment scheme)\b",
+            r"(?:कमाई करें|ऑफर पाने के लिए क्लिक)",
+        )
+        if any(re.search(pattern, normalized) for pattern in promotion_patterns):
+            return IntentClassification(
+                intent=ConversationIntent.SPAM, confidence=0.96
+            )
+
+        return None
+
+    @staticmethod
     async def process_inbound_message(msg: NormalizedInboundMessage) -> Dict[str, Any]:
         if not supabase_client:
             logger.error("Intent router unavailable: database client is not configured")
@@ -92,17 +211,31 @@ class IntentRouter:
             )
 
         IntentRouter._update_inbound_status(inbound_id, "classifying")
+        context = IntentRouter._get_business_context(msg.shop_id, msg.metadata)
+        classification = IntentRouter.classify_intent_deterministically(msg.raw_text)
+        classifier_warning = None
         try:
-            context = IntentRouter._get_business_context(msg.shop_id, msg.metadata)
-            raw_classification = await asyncio.wait_for(
-                GeminiService.classify_intent(
-                    msg.raw_text, business_context=context
-                ),
-                timeout=CLASSIFICATION_TIMEOUT_SECONDS,
-            )
-            classification = IntentClassification.model_validate(raw_classification)
-            if not classification.available:
-                raise RuntimeError("IntentClassifierUnavailable")
+            if classification is None:
+                raw_classification = await asyncio.wait_for(
+                    GeminiService.classify_intent(
+                        msg.raw_text, business_context=context
+                    ),
+                    timeout=CLASSIFICATION_TIMEOUT_SECONDS,
+                )
+                classification = IntentClassification.model_validate(
+                    raw_classification
+                )
+                if not classification.available:
+                    logger.warning(
+                        "AI intent classifier unavailable for inbound_id=%s; "
+                        "using safe uncertain fallback",
+                        inbound_id,
+                    )
+                    classification = IntentClassification(
+                        intent=ConversationIntent.UNCERTAIN,
+                        confidence=0.0,
+                    )
+                    classifier_warning = "IntentClassifierUnavailable"
         except (ValidationError, TypeError, ValueError) as exc:
             logger.warning(
                 "Intent classifier returned invalid output for inbound_id=%s (%s)",
@@ -120,18 +253,17 @@ class IntentRouter:
                 ),
             }
         except Exception as exc:
-            logger.error(
-                "Intent classification failed for inbound_id=%s (%s)",
+            logger.warning(
+                "Intent classification unavailable for inbound_id=%s (%s); "
+                "using safe uncertain fallback",
                 inbound_id,
                 type(exc).__name__,
             )
-            IntentRouter._update_inbound_status(
-                inbound_id, "failed", last_error=type(exc).__name__
+            classification = IntentClassification(
+                intent=ConversationIntent.UNCERTAIN,
+                confidence=0.0,
             )
-            return {
-                "status": "error",
-                "reply_message": "I could not process that message. Please try again.",
-            }
+            classifier_warning = type(exc).__name__
 
         intent = classification.intent.value
         confidence = classification.confidence
@@ -140,6 +272,7 @@ class IntentRouter:
             "classified",
             detected_intent=intent,
             confidence=confidence,
+            last_error=classifier_warning,
         )
 
         if classification.intent == ConversationIntent.NEW_ORDER:

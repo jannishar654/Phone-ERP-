@@ -858,7 +858,12 @@ Return only the transcript text.
             re.I,
         )
         if not name_match:
-            name_match = re.search(r"(?:mera naam|naam)\s+([A-Za-z][A-Za-z ]+?)\s*(?:hai|hai\.|$)", transcript, re.I)
+            name_match = re.search(
+                r"(?:mera naam|naam)\s+([A-Za-z][A-Za-z ]+?)"
+                r"(?=\s+(?:hai|address|pata|kal|aaj|today|tomorrow)|[.,]|$)",
+                transcript,
+                re.I,
+            )
         if not name_match:
             name_match = re.search(
                 r"^(?:(?:kal|aaj|today|tomorrow|कल|आज)\s+)?"
@@ -870,10 +875,19 @@ Return only the transcript text.
 
         # Delivery address heuristics
         address_match = re.search(
-            r"(?:deliver(?:y)? to|send it to|send to|address is|ship to|pahunchao|pahunchana hai|address hai)\s+([^\.\n,]+)",
+            r"(?:deliver(?:y)? to|send it to|send to|address(?:\s+(?:is|hai))?|"
+            r"ship to|pahunchao|pahunchana hai|pata(?:\s+(?:hai|is))?)\s+"
+            r"(.+?)(?=\s+(?:kal|aaj|today|tomorrow|subah|shaam|raat|"
+            r"\d{1,2}(?::\d{2})?\s*(?:am|pm|baje)|bhej|send|deliver)|[.,]|$)",
             transcript,
             re.I,
         )
+        if not address_match:
+            address_match = re.search(
+                r"\bto\s+(.+?)(?=,\s*(?:my name|name|naam)|[.]|$)",
+                transcript,
+                re.I,
+            )
         delivery_address = address_match.group(1).strip() if address_match else ""
 
         # Delivery time heuristics. Only capture known time phrases; never put
@@ -902,7 +916,8 @@ Return only the transcript text.
         unit_tokens = (
             r"(?:kg|kgs|kilo|kilogram|g|gm|gram|packet|packets|pack|peti|"
             r"carton|cartons|box|boxes|litre|litres|liter|liters|l|piece|"
-            r"pieces|pcs|bag|bags|tin|tins|bottle|bottles|bora|केजी|किलो|पैकेट|पेटी|बोरा)"
+            r"pieces|pcs|bag|bags|tin|tins|bottle|bottles|bora|केजी|किलो|"
+            r"किलोग्राम|ग्राम|लीटर|मिलीलीटर|पैकेट|पेटी|बोरा)"
         )
 
         item_source = re.sub(
@@ -910,6 +925,12 @@ Return only the transcript text.
             r"[\w\u0900-\u097F][\w\u0900-\u097F .&'-]{1,60}?\s+(?:ko|को)(?=\s|$)",
             " ",
             transcript,
+            flags=re.I,
+        )
+        item_source = re.sub(
+            r"\s+to\s+.+?(?=,\s*(?:my name|name|naam)|[.]|$)",
+            " ",
+            item_source,
             flags=re.I,
         )
         item_source = re.sub(
@@ -922,9 +943,9 @@ Return only the transcript text.
         item_matches = re.findall(
             rf"(?<![\w\u0900-\u097F])({quantity_tokens})\s*(?:({unit_tokens})\s+)?"
             rf"([\w\u0900-\u097F₹%+&()./'-]+(?:\s+[\w\u0900-\u097F₹%+&()./'-]+)*?)"
-            rf"(?=\s+(?:and|aur|और|bhej|bhejo|bhejna|bhejdo|bhej dena|भेज|भेजो|भेजना|भेज देना|"
-            rf"send|deliver|delivery|de do|dijiye|chahiye|please)(?![\w\u0900-\u097F])|[.,]|$)",
-            item_source,
+            rf"(?=\s+(?:and|or|aur|और|या|bhej|bhejo|bhejna|bhejdo|bhej dena|भेज|भेजो|भेजना|भेज देना|"
+            rf"send|deliver|delivery|de do|dijiye|chahiye|please)(?![\w\u0900-\u097F])|\s*[.,]|$)",
+            item_source.strip(),
             re.I,
         )
         foods = []
@@ -1103,13 +1124,11 @@ Return only the transcript text.
                 logger.warning("Could not parse Gemini extraction output, using fallback parser.")
                 return GeminiService._parse_order_fallback(transcript)
         except Exception as error:
-            err_msg = str(error).upper()
-            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "QUOTA" in err_msg:
-                logger.error(f"Gemini extraction hit quota limit: {error}")
-                raise RuntimeError("Gemini API Quota Exhausted. Please try again later.") from error
-            else:
-                logger.exception("Gemini extraction failed.")
-                raise RuntimeError(f"Gemini extraction failed: {error}") from error
+            logger.warning(
+                "Gemini extraction unavailable (%s); using deterministic fallback parser",
+                type(error).__name__,
+            )
+            return GeminiService._parse_order_fallback(transcript)
 
         # Safely extract the first card from the cards array.
         # Ensure compatibility with multiple cards structure without breaking existing single-card endpoints.

@@ -112,9 +112,75 @@ async def test_model_timeout_invalid_json(mock_supabase, mock_gemini, mock_actio
     mock_helpers.return_value = {"id": "conv1", "state": "idle"}
     mock_gemini.classify_intent = AsyncMock(side_effect=Exception("API Timeout"))
 
-    result = await IntentRouter.process_inbound_message(make_msg("msg2", "i need milk"))
-    assert result["status"] == "error"
-    assert "try again" in result["reply_message"].lower()
+    result = await IntentRouter.process_inbound_message(make_msg("msg2", "maybe later"))
+    assert result["status"] == "needs_review"
+    assert "contact the business" in result["reply_message"].lower()
+    mock_action_card.create_card.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_intent", "minimum_confidence"),
+    [
+        ("What is the price of rice?", "price_enquiry", 0.95),
+        ("Send 10 kg rice tomorrow", "new_order", 0.95),
+        (
+            "50 kilo aata aur 100 kilo chini or 1 litre oil bhej dena "
+            "naam Danish address Batla House Jamia Nagar kal 9:30 pm me bhej dena",
+            "new_order",
+            0.95,
+        ),
+        ("दस किलो आटा भेज देना", "new_order", 0.95),
+        ("Where is my order?", "order_tracking", 0.95),
+        ("I need help", "business_support", 0.90),
+    ],
+)
+def test_multilingual_deterministic_intent_fallback(
+    text, expected_intent, minimum_confidence
+):
+    classification = IntentRouter.classify_intent_deterministically(text)
+
+    assert classification is not None
+    assert classification.intent.value == expected_intent
+    assert classification.confidence >= minimum_confidence
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_items"),
+    [
+        ("Send 10 kg rice tomorrow", [("rice", 10, "kg")]),
+        (
+            "50 kilo aata aur 100 kilo chini or 1 litre oil bhej dena "
+            "naam Danish address Batla House Jamia Nagar kal 9:30 pm me bhej dena",
+            [("aata", 50, "kilo"), ("chini", 100, "kilo"), ("oil", 1, "litre")],
+        ),
+        ("दस किलो आटा भेज देना", [("आटा", 10, "किलो")]),
+    ],
+)
+def test_multilingual_order_extraction_fallback(text, expected_items):
+    parsed = GeminiService._parse_order_fallback(text)
+    actual_items = [
+        (item["name"], item["quantity"], item["unit"]) for item in parsed["items"]
+    ]
+
+    assert actual_items == expected_items
+
+
+@pytest.mark.asyncio
+@patch("app.services.gemini.settings.GEMINI_API_KEY", "test-api-key")
+@patch("app.services.gemini.genai.Client")
+async def test_order_extraction_survives_gemini_outage(mock_client):
+    mock_client.return_value.models.generate_content.side_effect = OSError(
+        "provider unavailable"
+    )
+
+    parsed = await GeminiService.extract_order_details(
+        "50 kilo aata aur 100 kilo chini or 1 litre oil bhej dena "
+        "naam Danish address Batla House Jamia Nagar kal 9:30 pm me bhej dena"
+    )
+
+    assert parsed["customer_name"] == "Danish"
+    assert parsed["delivery_address"] == "Batla House Jamia Nagar"
+    assert [item["name"] for item in parsed["items"]] == ["aata", "chini", "oil"]
 
 
 @pytest.mark.asyncio
