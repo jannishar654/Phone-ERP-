@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 from typing import Any, Dict, List
 
@@ -26,6 +27,7 @@ from app.services.supabase import supabase_client
 
 
 router = APIRouter(prefix="/customer", tags=["Customer Portal"])
+logger = logging.getLogger(__name__)
 
 
 def get_customer_context(
@@ -136,6 +138,12 @@ def exchange_customer_access(payload: MagicLinkExchange):
         session = exchange_magic_link(payload.token)
     except ValueError as exc:
         raise HTTPException(status_code=401, detail="This access link is invalid or expired") from exc
+    except RuntimeError as exc:
+        logger.error("Customer portal exchange unavailable (%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=503,
+            detail="Customer portal is temporarily unavailable. Please try again shortly.",
+        ) from exc
     customer, shop = _customer_and_shop(session)
     return CustomerPortalSessionResponse(
         session_token=session["session_token"],

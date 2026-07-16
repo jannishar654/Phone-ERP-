@@ -57,11 +57,13 @@ class IntentRouter:
             )
 
         tracking_patterns = (
+            r"\b(?:trackmyorder|trackorder|orderstatus|myorderstatus)\b",
             r"\b(?:track|tracking|status|dispatched|arrive|delivery status)\b",
             r"\bwhere\b.*\b(?:order|delivery)\b",
             r"\bwhen\b.*\b(?:arrive|delivered|delivery)\b",
-            r"\b(?:order|delivery)\s+(?:kaha|kahaan|kidhar)\b",
-            r"(?:ऑर्डर|डिलीवरी).*(?:कहाँ|स्थिति|स्टेटस)",
+            r"\b(?:mera|meri|my)\s+(?:order|delivery)\b",
+            r"\b(?:order|delivery)\s+(?:kaha|kahan|kahaan|kidhar|status)\b",
+            r"(?:मेरा|मेरी).*(?:ऑर्डर|डिलीवरी)|(?:ऑर्डर|डिलीवरी).*(?:कहाँ|स्थिति|स्टेटस)",
         )
         if any(re.search(pattern, normalized) for pattern in tracking_patterns):
             return IntentClassification(

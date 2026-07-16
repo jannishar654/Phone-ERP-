@@ -7,8 +7,8 @@ from app.services.supabase import supabase_client
 from app.utils.security import hash_token
 
 
-MAGIC_LINK_TTL_MINUTES = 15
-PORTAL_SESSION_TTL_HOURS = 2
+MAGIC_LINK_TTL_MINUTES = 60
+PORTAL_SESSION_TTL_HOURS = 24
 
 
 def _now() -> datetime:

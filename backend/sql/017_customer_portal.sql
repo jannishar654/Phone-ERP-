@@ -103,12 +103,12 @@ BEGIN
         link_row.shop_id, link_row.customer_id, p_session_hash, p_session_expires_at
     ) RETURNING id INTO new_session_id;
 
-    UPDATE public.customer_portal_sessions
+    UPDATE public.customer_portal_sessions AS sessions
     SET revoked_at = NOW()
-    WHERE shop_id = link_row.shop_id
-      AND customer_id = link_row.customer_id
-      AND id <> new_session_id
-      AND revoked_at IS NULL;
+    WHERE sessions.shop_id = link_row.shop_id
+      AND sessions.customer_id = link_row.customer_id
+      AND sessions.id <> new_session_id
+      AND sessions.revoked_at IS NULL;
 
     RETURN QUERY SELECT link_row.shop_id, link_row.customer_id;
 END;

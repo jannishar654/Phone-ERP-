@@ -133,6 +133,9 @@ async def test_model_timeout_invalid_json(mock_supabase, mock_gemini, mock_actio
         ),
         ("दस किलो आटा भेज देना", "new_order", 0.95),
         ("Where is my order?", "order_tracking", 0.95),
+        ("trackmyorder", "order_tracking", 0.95),
+        ("mera order kaha hai", "order_tracking", 0.95),
+        ("मेरा ऑर्डर कहाँ है", "order_tracking", 0.95),
         ("I need help", "business_support", 0.90),
         (
             "order jo kiya h tha uska bill bhej dijiye na",

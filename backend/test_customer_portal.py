@@ -154,6 +154,24 @@ def test_expired_magic_link_is_rejected_without_creating_session():
     assert len(db.calls) == 1
 
 
+def test_exchange_infrastructure_failure_returns_safe_service_unavailable():
+    with patch(
+        "app.routes.customer.exchange_magic_link",
+        side_effect=RuntimeError("database details must not leak"),
+    ):
+        response = client.post(
+            "/customer/access/exchange",
+            json={"token": "a-valid-length-customer-magic-token"},
+            headers={"Origin": "https://phone-erp.vercel.app"},
+        )
+
+    assert response.status_code == 503
+    assert response.headers["access-control-allow-origin"] == "https://phone-erp.vercel.app"
+    assert response.json()["detail"] == (
+        "Customer portal is temporarily unavailable. Please try again shortly."
+    )
+
+
 def test_customer_session_validation_is_scoped_and_updates_last_used():
     db = FakeDb(
         {
