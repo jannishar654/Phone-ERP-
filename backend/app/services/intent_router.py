@@ -88,8 +88,9 @@ class IntentRouter:
             )
 
         payment_patterns = (
-            r"\b(?:payment|pay|paid|balance|due|dues|credit|udhaar|udhar|invoice)\b",
-            r"(?:पेमेंट|भुगतान|बकाया|उधार|बिल)",
+            r"\b(?:payment|pay|paid|balance|due|dues|credit|udhaar|udhar|invoice|"
+            r"bill|receipt|rasid|raseed)\b",
+            r"(?:पेमेंट|भुगतान|बकाया|उधार|बिल|रसीद)",
         )
         if any(re.search(pattern, normalized) for pattern in payment_patterns):
             return IntentClassification(
@@ -295,7 +296,7 @@ class IntentRouter:
                 )
 
         return IntentRouter._handle_other_intent(
-            classification.intent, conversation, inbound_id
+            classification.intent, conversation, inbound_id, msg
         )
 
     @staticmethod
@@ -303,6 +304,7 @@ class IntentRouter:
         intent: ConversationIntent,
         conversation: Dict[str, Any],
         inbound_id: str,
+        msg: Optional[NormalizedInboundMessage] = None,
     ) -> Dict[str, Any]:
         IntentRouter._update_conversation(
             conversation["id"],
@@ -329,6 +331,13 @@ class IntentRouter:
                 "status": "processed",
                 "reply_message": "Use /orders to check your recent order status.",
             }
+
+        if (
+            intent == ConversationIntent.PAYMENT_QUERY
+            and msg
+            and IntentRouter._is_bill_request(msg.raw_text)
+        ):
+            return IntentRouter._handle_bill_request(msg, conversation, inbound_id)
 
         review_messages = {
             ConversationIntent.ORDER_UPDATE: (
@@ -364,6 +373,83 @@ class IntentRouter:
             "status": "needs_review",
             "reply_message": review_messages[intent],
         }
+
+    @staticmethod
+    def _is_bill_request(text: str) -> bool:
+        normalized = str(text or "").strip().lower()
+        return bool(
+            re.search(
+                r"\b(?:bill|receipt|invoice|rasid|raseed)\b|(?:बिल|रसीद)",
+                normalized,
+            )
+        )
+
+    @staticmethod
+    def _handle_bill_request(
+        msg: NormalizedInboundMessage,
+        conversation: Dict[str, Any],
+        inbound_id: str,
+    ) -> Dict[str, Any]:
+        try:
+            latest_order = (
+                supabase_client.table("orders")
+                .select("id, shop_id, total_amount, lifecycle_status, created_at")
+                .eq("shop_id", msg.shop_id)
+                .eq("customer_id", msg.customer_id)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if not latest_order.data:
+                IntentRouter._update_inbound_status(inbound_id, "processed")
+                return {
+                    "status": "processed",
+                    "reply_message": (
+                        "Aapke number se koi order nahi mila. "
+                        "Agar order kisi aur number se kiya tha, wahi number use karein."
+                    ),
+                }
+
+            order = latest_order.data[0]
+            from app.services.bill_link_service import ensure_public_bill_link
+
+            bill_url = ensure_public_bill_link(
+                order["id"],
+                msg.shop_id,
+                db_client=supabase_client,
+            )
+            total = float(order.get("total_amount") or 0)
+            status = str(order.get("lifecycle_status") or "pending").replace(
+                "_", " "
+            ).title()
+            IntentRouter._update_conversation(
+                conversation["id"],
+                {"state": "idle", "pending_intent": None, "expires_at": None},
+            )
+            IntentRouter._update_inbound_status(inbound_id, "processed")
+            return {
+                "status": "processed",
+                "reply_message": (
+                    f"Aapke latest order ka bill:\n"
+                    f"Status: {status}\nTotal: ₹{total:.2f}\n{bill_url}"
+                ),
+            }
+        except Exception as exc:
+            logger.error(
+                "Customer bill retrieval failed for inbound_id=%s (%s)",
+                inbound_id,
+                type(exc).__name__,
+            )
+            IntentRouter._update_inbound_status(
+                inbound_id, "failed", last_error=type(exc).__name__
+            )
+            return {
+                "status": "error",
+                "reply_message": (
+                    "Bill abhi retrieve nahi ho saka. "
+                    "Please thodi der baad 'bill' dobara bhejein."
+                ),
+            }
 
     @staticmethod
     async def _handle_confirmation(

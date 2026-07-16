@@ -1,8 +1,7 @@
 import logging
-from datetime import datetime, timedelta
 from app.services.supabase import supabase_client
-from app.utils.security import generate_deterministic_bill_token, hash_token
 from app.config.settings import settings
+from app.services.bill_link_service import ensure_public_bill_link
 
 logger = logging.getLogger(__name__)
 
@@ -50,27 +49,11 @@ def send_delivery_notification(order_id: str, final_order: dict | None = None) -
         customer_id = full_order.get("customer_id")
         shop_id_val = full_order.get("shop_id")
         
-        # Generate bill link
-        raw_token = generate_deterministic_bill_token(order_id_str, shop_id_val)
-        token_hash_val = hash_token(raw_token)
-        expires_at = (datetime.utcnow() + timedelta(days=30)).isoformat()
-        
-        link_res = supabase_client.table("order_public_links").select("id").eq("order_id", order_id_str).execute()
-        if link_res.data:
-            supabase_client.table("order_public_links").update({
-                "token_hash": token_hash_val,
-                "expires_at": expires_at
-            }).eq("id", link_res.data[0]["id"]).execute()
-        else:
-            supabase_client.table("order_public_links").insert({
-                "order_id": order_id_str,
-                "shop_id": shop_id_val,
-                "token_hash": token_hash_val,
-                "expires_at": expires_at
-            }).execute()
-            
-        base_url = getattr(settings, "FRONTEND_PUBLIC_BASE_URL", "http://localhost:3000")
-        bill_url = f"{base_url}/bill/{raw_token}"
+        bill_url = ensure_public_bill_link(
+            order_id_str,
+            shop_id_val,
+            db_client=supabase_client,
+        )
         total_amount = full_order.get("total_amount", 0)
         bill_msg = f"Your order has been delivered.\nTotal: ₹{total_amount}\nBill: {bill_url}"
         

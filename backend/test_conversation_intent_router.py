@@ -134,6 +134,11 @@ async def test_model_timeout_invalid_json(mock_supabase, mock_gemini, mock_actio
         ("दस किलो आटा भेज देना", "new_order", 0.95),
         ("Where is my order?", "order_tracking", 0.95),
         ("I need help", "business_support", 0.90),
+        (
+            "order jo kiya h tha uska bill bhej dijiye na",
+            "payment_query",
+            0.90,
+        ),
     ],
 )
 def test_multilingual_deterministic_intent_fallback(
@@ -184,6 +189,68 @@ async def test_order_extraction_survives_gemini_outage(mock_client):
     assert parsed["customer_name"] == "Danish"
     assert parsed["delivery_address"] == "Batla House Jamia Nagar"
     assert [item["name"] for item in parsed["items"]] == ["aata", "chini", "oil"]
+
+
+def test_customer_can_fetch_latest_bill_for_own_shop_and_identity(mock_supabase):
+    query = MagicMock()
+    query.select.return_value = query
+    query.eq.return_value = query
+    query.order.return_value = query
+    query.limit.return_value = query
+    query.execute.return_value = MagicMock(
+        data=[
+            {
+                "id": "order-1",
+                "shop_id": "shop1",
+                "total_amount": 675.0,
+                "lifecycle_status": "out_for_delivery",
+            }
+        ]
+    )
+    mock_supabase.table.return_value = query
+
+    with patch(
+        "app.services.bill_link_service.ensure_public_bill_link",
+        return_value="https://phone-erp.vercel.app/bill/secure-token",
+    ) as mock_link, patch.object(IntentRouter, "_update_conversation"), patch.object(
+        IntentRouter, "_update_inbound_status"
+    ):
+        result = IntentRouter._handle_bill_request(
+            make_msg("bill-1", "mera bill bhej do"),
+            {"id": "conv1"},
+            "inbound-1",
+        )
+
+    query.eq.assert_any_call("shop_id", "shop1")
+    query.eq.assert_any_call("customer_id", "cust1")
+    mock_link.assert_called_once_with(
+        "order-1",
+        "shop1",
+        db_client=mock_supabase,
+    )
+    assert result["status"] == "processed"
+    assert "₹675.00" in result["reply_message"]
+    assert "secure-token" in result["reply_message"]
+
+
+def test_customer_bill_request_handles_no_orders(mock_supabase):
+    query = MagicMock()
+    query.select.return_value = query
+    query.eq.return_value = query
+    query.order.return_value = query
+    query.limit.return_value = query
+    query.execute.return_value = MagicMock(data=[])
+    mock_supabase.table.return_value = query
+
+    with patch.object(IntentRouter, "_update_inbound_status"):
+        result = IntentRouter._handle_bill_request(
+            make_msg("bill-2", "bill bhejo"),
+            {"id": "conv1"},
+            "inbound-2",
+        )
+
+    assert result["status"] == "processed"
+    assert "koi order nahi mila" in result["reply_message"]
 
 
 @pytest.mark.asyncio

@@ -1491,7 +1491,7 @@ Return only the transcript text.
             "- order_cancel (cancel an existing order)\n"
             "- order_tracking (ask for order or delivery status)\n"
             "- price_enquiry (ask for price or availability without committing to buy)\n"
-            "- payment_query (ask about payment, balance, credit, or invoice)\n"
+            "- payment_query (ask about payment, balance, credit, bill, receipt, or invoice)\n"
             "- business_support (complaint, opening hours, callback, or human help)\n"
             "- general_message (greetings, hi, hello, ok, thanks. NOT an order.)\n"
             "- spam (promotions, unrelated links)\n"
