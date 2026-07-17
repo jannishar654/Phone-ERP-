@@ -292,9 +292,156 @@ def test_pending_action_card_appears_as_received_for_same_customer(portal_contex
     assert order["record_type"] == "action_card"
     assert order["lifecycle_status"] == "received"
     assert order["total_amount"] == 225.0
+    assert order["source_id"] == "ac-1"
+    assert order["display_reference"] == "Draft ac-1"
+    assert order["can_edit"] is True
+    assert order["revision"] == 1
     card_query = next(call for call in db.calls if call.table == "action_cards")
     assert ("eq", "shop_id", "shop-1") in card_query.filters
     assert ("eq", "customer_id", "customer-1") in card_query.filters
+
+
+def test_customer_edits_pending_draft_with_server_resolved_prices(portal_context):
+    normalized_items = [{
+        "name": "Aashirvaad Atta",
+        "raw_name": "aata",
+        "quantity": 10.0,
+        "unit": "kg",
+        "price": 45.0,
+        "resolution_status": "matched",
+    }]
+    db = FakeDb({
+        ("action_cards", "select"): [[{
+            "id": "ac-1",
+            "shop_id": "shop-1",
+            "customer_id": "customer-1",
+            "order_id": None,
+            "status": "pending",
+            "revision": 2,
+        }]],
+        ("rpc:update_customer_action_card_draft", "rpc"): [[{
+            "id": "ac-1", "status": "pending", "revision": 3,
+        }]],
+    })
+    with patch("app.routes.customer.supabase_client", db), patch(
+        "app.routes.customer.normalize_amendment_items",
+        return_value=normalized_items,
+    ) as normalize:
+        response = client.patch(
+            "/customer/action-cards/ac-1",
+            json={
+                "expected_revision": 2,
+                "items": [{"name": "aata", "quantity": 10, "unit": "kg"}],
+                "delivery_address": "Batla House",
+                "delivery_time": "Tomorrow 9:30 PM",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["revision"] == 3
+    normalize.assert_called_once()
+    card_query = db.calls[0]
+    assert ("eq", "shop_id", "shop-1") in card_query.filters
+    assert ("eq", "customer_id", "customer-1") in card_query.filters
+    rpc = next(call for call in db.calls if call.operation == "rpc")
+    assert rpc.payload["p_expected_revision"] == 2
+    assert rpc.payload["p_items"] == normalized_items
+    assert "price" not in response.request.content.decode()
+
+
+def test_customer_cannot_edit_another_customers_draft(portal_context):
+    db = FakeDb({("action_cards", "select"): [[]]})
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.patch(
+            "/customer/action-cards/other-card",
+            json={
+                "expected_revision": 1,
+                "items": [{"name": "aata", "quantity": 5, "unit": "kg"}],
+            },
+        )
+
+    assert response.status_code == 404
+    query = db.calls[0]
+    assert ("eq", "shop_id", "shop-1") in query.filters
+    assert ("eq", "customer_id", "customer-1") in query.filters
+
+
+def test_stale_customer_draft_edit_returns_conflict(portal_context):
+    db = FakeDb({
+        ("action_cards", "select"): [[{
+            "id": "ac-1",
+            "shop_id": "shop-1",
+            "customer_id": "customer-1",
+            "order_id": None,
+            "status": "pending",
+            "revision": 3,
+        }]],
+        ("rpc:update_customer_action_card_draft", "rpc"): [
+            RuntimeError("action_card_revision_conflict")
+        ],
+    })
+    with patch("app.routes.customer.supabase_client", db), patch(
+        "app.routes.customer.normalize_amendment_items",
+        return_value=[{"name": "Aata", "quantity": 5, "price": 45}],
+    ):
+        response = client.patch(
+            "/customer/action-cards/ac-1",
+            json={
+                "expected_revision": 2,
+                "items": [{"name": "aata", "quantity": 5, "unit": "kg"}],
+            },
+        )
+
+    assert response.status_code == 409
+    assert "another tab" in response.json()["detail"]
+
+
+def test_converted_customer_draft_cannot_be_edited(portal_context):
+    db = FakeDb({
+        ("action_cards", "select"): [[{
+            "id": "ac-1",
+            "shop_id": "shop-1",
+            "customer_id": "customer-1",
+            "order_id": "order-1",
+            "status": "converted",
+            "revision": 1,
+        }]],
+    })
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.patch(
+            "/customer/action-cards/ac-1",
+            json={
+                "expected_revision": 1,
+                "items": [{"name": "aata", "quantity": 5, "unit": "kg"}],
+            },
+        )
+
+    assert response.status_code == 409
+    assert not any(call.operation == "rpc" for call in db.calls)
+
+
+def test_approved_customer_draft_cannot_be_changed_directly(portal_context):
+    db = FakeDb({
+        ("action_cards", "select"): [[{
+            "id": "ac-1",
+            "shop_id": "shop-1",
+            "customer_id": "customer-1",
+            "order_id": None,
+            "status": "approved",
+            "revision": 1,
+        }]],
+    })
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.patch(
+            "/customer/action-cards/ac-1",
+            json={
+                "expected_revision": 1,
+                "items": [{"name": "aata", "quantity": 5, "unit": "kg"}],
+            },
+        )
+
+    assert response.status_code == 409
+    assert not any(call.operation == "rpc" for call in db.calls)
 
 
 def test_optional_portal_history_failure_does_not_hide_orders(portal_context):
@@ -509,6 +656,162 @@ def test_change_request_requires_customer_instructions(portal_context):
     assert not db.calls
 
 
+def test_customer_change_request_is_locked_after_packing_starts(portal_context):
+    db = FakeDb({
+        ("orders", "select"): [[{
+            "id": "order-1", "lifecycle_status": "packing",
+        }]],
+    })
+    with patch("app.routes.customer.supabase_client", db), patch(
+        "app.routes.customer.normalize_amendment_items"
+    ) as normalize:
+        response = client.post(
+            "/customer/orders/order-1/requests",
+            json={
+                "request_type": "change_order",
+                "payload": {},
+                "amendment": {
+                    "items": [{"name": "aata", "quantity": 5, "unit": "kg"}],
+                },
+            },
+        )
+
+    assert response.status_code == 409
+    normalize.assert_not_called()
+
+
+def test_customer_cancellation_is_locked_after_dispatch(portal_context):
+    db = FakeDb({
+        ("orders", "select"): [[{
+            "id": "order-1", "lifecycle_status": "out_for_delivery",
+        }]],
+    })
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.post(
+            "/customer/orders/order-1/requests",
+            json={"request_type": "cancel_order", "payload": {}},
+        )
+
+    assert response.status_code == 409
+
+
+def test_structured_change_request_stores_server_normalized_amendment(portal_context):
+    normalized_items = [{
+        "name": "Aashirvaad Atta",
+        "raw_name": "aata",
+        "quantity": 10.0,
+        "unit": "kg",
+        "price": 45.0,
+        "resolution_status": "matched",
+    }]
+    db = FakeDb({
+        ("orders", "select"): [[{
+            "id": "order-1", "lifecycle_status": "approved",
+        }]],
+        ("customer_requests", "select"): [[]],
+        ("customer_requests", "insert"): [[{
+            "id": "request-1", "status": "pending",
+        }]],
+        ("owner_notifications", "insert"): [[{"id": "notification-1"}]],
+    })
+    with patch("app.routes.customer.supabase_client", db), patch(
+        "app.routes.customer.normalize_amendment_items",
+        return_value=normalized_items,
+    ):
+        response = client.post(
+            "/customer/orders/order-1/requests",
+            json={
+                "request_type": "change_order",
+                "payload": {},
+                "amendment": {
+                    "items": [{"name": "aata", "quantity": 10, "unit": "kg"}],
+                    "delivery_address": "New address",
+                    "delivery_time": "Tomorrow 8 PM",
+                },
+            },
+        )
+
+    assert response.status_code == 201
+    request_insert = next(
+        call for call in db.calls
+        if call.table == "customer_requests" and call.operation == "insert"
+    )
+    proposed = request_insert.payload["payload"]["proposed_amendment"]
+    assert proposed["items"] == normalized_items
+    assert proposed["delivery_address"] == "New address"
+    assert proposed["delivery_time"] == "Tomorrow 8 PM"
+
+
+def test_latest_change_replaces_an_earlier_pending_change(portal_context):
+    normalized_items = [{
+        "name": "Aashirvaad Atta", "quantity": 12, "unit": "kg", "price": 45,
+    }]
+    db = FakeDb({
+        ("orders", "select"): [[{
+            "id": "order-1", "lifecycle_status": "approved",
+        }]],
+        ("customer_requests", "select"): [[{
+            "id": "request-1", "status": "pending",
+        }]],
+        ("customer_requests", "update"): [[{
+            "id": "request-1", "status": "pending",
+        }]],
+    })
+    with patch("app.routes.customer.supabase_client", db), patch(
+        "app.routes.customer.normalize_amendment_items",
+        return_value=normalized_items,
+    ):
+        response = client.post(
+            "/customer/orders/order-1/requests",
+            json={
+                "request_type": "change_order",
+                "payload": {},
+                "amendment": {
+                    "items": [{"name": "aata", "quantity": 12, "unit": "kg"}],
+                    "delivery_address": "Latest address",
+                },
+            },
+        )
+
+    assert response.status_code == 201
+    assert response.json()["updated"] is True
+    update = next(
+        call for call in db.calls
+        if call.table == "customer_requests" and call.operation == "update"
+    )
+    assert ("eq", "status", "pending") in update.filters
+    assert update.payload["payload"]["proposed_amendment"]["items"] == normalized_items
+    assert update.payload["payload"]["proposed_amendment"]["delivery_address"] == "Latest address"
+
+
+def test_change_is_rejected_once_owner_has_claimed_previous_request(portal_context):
+    db = FakeDb({
+        ("orders", "select"): [[{
+            "id": "order-1", "lifecycle_status": "approved",
+        }]],
+        ("customer_requests", "select"): [[{
+            "id": "request-1", "status": "processing",
+        }]],
+    })
+    with patch("app.routes.customer.supabase_client", db), patch(
+        "app.routes.customer.normalize_amendment_items",
+        return_value=[{"name": "Aata", "quantity": 12, "price": 45}],
+    ):
+        response = client.post(
+            "/customer/orders/order-1/requests",
+            json={
+                "request_type": "change_order",
+                "payload": {},
+                "amendment": {
+                    "items": [{"name": "aata", "quantity": 12, "unit": "kg"}],
+                },
+            },
+        )
+
+    assert response.status_code == 409
+    assert "already reviewing" in response.json()["detail"]
+
+
 def test_support_request_requires_message(portal_context):
     db = FakeDb()
     with patch("app.routes.customer.supabase_client", db):
@@ -584,6 +887,63 @@ def test_owner_repeat_approval_claims_request_and_creates_one_review_card():
     ]
     assert ("eq", "status", "pending") in request_updates[0].filters
     assert ("eq", "status", "processing") in request_updates[1].filters
+
+
+def test_owner_review_card_uses_customer_proposed_amendment():
+    from app.routes.customer_requests import _create_review_action_card
+
+    proposed_items = [{
+        "name": "Aashirvaad Atta",
+        "raw_name": "aata",
+        "quantity": 10,
+        "unit": "kg",
+        "price": 45,
+        "resolution_status": "matched",
+    }]
+    request = {
+        "id": "request-change-1",
+        "shop_id": "shop-1",
+        "customer_id": "customer-1",
+        "order_id": "order-1",
+        "request_type": "change_order",
+        "status": "processing",
+        "message": "Please update my order",
+        "payload": {
+            "proposed_amendment": {
+                "items": proposed_items,
+                "delivery_address": "New address",
+                "delivery_time": "Tomorrow 8 PM",
+            }
+        },
+    }
+    db = FakeDb({
+        ("action_cards", "select"): [[]],
+        ("orders", "select"): [[{
+            "id": "order-1",
+            "customer_name": "Danish",
+            "customer_phone": "+911234567890",
+            "delivery_address": "Old address",
+            "delivery_time": "Tomorrow 9 PM",
+            "order_items": [{
+                "raw_name": "sugar", "quantity": 5, "unit": "kg", "unit_price": 45,
+            }],
+        }]],
+        ("customers", "select"): [[{
+            "name": "Danish", "phone": "+911234567890", "address": "Old address",
+        }]],
+        ("action_cards", "insert"): [[{"id": "ac-change"}]],
+    })
+    with patch("app.routes.customer_requests.supabase_client", db):
+        card_id = _create_review_action_card(request, "owner-1")
+
+    assert card_id.startswith("ac_change_")
+    card_insert = next(
+        call for call in db.calls
+        if call.table == "action_cards" and call.operation == "insert"
+    )
+    assert card_insert.payload["items"] == proposed_items
+    assert card_insert.payload["delivery_address"] == "New address"
+    assert card_insert.payload["delivery_time"] == "Tomorrow 8 PM"
 
 
 def test_owner_cancellation_uses_atomic_shop_scoped_database_function():
