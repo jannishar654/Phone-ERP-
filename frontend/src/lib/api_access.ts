@@ -149,7 +149,11 @@ export async function listCustomerRequests(status: string = 'pending'): Promise<
     headers,
     cache: 'no-store',
   });
-  if (!res.ok) throw new Error('Failed to fetch customer requests');
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    const requestId = payload.request_id ? ` (reference: ${payload.request_id})` : '';
+    throw new Error(`${payload.detail || 'Failed to fetch customer requests'}${requestId}`);
+  }
   return res.json();
 }
 

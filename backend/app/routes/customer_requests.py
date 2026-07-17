@@ -1,4 +1,5 @@
 import uuid
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
 
@@ -11,6 +12,12 @@ from app.services.supabase import supabase_client
 
 
 router = APIRouter(prefix="/customer-requests", tags=["Customer Requests"])
+logger = logging.getLogger(__name__)
+
+REQUEST_LIST_FIELDS = (
+    "id, shop_id, customer_id, order_id, request_type, message, payload, "
+    "status, owner_note, resolved_at, created_at, updated_at"
+)
 
 
 class CustomerRequestDecision(BaseModel):
@@ -127,7 +134,7 @@ def list_customer_requests(
     shop_id = get_user_shop_id(user_id)
     query = (
         supabase_client.table("customer_requests")
-        .select("*")
+        .select(REQUEST_LIST_FIELDS)
         .eq("shop_id", shop_id)
         .order("created_at", desc=True)
     )
@@ -151,27 +158,54 @@ def list_customer_requests(
 
     customers_by_id: Dict[str, Dict[str, Any]] = {}
     if customer_ids:
-        customers = (
-            supabase_client.table("customers")
-            .select("id, name, phone")
-            .eq("shop_id", shop_id)
-            .in_("id", customer_ids)
-            .execute()
-        )
-        customers_by_id = {
-            customer["id"]: customer for customer in customers.data or []
-        }
+        try:
+            customers = (
+                supabase_client.table("customers")
+                .select("id, name, phone")
+                .eq("shop_id", shop_id)
+                .in_("id", customer_ids)
+                .execute()
+            )
+            customers_by_id = {
+                customer["id"]: customer for customer in customers.data or []
+            }
+        except Exception:
+            logger.exception(
+                "Customer request enrichment failed stage=customers shop_id=%s",
+                shop_id,
+            )
 
     orders_by_id: Dict[str, Dict[str, Any]] = {}
     if order_ids:
-        orders = (
-            supabase_client.table("orders")
-            .select("id, order_number, lifecycle_status, total_amount")
-            .eq("shop_id", shop_id)
-            .in_("id", order_ids)
-            .execute()
-        )
-        orders_by_id = {order["id"]: order for order in orders.data or []}
+        try:
+            try:
+                orders = (
+                    supabase_client.table("orders")
+                    .select("id, order_number, lifecycle_status, total_amount")
+                    .eq("shop_id", shop_id)
+                    .in_("id", order_ids)
+                    .execute()
+                )
+            except Exception:
+                logger.warning(
+                    "Customer request order enrichment retrying without order_number "
+                    "shop_id=%s",
+                    shop_id,
+                    exc_info=True,
+                )
+                orders = (
+                    supabase_client.table("orders")
+                    .select("id, lifecycle_status, total_amount")
+                    .eq("shop_id", shop_id)
+                    .in_("id", order_ids)
+                    .execute()
+                )
+            orders_by_id = {order["id"]: order for order in orders.data or []}
+        except Exception:
+            logger.exception(
+                "Customer request enrichment failed stage=orders shop_id=%s",
+                shop_id,
+            )
 
     return [
         {
