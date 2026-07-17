@@ -68,10 +68,21 @@ export default function CustomerRequestsPage() {
         </button>
       </div>
 
-      {error && <div className="mt-4 px-4 py-3 bg-red-50 border border-red-200 text-red-800 text-sm rounded-md">{error}</div>}
+      {error && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="font-semibold underline underline-offset-2"
+          >
+            Try again
+          </button>
+        </div>
+      )}
       {loading ? (
         <div className="py-16 text-center text-slate-500">Loading customer requests...</div>
-      ) : requests.length === 0 ? (
+      ) : error ? null : requests.length === 0 ? (
         <div className="py-20 text-center border-b border-slate-200">
           <Inbox className="h-10 w-10 text-slate-400 mx-auto" aria-hidden="true" />
           <p className="mt-3 font-semibold text-slate-800">No pending requests</p>

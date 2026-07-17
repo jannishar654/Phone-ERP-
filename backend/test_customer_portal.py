@@ -615,6 +615,39 @@ def test_owner_customer_requests_tolerate_missing_related_records():
     assert response.json()[0]["orders"] is None
 
 
+def test_owner_customer_requests_survive_enrichment_failures():
+    request = {
+        "id": "request-3",
+        "shop_id": "shop-1",
+        "customer_id": "customer-1",
+        "order_id": "order-1",
+        "request_type": "change_order",
+        "status": "pending",
+        "created_at": "2026-07-18T10:00:00+00:00",
+    }
+    db = FakeDb({
+        ("customer_requests", "select"): [[request]],
+        ("customers", "select"): [RuntimeError("customer enrichment unavailable")],
+        ("orders", "select"): [
+            RuntimeError("order_number is unavailable"),
+            RuntimeError("order enrichment unavailable"),
+        ],
+    })
+    app.dependency_overrides[get_current_user_id] = lambda: "owner-1"
+    try:
+        with patch("app.routes.customer_requests.supabase_client", db), patch(
+            "app.routes.customer_requests.get_user_shop_id", return_value="shop-1"
+        ):
+            response = client.get("/customer-requests?status=pending")
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+
+    assert response.status_code == 200
+    assert response.json()[0]["id"] == "request-3"
+    assert response.json()[0]["customers"] is None
+    assert response.json()[0]["orders"] is None
+
+
 def test_customer_cannot_open_bill_for_another_customer(portal_context):
     db = FakeDb({("orders", "select"): [[]]})
     with patch("app.routes.customer.supabase_client", db):
