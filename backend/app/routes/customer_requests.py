@@ -63,6 +63,9 @@ def _create_review_action_card(
         }
         for item in original.get("order_items", [])
     ]
+    proposed = dict(request.get("payload") or {}).get("proposed_amendment") or {}
+    if proposed.get("items"):
+        items = proposed["items"]
     card_payload = {
         "id": card_id,
         "customer_request_id": request["id"],
@@ -71,7 +74,12 @@ def _create_review_action_card(
         "customer_id": request["customer_id"],
         "customer_name": original.get("customer_name") or customer_data.get("name"),
         "customer_phone": original.get("customer_phone") or customer_data.get("phone"),
-        "delivery_address": original.get("delivery_address") or customer_data.get("address"),
+        "delivery_address": (
+            proposed.get("delivery_address")
+            or original.get("delivery_address")
+            or customer_data.get("address")
+        ),
+        "delivery_time": proposed.get("delivery_time") or original.get("delivery_time"),
         "payment_method": original.get("payment_method"),
         "items": items,
         "status": "pending",

@@ -25,7 +25,9 @@ export type CustomerOrderEvent = {
 
 export type CustomerOrder = {
   id: string;
+  source_id: string;
   record_type: 'order' | 'action_card';
+  display_reference: string;
   order_number?: number;
   total_amount: number;
   lifecycle_status: string;
@@ -37,8 +39,25 @@ export type CustomerOrder = {
   out_for_delivery_at?: string;
   delivered_at?: string;
   cancelled_at?: string;
+  revision: number;
+  can_edit: boolean;
+  can_request_change: boolean;
+  can_request_cancellation: boolean;
+  restriction_reason?: string;
   items: CustomerOrderItem[];
   events: CustomerOrderEvent[];
+};
+
+export type CustomerAmendmentItem = {
+  name: string;
+  quantity: number;
+  unit?: string;
+};
+
+export type CustomerOrderAmendment = {
+  items: CustomerAmendmentItem[];
+  delivery_address?: string;
+  delivery_time?: string;
 };
 
 export type CustomerOverview = {
@@ -105,13 +124,31 @@ export async function createCustomerOrderRequest(
   orderId: string,
   requestType: 'repeat_order' | 'cancel_order' | 'change_order',
   message?: string,
+  amendment?: CustomerOrderAmendment,
 ) {
   const response = await fetch(`${API_BASE_URL}/customer/orders/${orderId}/requests`, {
     method: 'POST',
     headers: { ...portalHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ request_type: requestType, message, payload: {} }),
+    body: JSON.stringify({ request_type: requestType, message, payload: {}, amendment }),
   });
   if (!response.ok) throw await parseError(response, 'Unable to submit request');
+  return response.json();
+}
+
+export async function updateCustomerDraft(
+  actionCardId: string,
+  expectedRevision: number,
+  amendment: CustomerOrderAmendment,
+) {
+  const response = await fetch(`${API_BASE_URL}/customer/action-cards/${encodeURIComponent(actionCardId)}`, {
+    method: 'PATCH',
+    headers: { ...portalHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      expected_revision: expectedRevision,
+      ...amendment,
+    }),
+  });
+  if (!response.ok) throw await parseError(response, 'Unable to update order');
   return response.json();
 }
 

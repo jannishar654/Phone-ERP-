@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from app.schemas.customer_portal import (
     CustomerAssistantRequest,
     CustomerAssistantResponse,
+    CustomerDraftUpdate,
     CustomerPortalOverview,
     CustomerPortalOrder,
     CustomerPortalSessionResponse,
@@ -23,6 +24,7 @@ from app.services.customer_portal_service import (
 )
 from app.services.gemini import GeminiService
 from app.services.intent_router import IntentRouter
+from app.services.order_amendment_service import normalize_amendment_items
 from app.services.supabase import supabase_client
 
 
@@ -119,9 +121,36 @@ def _create_pending_order_request(
         .execute()
     )
     if existing.data:
+        current = existing.data[0]
+        if request_type == "change_order" and current.get("status") == "pending":
+            refreshed = (
+                supabase_client.table("customer_requests")
+                .update({"message": message, "payload": payload or {}})
+                .eq("id", current["id"])
+                .eq("shop_id", context["shop_id"])
+                .eq("customer_id", context["customer_id"])
+                .eq("status", "pending")
+                .execute()
+            )
+            if refreshed.data:
+                return {
+                    **refreshed.data[0],
+                    "status": "pending",
+                    "duplicate": True,
+                    "updated": True,
+                }
+            raise HTTPException(
+                status_code=409,
+                detail="The owner has started reviewing your previous change. Please contact the business for another update.",
+            )
+        if request_type == "change_order" and current.get("status") == "processing":
+            raise HTTPException(
+                status_code=409,
+                detail="The owner is already reviewing your previous change. Please contact the business for another update.",
+            )
         return {
-            **existing.data[0],
-            "status": existing.data[0].get("status") or "pending",
+            **current,
+            "status": current.get("status") or "pending",
             "duplicate": True,
         }
 
@@ -285,11 +314,30 @@ def get_customer_orders(context: Dict[str, Any] = Depends(get_customer_context))
     orders = []
     for order in order_rows:
         order_payload = dict(order)
+        lifecycle_status = order_payload.get("lifecycle_status") or "received"
+        order_number = order_payload.get("order_number")
+        order_payload["source_id"] = str(order["id"])
+        order_payload["display_reference"] = (
+            str(order_number) if order_number is not None else str(order["id"])[-8:]
+        )
         order_payload["record_type"] = "order"
         order_payload["items"] = items_by_order.get(str(order["id"]), [])
         order_payload["events"] = events_by_order.get(str(order["id"]), [])
-        order_payload["lifecycle_status"] = order_payload.get("lifecycle_status") or "received"
+        order_payload["lifecycle_status"] = lifecycle_status
         order_payload["updated_at"] = order_payload.get("updated_at") or order_payload["created_at"]
+        order_payload["can_request_change"] = lifecycle_status in {
+            "received", "pending_review", "approved"
+        }
+        order_payload["can_request_cancellation"] = lifecycle_status in {
+            "received", "pending_review", "approved", "packing"
+        }
+        if lifecycle_status in {"packing", "out_for_delivery", "delivered", "cancelled"}:
+            order_payload["restriction_reason"] = (
+                "Items and delivery details are locked because packing has started. "
+                "Contact the business if you still need help."
+                if lifecycle_status == "packing"
+                else "This order can no longer be changed. Contact the business if you need help."
+            )
         for item_index, item in enumerate(order_payload["items"]):
             item["id"] = str(item.get("id") or f"{order['id']}:{item_index}")
             item["raw_name"] = item.get("raw_name") or item.get("display_name") or "Item"
@@ -338,12 +386,21 @@ def get_customer_orders(context: Dict[str, Any] = Depends(get_customer_context))
         orders.append(
             CustomerPortalOrder(
                 id=f"action-card:{card['id']}",
+                source_id=str(card["id"]),
+                display_reference=f"Draft {str(card['id']).removeprefix('ac_')[-8:]}",
                 record_type="action_card",
                 total_amount=total_amount,
                 lifecycle_status=lifecycle_status,
                 delivery_address=card.get("delivery_address"),
                 created_at=card["created_at"],
                 updated_at=card.get("updated_at") or card["created_at"],
+                revision=int(card.get("revision") or 1),
+                can_edit=card_status == "pending" and not card.get("order_id"),
+                restriction_reason=(
+                    None
+                    if card_status == "pending" and not card.get("order_id")
+                    else "The owner has already approved this order, so direct editing is locked. Contact the business if you need help."
+                ),
                 items=card_items,
                 events=events,
             )
@@ -356,6 +413,79 @@ def get_customer_orders(context: Dict[str, Any] = Depends(get_customer_context))
         shop_name=shop.get("name") or "Business",
         orders=orders,
     )
+
+
+@router.patch("/action-cards/{action_card_id}")
+def update_customer_action_card_draft(
+    action_card_id: str,
+    payload: CustomerDraftUpdate,
+    context: Dict[str, Any] = Depends(get_customer_context),
+):
+    card = (
+        supabase_client.table("action_cards")
+        .select("id, shop_id, customer_id, order_id, status, revision")
+        .eq("id", action_card_id)
+        .eq("shop_id", context["shop_id"])
+        .eq("customer_id", context["customer_id"])
+        .execute()
+    )
+    if not card.data:
+        raise HTTPException(status_code=404, detail="Pending order not found")
+    current = card.data[0]
+    if current.get("order_id") or current.get("status") != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail="This order has already moved into fulfilment and can no longer be edited",
+        )
+
+    try:
+        items = normalize_amendment_items(context["shop_id"], payload.items)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        updated = supabase_client.rpc(
+            "update_customer_action_card_draft",
+            {
+                "p_action_card_id": action_card_id,
+                "p_shop_id": context["shop_id"],
+                "p_customer_id": context["customer_id"],
+                "p_expected_revision": payload.expected_revision,
+                "p_items": items,
+                "p_delivery_address": payload.delivery_address,
+                "p_delivery_time": payload.delivery_time,
+            },
+        ).execute()
+    except Exception as exc:
+        error = str(exc).lower()
+        if "revision_conflict" in error:
+            raise HTTPException(
+                status_code=409,
+                detail="This order changed in another tab. Refresh and try again.",
+            ) from exc
+        if "not_editable" in error:
+            raise HTTPException(
+                status_code=409,
+                detail="This order has already moved into fulfilment and can no longer be edited",
+            ) from exc
+        if "items_required" in error:
+            raise HTTPException(
+                status_code=422,
+                detail="At least one valid item is required",
+            ) from exc
+        raise HTTPException(
+            status_code=503,
+            detail="Order editing is temporarily unavailable. Please try again.",
+        ) from exc
+    if not updated.data:
+        raise HTTPException(status_code=409, detail="Order could not be updated")
+    row = updated.data[0] if isinstance(updated.data, list) else updated.data
+    return {
+        "id": row["id"],
+        "revision": row.get("revision", payload.expected_revision + 1),
+        "status": row.get("status", "pending"),
+        "message": "Order updated and sent to the owner for review.",
+    }
 
 
 @router.post("/orders/{order_id}/bill")
@@ -388,7 +518,11 @@ def create_order_request(
 ):
     if payload.request_type == "support":
         raise HTTPException(status_code=400, detail="Use the support endpoint")
-    if payload.request_type == "change_order" and not (payload.message or "").strip():
+    if (
+        payload.request_type == "change_order"
+        and not (payload.message or "").strip()
+        and payload.amendment is None
+    ):
         raise HTTPException(status_code=422, detail="Describe the requested order change")
     order = (
         supabase_client.table("orders")
@@ -400,16 +534,37 @@ def create_order_request(
     )
     if not order.data:
         raise HTTPException(status_code=404, detail="Order not found")
-    if payload.request_type == "cancel_order" and order.data[0].get("lifecycle_status") in {
-        "delivered", "cancelled"
+    lifecycle_status = order.data[0].get("lifecycle_status") or "received"
+    if payload.request_type == "change_order" and lifecycle_status not in {
+        "received", "pending_review", "approved"
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail="Items and delivery details are locked because fulfilment has started",
+        )
+    if payload.request_type == "cancel_order" and lifecycle_status not in {
+        "received", "pending_review", "approved", "packing"
     }:
         raise HTTPException(status_code=409, detail="This order can no longer be cancelled")
+
+    request_payload = dict(payload.payload)
+    if payload.amendment is not None:
+        try:
+            request_payload["proposed_amendment"] = {
+                "items": normalize_amendment_items(
+                    context["shop_id"], payload.amendment.items
+                ),
+                "delivery_address": payload.amendment.delivery_address,
+                "delivery_time": payload.amendment.delivery_time,
+            }
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _create_pending_order_request(
         context,
         order_id,
         payload.request_type,
         message=payload.message,
-        payload=payload.payload,
+        payload=request_payload,
     )
 
 

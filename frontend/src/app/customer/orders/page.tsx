@@ -10,9 +10,12 @@ import {
   MessageSquareText,
   PackageCheck,
   PencilLine,
+  Plus,
   RefreshCw,
   Repeat2,
+  Save,
   Send,
+  Trash2,
   XCircle,
 } from 'lucide-react';
 import {
@@ -21,10 +24,12 @@ import {
   createCustomerOrderRequest,
   createCustomerSupportRequest,
   CustomerOrder,
+  CustomerOrderAmendment,
   getCustomerBillUrl,
   getCustomerOrders,
   hasCustomerSession,
   logoutCustomer,
+  updateCustomerDraft,
 } from '@/lib/api_customer';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 
@@ -72,6 +77,18 @@ function OrderTimeline({ status }: { status: string }) {
   );
 }
 
+function amendmentFromOrder(order: CustomerOrder): CustomerOrderAmendment {
+  return {
+    items: order.items.map((item) => ({
+      name: item.display_name || item.raw_name,
+      quantity: item.quantity,
+      unit: item.unit || '',
+    })),
+    delivery_address: order.delivery_address || '',
+    delivery_time: order.delivery_time || '',
+  };
+}
+
 export default function CustomerOrdersPage() {
   const [overview, setOverview] = useState<Awaited<ReturnType<typeof getCustomerOrders>> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,8 +100,8 @@ export default function CustomerOrdersPage() {
   const [assistantText, setAssistantText] = useState('');
   const [assistantReply, setAssistantReply] = useState('');
   const [supportText, setSupportText] = useState('');
-  const [changeOrderId, setChangeOrderId] = useState<string | null>(null);
-  const [changeText, setChangeText] = useState('');
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const [amendment, setAmendment] = useState<CustomerOrderAmendment | null>(null);
 
   const loadOrders = useCallback(async (isSilent: boolean) => {
     if (!isSilent) setError('');
@@ -116,7 +133,7 @@ export default function CustomerOrdersPage() {
     setNotice('');
     setError('');
     try {
-      await createCustomerOrderRequest(order.id, type, message);
+      await createCustomerOrderRequest(order.source_id, type, message);
       setNotice(
         type === 'repeat_order'
           ? 'Repeat order sent to the owner for review.'
@@ -124,10 +141,6 @@ export default function CustomerOrdersPage() {
             ? 'Order change sent to the owner for review.'
             : 'Cancellation request sent to the owner.',
       );
-      if (type === 'change_order') {
-        setChangeOrderId(null);
-        setChangeText('');
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to submit request');
     } finally {
@@ -135,11 +148,59 @@ export default function CustomerOrdersPage() {
     }
   };
 
-  const requestChange = async (event: FormEvent, order: CustomerOrder) => {
+  const beginAmendment = (order: CustomerOrder) => {
+    if (editingOrderId === order.id) {
+      setEditingOrderId(null);
+      setAmendment(null);
+      return;
+    }
+    setEditingOrderId(order.id);
+    setAmendment(amendmentFromOrder(order));
+  };
+
+  const updateAmendmentItem = (
+    index: number,
+    field: 'name' | 'quantity' | 'unit',
+    value: string,
+  ) => {
+    setAmendment((current) => {
+      if (!current) return current;
+      const items = [...current.items];
+      items[index] = {
+        ...items[index],
+        [field]: field === 'quantity' ? Number(value) : value,
+      };
+      return { ...current, items };
+    });
+  };
+
+  const saveAmendment = async (event: FormEvent, order: CustomerOrder) => {
     event.preventDefault();
-    const message = changeText.trim();
-    if (!message) return;
-    await runOrderAction(order, 'change_order', message);
+    if (!amendment || amendment.items.length === 0) return;
+    setBusy(`${order.id}:edit`);
+    setNotice('');
+    setError('');
+    try {
+      if (order.record_type === 'action_card') {
+        await updateCustomerDraft(order.source_id, order.revision, amendment);
+        setNotice('Order updated and sent to the owner for review. Prices will be verified by the business.');
+      } else {
+        await createCustomerOrderRequest(
+          order.source_id,
+          'change_order',
+          'Customer submitted a structured order change.',
+          amendment,
+        );
+        setNotice('Order change sent to the owner for approval.');
+      }
+      setEditingOrderId(null);
+      setAmendment(null);
+      await manualRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update order');
+    } finally {
+      setBusy(null);
+    }
   };
 
   const openBill = async (orderId: string) => {
@@ -253,7 +314,7 @@ export default function CustomerOrdersPage() {
         </div>
 
         {(notice || error) && (
-          <div className={`mt-4 px-4 py-3 text-sm border rounded-md ${error ? 'bg-red-50 border-red-200 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+          <div role={error ? 'alert' : 'status'} className={`mt-4 px-4 py-3 text-sm border rounded-md ${error ? 'bg-red-50 border-red-200 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
             {error || notice}
           </div>
         )}
@@ -261,14 +322,20 @@ export default function CustomerOrdersPage() {
         <section className="mt-6 space-y-4">
           {overview?.orders.map((order) => {
             const isOpen = expanded === order.id;
-            const canCancel = !['delivered', 'cancelled'].includes(order.lifecycle_status);
-            const isApprovedOrder = order.record_type === 'order';
+            const isConvertedOrder = order.record_type === 'order';
             return (
               <article key={order.id} className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
                 <div className="p-4 sm:p-5">
-                  <button onClick={() => setExpanded(isOpen ? null : order.id)} className="w-full text-left flex items-start justify-between gap-4">
+                  <button
+                    onClick={() => setExpanded(isOpen ? null : order.id)}
+                    aria-expanded={isOpen}
+                    aria-controls={`order-details-${order.id}`}
+                    className="w-full text-left flex items-start justify-between gap-4"
+                  >
                     <div>
-                      <p className="font-bold">Order #{order.order_number || order.id.slice(0, 8)}</p>
+                      <p className="font-bold">
+                        {isConvertedOrder ? `Order #${order.display_reference}` : order.display_reference}
+                      </p>
                       <p className="mt-1 text-sm text-slate-500">{new Date(order.created_at).toLocaleString()}</p>
                     </div>
                     <div className="flex items-center gap-3">
@@ -280,7 +347,7 @@ export default function CustomerOrdersPage() {
                 </div>
 
                 {isOpen && (
-                  <div className="border-t border-slate-100 px-4 sm:px-5 py-4 bg-slate-50/60">
+                  <div id={`order-details-${order.id}`} className="border-t border-slate-100 px-4 sm:px-5 py-4 bg-slate-50/60">
                     <div className="divide-y divide-slate-200">
                       {order.items.map((item) => (
                         <div key={item.id} className="py-2.5 flex justify-between gap-4 text-sm">
@@ -290,44 +357,89 @@ export default function CustomerOrdersPage() {
                       ))}
                     </div>
                     {order.delivery_address && <p className="mt-4 text-sm text-slate-600">Delivery: {order.delivery_address}</p>}
-                    {!isApprovedOrder && (
+                    {!isConvertedOrder && (
                       <p className="mt-4 text-sm font-medium text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded-md">
-                        The owner is reviewing this order. Actions and bills become available after approval.
+                        {order.can_edit
+                          ? 'The owner is reviewing this order. You can edit it until the owner approves it.'
+                          : order.restriction_reason}
                       </p>
                     )}
-                    {isApprovedOrder && <div className="mt-4 grid grid-cols-2 sm:flex gap-2">
-                      <button onClick={() => openBill(order.id)} disabled={busy === `${order.id}:bill`} className="inline-flex h-10 items-center justify-center gap-2 px-3 bg-indigo-600 text-white text-sm font-semibold rounded-md disabled:opacity-50">
-                        <FileText className="h-4 w-4" aria-hidden="true" /> Bill
-                      </button>
-                      <button onClick={() => runOrderAction(order, 'repeat_order')} disabled={busy === `${order.id}:repeat_order`} className="inline-flex h-10 items-center justify-center gap-2 px-3 border border-slate-300 bg-white text-sm font-semibold rounded-md disabled:opacity-50">
-                        <Repeat2 className="h-4 w-4" aria-hidden="true" /> Repeat
-                      </button>
-                      {canCancel && (
-                        <button onClick={() => { setChangeOrderId(changeOrderId === order.id ? null : order.id); setChangeText(''); }} className="inline-flex h-10 items-center justify-center gap-2 px-3 border border-slate-300 bg-white text-sm font-semibold rounded-md">
+                    <div className="mt-4 grid grid-cols-2 sm:flex gap-2">
+                      {order.can_edit && (
+                        <button onClick={() => beginAmendment(order)} className="inline-flex h-10 items-center justify-center gap-2 px-3 bg-indigo-600 text-white text-sm font-semibold rounded-md">
+                          <PencilLine className="h-4 w-4" aria-hidden="true" /> Edit order
+                        </button>
+                      )}
+                      {isConvertedOrder && (
+                        <button onClick={() => openBill(order.source_id)} disabled={busy === `${order.id}:bill`} className="inline-flex h-10 items-center justify-center gap-2 px-3 bg-indigo-600 text-white text-sm font-semibold rounded-md disabled:opacity-50">
+                          <FileText className="h-4 w-4" aria-hidden="true" /> Bill
+                        </button>
+                      )}
+                      {isConvertedOrder && (
+                        <button onClick={() => runOrderAction(order, 'repeat_order')} disabled={busy === `${order.id}:repeat_order`} className="inline-flex h-10 items-center justify-center gap-2 px-3 border border-slate-300 bg-white text-sm font-semibold rounded-md disabled:opacity-50">
+                          <Repeat2 className="h-4 w-4" aria-hidden="true" /> Repeat
+                        </button>
+                      )}
+                      {isConvertedOrder && order.can_request_change && (
+                        <button onClick={() => beginAmendment(order)} className="inline-flex h-10 items-center justify-center gap-2 px-3 border border-slate-300 bg-white text-sm font-semibold rounded-md">
                           <PencilLine className="h-4 w-4" aria-hidden="true" /> Request change
                         </button>
                       )}
-                      {canCancel && (
+                      {isConvertedOrder && order.can_request_cancellation && (
                         <button onClick={() => runOrderAction(order, 'cancel_order')} disabled={busy === `${order.id}:cancel_order`} className="inline-flex h-10 items-center justify-center gap-2 px-3 border border-red-200 bg-white text-red-700 text-sm font-semibold rounded-md disabled:opacity-50">
                           <XCircle className="h-4 w-4" aria-hidden="true" /> Request cancellation
                         </button>
                       )}
-                    </div>}
-                    {isApprovedOrder && changeOrderId === order.id && (
-                      <form onSubmit={(event) => requestChange(event, order)} className="mt-3 flex flex-col sm:flex-row gap-2">
-                        <label htmlFor={`change-${order.id}`} className="sr-only">Describe the requested order change</label>
-                        <input
-                          id={`change-${order.id}`}
-                          value={changeText}
-                          onChange={(event) => setChangeText(event.target.value)}
-                          maxLength={2000}
-                          required
-                          placeholder="Example: change sugar from 10 kg to 5 kg"
-                          className="min-w-0 flex-1 h-10 px-3 border border-slate-300 bg-white rounded-md text-sm"
-                        />
-                        <button disabled={busy === `${order.id}:change_order`} className="h-10 px-4 bg-indigo-600 text-white text-sm font-semibold rounded-md disabled:opacity-50">
-                          Send for approval
-                        </button>
+                    </div>
+                    {isConvertedOrder && order.restriction_reason && !order.can_request_change && (
+                      <p className="mt-3 text-sm text-slate-600">{order.restriction_reason}</p>
+                    )}
+                    {editingOrderId === order.id && amendment && (
+                      <form onSubmit={(event) => saveAmendment(event, order)} className="mt-4 border-t border-slate-200 pt-4 space-y-4">
+                        <div className="flex flex-col items-stretch sm:flex-row sm:items-center sm:justify-between gap-3">
+                          <div>
+                            <h3 className="font-bold text-slate-900">{order.can_edit ? 'Edit pending order' : 'Request order changes'}</h3>
+                            <p className="text-xs text-slate-500">Prices are verified from the business catalog after submission.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setAmendment((current) => current ? {
+                              ...current,
+                              items: [...current.items, { name: '', quantity: 1, unit: '' }],
+                            } : current)}
+                            className="self-start inline-flex h-9 items-center gap-2 px-3 border border-slate-300 bg-white text-sm font-semibold rounded-md"
+                          >
+                            <Plus className="h-4 w-4" aria-hidden="true" /> Add item
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {amendment.items.map((item, index) => (
+                            <div key={`${order.id}:edit:${index}`} className="grid grid-cols-[minmax(0,1fr)_5rem_2.5rem] sm:grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_2.5rem] gap-2">
+                              <input aria-label={`Item ${index + 1} name`} value={item.name} onChange={(event) => updateAmendmentItem(index, 'name', event.target.value)} maxLength={200} required placeholder="Item name" className="min-w-0 h-10 px-3 border border-slate-300 bg-white rounded-md text-sm" />
+                              <input aria-label={`Item ${index + 1} quantity`} type="number" min="0.01" max="100000" step="0.01" value={item.quantity} onChange={(event) => updateAmendmentItem(index, 'quantity', event.target.value)} required className="h-10 px-2 border border-slate-300 bg-white rounded-md text-sm" />
+                              <input aria-label={`Item ${index + 1} unit`} value={item.unit || ''} onChange={(event) => updateAmendmentItem(index, 'unit', event.target.value)} maxLength={50} placeholder="Unit (kg)" className="col-span-2 sm:col-span-1 h-10 px-2 border border-slate-300 bg-white rounded-md text-sm" />
+                              <button type="button" title="Remove item" disabled={amendment.items.length === 1} onClick={() => setAmendment((current) => current ? { ...current, items: current.items.filter((_, itemIndex) => itemIndex !== index) } : current)} className="h-10 inline-flex items-center justify-center text-red-700 disabled:text-slate-300">
+                                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="grid sm:grid-cols-2 gap-3">
+                          <div>
+                            <label htmlFor={`address-${order.id}`} className="block text-xs font-semibold text-slate-600 mb-1">Delivery address</label>
+                            <input id={`address-${order.id}`} value={amendment.delivery_address || ''} onChange={(event) => setAmendment((current) => current ? { ...current, delivery_address: event.target.value } : current)} maxLength={500} className="w-full h-10 px-3 border border-slate-300 bg-white rounded-md text-sm" />
+                          </div>
+                          <div>
+                            <label htmlFor={`time-${order.id}`} className="block text-xs font-semibold text-slate-600 mb-1">Delivery time</label>
+                            <input id={`time-${order.id}`} value={amendment.delivery_time || ''} onChange={(event) => setAmendment((current) => current ? { ...current, delivery_time: event.target.value } : current)} maxLength={200} placeholder="Tomorrow, 9:30 PM" className="w-full h-10 px-3 border border-slate-300 bg-white rounded-md text-sm" />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button type="button" onClick={() => { setEditingOrderId(null); setAmendment(null); }} className="h-10 px-4 border border-slate-300 bg-white text-sm font-semibold rounded-md">Cancel</button>
+                          <button disabled={busy === `${order.id}:edit`} className="inline-flex h-10 items-center gap-2 px-4 bg-indigo-600 text-white text-sm font-semibold rounded-md disabled:opacity-50">
+                            <Save className="h-4 w-4" aria-hidden="true" /> {order.can_edit ? 'Save and resend' : 'Send for approval'}
+                          </button>
+                        </div>
                       </form>
                     )}
                   </div>
@@ -338,8 +450,8 @@ export default function CustomerOrdersPage() {
           {!overview?.orders.length && (
             <div className="py-16 text-center border-y border-slate-200">
               <PackageCheck className="h-10 w-10 mx-auto text-slate-400" aria-hidden="true" />
-              <p className="mt-3 font-semibold">No approved orders yet</p>
-              <p className="mt-1 text-sm text-slate-500">Orders appear here after the owner approves them.</p>
+              <p className="mt-3 font-semibold">No orders yet</p>
+              <p className="mt-1 text-sm text-slate-500">New and approved orders will appear here.</p>
             </div>
           )}
         </section>
