@@ -63,6 +63,81 @@ def aggregate_items_deterministically(normalized_items: list[dict]) -> list[dict
 class GeminiService:
 
     @staticmethod
+    def _normalize_business_context(business_context: dict | None) -> dict:
+        """Bound configuration before including it in an LLM instruction."""
+        context = business_context if isinstance(business_context, dict) else {}
+        allowed_types = {
+            "grocery",
+            "wholesale",
+            "restaurant",
+            "pharmacy",
+            "bakery",
+            "hardware",
+            "general",
+        }
+        business_type = str(context.get("business_type") or "grocery").lower()
+        if business_type not in allowed_types:
+            business_type = "general"
+
+        def clean_list(key: str, limit: int, item_limit: int) -> list[str]:
+            raw = context.get(key, [])
+            if not isinstance(raw, list):
+                return []
+            return [str(item).strip()[:item_limit] for item in raw[:limit] if str(item).strip()]
+
+        raw_terms = context.get("terminology", {})
+        terminology = {}
+        if isinstance(raw_terms, dict):
+            terminology = {
+                str(key).strip()[:64]: str(value).strip()[:120]
+                for key, value in list(raw_terms.items())[:20]
+                if str(key).strip() and str(value).strip()
+            }
+
+        return {
+            "business_type": business_type,
+            "required_order_fields": clean_list("required_order_fields", 20, 64),
+            "optional_order_fields": clean_list("optional_order_fields", 20, 64),
+            "offerings": clean_list("offerings", 50, 120),
+            "terminology": terminology,
+            "default_unit": str(context.get("default_unit") or "piece")[:40],
+            "allow_partial_quantities": bool(
+                context.get("allow_partial_quantities", True)
+            ),
+            "common_items_hint": str(context.get("common_items_hint") or "")[:500],
+        }
+
+    @staticmethod
+    def _format_business_rules(business_context: dict) -> str:
+        rules = [
+            "\n## BUSINESS CONTEXT",
+            f"- Business Type: {business_context['business_type']}",
+        ]
+        if business_context["required_order_fields"]:
+            rules.append(
+                "- Important order fields: "
+                + ", ".join(business_context["required_order_fields"])
+            )
+        if business_context["common_items_hint"]:
+            rules.append(
+                "- Typical offerings (context only; never invent an item): "
+                + business_context["common_items_hint"]
+            )
+        if business_context["offerings"]:
+            rules.append(
+                "- Catalog offerings (context only; never invent an item): "
+                + ", ".join(business_context["offerings"][:20])
+            )
+        rules.append(f"- Default unit when explicitly implied: {business_context['default_unit']}")
+        if business_context["terminology"]:
+            rules.append("- Business terminology:")
+            rules.extend(
+                f"  - {key}: {value}"
+                for key, value in business_context["terminology"].items()
+            )
+        return "\n".join(rules) + "\n"
+
+    @staticmethod
     def _detect_audio_format(file_content: bytes, filename: str) -> tuple[str, str]:
         """Return a reliable temporary-file suffix and MIME type."""
 
@@ -361,8 +436,10 @@ Return only the transcript text.
         return parsed if isinstance(parsed, dict) else None
 
     @staticmethod
-    async def extract_order_details_from_audio(file_content: bytes, filename: str, pipeline: str = "gemini_audio_extraction") -> dict:
+    async def extract_order_details_from_audio(file_content: bytes, filename: str, pipeline: str = "gemini_audio_extraction", business_context: dict | None = None) -> dict:
         """Extract an action-card payload from audio with one Gemini model call."""
+
+        business_context = GeminiService._normalize_business_context(business_context)
 
         if not file_content:
             raise ValueError("Audio file is empty.")
@@ -407,79 +484,81 @@ Return only the transcript text.
             else:
                 raise TimeoutError("Gemini audio processing timed out.")
 
+            business_rules = GeminiService._format_business_rules(business_context)
+
             prompt = (
-    "You are PhoneERP's AI order extraction engine processing a customer voice recording "
-    "for an Indian grocery, kirana, wholesale, FMCG, or dairy business.\n\n"
+        f"You are PhoneERP's AI order extraction engine processing a customer voice recording "
+        f"for an Indian {business_context.get('business_type', 'grocery, kirana, wholesale')} business.\n\n"
 
-    "## STEP 1 — TRANSCRIBE\n"
-    "Listen to the audio and transcribe exactly what the primary speaker says.\n"
-    "- Preserve all languages as spoken: Hindi, English, Hinglish, regional accents.\n"
-    "- Preserve brand names, quantities, units, and customer names exactly as heard.\n"
-    "- Write [unclear] for any word you cannot confidently hear. Do not guess.\n"
-    "- Ignore background conversations, traffic, fan/shop noise, silence, filler words (umm, uh).\n"
-    "- Do NOT include timestamps, speaker labels, or line numbers in the transcript.\n\n"
+        "## STEP 1 — TRANSCRIBE\n"
+        "Listen to the audio and transcribe exactly what the primary speaker says.\n"
+        "- Preserve all languages as spoken: Hindi, English, Hinglish, regional accents.\n"
+        "- Preserve brand names, quantities, units, and customer names exactly as heard.\n"
+        "- Write [unclear] for any word you cannot confidently hear. Do not guess.\n"
+        "- Ignore background conversations, traffic, fan/shop noise, silence, filler words (umm, uh).\n"
+        "- Do NOT include timestamps, speaker labels, or line numbers in the transcript.\n\n"
 
-    "## STEP 2 — EXTRACT\n"
-    "From the transcript, extract structured order data following all rules below.\n"
-    "Do not output reasoning. Return ONLY the final JSON.\n\n"
+        "## STEP 2 — EXTRACT\n"
+        "From the transcript, extract structured order data following all rules below.\n"
+        "Do not output reasoning. Return ONLY the final JSON.\n\n"
 
-    "## EXTRACTION RULES\n"
-    "1. ALL VALUES INSIDE `cards` MUST USE ENGLISH LETTERS (ROMANIZED HINGLISH). "
-    "Never output Devanagari script inside the cards array.\n"
-    "2. TRANSLITERATE: If the audio contains Devanagari, transliterate it to Romanized Hinglish "
-    "in `transcript_normalized`. If no Devanagari, copy transcript as-is. "
-    "Record each phonetic mapping in `metadata.model_normalizer_notes` "
-    "(e.g. 'पाँच' → '5', 'साढ़े पाँच' → 'saade paanch').\n"
-    "3. CORE PRODUCT NAMES ONLY: `name` must contain only the product — never quantity, "
-    "unit, or packaging words (packet, thaili, dabba, kilo, liter).\n"
-    "   'ek badi thaili doodh ki' → name:'bada doodh', quantity:'1', unit:'thaili'\n"
-    "4. NEVER INVENT. Do not infer brands, variants, SKUs, or pack sizes unless explicitly spoken.\n"
-    "   'chawal' → 'chawal'  NOT 'India Gate Basmati Rice'\n"
-    "   'doodh'  → 'doodh'   NOT 'Amul Gold Milk'\n"
-    "   'lal surf' → 'lal surf'  NOT 'Surf Excel Easy Wash'\n"
-    "5. DO NOT AGGREGATE: Same item mentioned twice → two separate operations. Never do arithmetic.\n"
-    "6. NEVER MERGE ITEMS: 'surf excel' and 'chawal' are TWO items. Never output 'surf excel chawal'.\n"
-    "7. CLEAN NAMES: Remove action verbs from item names (bhijwa dena, pack kar dena, bhej do).\n"
-    "8. DELIVERY TIME: Extract exact spoken phrase into `delivery_time_raw` "
-    "(e.g. 'kal subah', 'aaj shaam 6 baje', 'parso'). "
-    "Do NOT convert to a date. Do NOT put time words into delivery_address.\n"
-    "9. QUANTITIES: Extract exact spoken number. Missing → null. Never default to 1.\n"
-    "   aadha=0.5  dedh=1.5  dhai=2.5  sawa=1.25  pauna=0.75\n"
-    "10. CUSTOMER NAME: Exact wording as spoken. Store name counts as customer name. "
-    "UNKNOWN only if completely absent.\n"
-    "11. PAYMENT: udhaar / khate mein likh do / baad mein denge → 'Credit (Udhaar)'\n"
-    "    cash de denge → 'Cash'\n"
-    "    phonepe / gpay / online → 'Online'\n"
-    "    Otherwise → 'Not Specified'\n"
-    "12. IN-FLIGHT CANCELLATIONS: Item added then cancelled in same recording → "
-    "omit from items, list in metadata.cancelled_items.\n"
-    "13. CONFIDENCE: Reduce when customer/quantity/product unclear or [unclear] markers present.\n\n"
+        "## EXTRACTION RULES\n"
+        "1. ALL VALUES INSIDE `cards` MUST USE ENGLISH LETTERS (ROMANIZED HINGLISH). "
+        "Never output Devanagari script inside the cards array.\n"
+        "2. TRANSLITERATE: If the audio contains Devanagari, transliterate it to Romanized Hinglish "
+        "in `transcript_normalized`. If no Devanagari, copy transcript as-is. "
+        "Record each phonetic mapping in `metadata.model_normalizer_notes` "
+        "(e.g. 'पाँच' → '5', 'साढ़े पाँच' → 'saade paanch').\n"
+        "3. CORE PRODUCT NAMES ONLY: `name` must contain only the product — never quantity, "
+        "unit, or packaging words (packet, thaili, dabba, kilo, liter).\n"
+        "   'ek badi thaili doodh ki' → name:'bada doodh', quantity:'1', unit:'thaili'\n"
+        "4. NEVER INVENT. Do not infer brands, variants, SKUs, or pack sizes unless explicitly spoken.\n"
+        "   'chawal' → 'chawal'  NOT 'India Gate Basmati Rice'\n"
+        "   'doodh'  → 'doodh'   NOT 'Amul Gold Milk'\n"
+        "   'lal surf' → 'lal surf'  NOT 'Surf Excel Easy Wash'\n"
+        "5. DO NOT AGGREGATE: Same item mentioned twice → two separate operations. Never do arithmetic.\n"
+        "6. NEVER MERGE ITEMS: 'surf excel' and 'chawal' are TWO items. Never output 'surf excel chawal'.\n"
+        "7. CLEAN NAMES: Remove action verbs from item names (bhijwa dena, pack kar dena, bhej do).\n"
+        "8. DELIVERY TIME: Extract exact spoken phrase into `delivery_time_raw` "
+        "(e.g. 'kal subah', 'aaj shaam 6 baje', 'parso'). "
+        "Do NOT convert to a date. Do NOT put time words into delivery_address.\n"
+        "9. QUANTITIES: Extract exact spoken number. Missing → null. Never default to 1.\n"
+        "   aadha=0.5  dedh=1.5  dhai=2.5  sawa=1.25  pauna=0.75\n"
+        "10. CUSTOMER NAME: Exact wording as spoken. Store name counts as customer name. "
+        "UNKNOWN only if completely absent.\n"
+        "11. PAYMENT: udhaar / khate mein likh do / baad mein denge → 'Credit (Udhaar)'\n"
+        "    cash de denge → 'Cash'\n"
+        "    phonepe / gpay / online → 'Online'\n"
+        "    Otherwise → 'Not Specified'\n"
+        "12. IN-FLIGHT CANCELLATIONS: Item added then cancelled in same recording → "
+        "omit from items, list in metadata.cancelled_items.\n"
+        "13. CONFIDENCE: Reduce when customer/quantity/product unclear or [unclear] markers present.\n\n"
 
-    "## OPERATIONS (one per spoken event, in order)\n"
-    "Types: ADD | SET_QUANTITY | CANCEL | RETURN | SUBSTITUTE | PREVIOUS_ORDER_REFERENCE\n"
-    "Do NOT resolve corrections. Do NOT compute final state. Return every step.\n\n"
-    "Self-correction: '5 kilo sugar... nahi 2 kilo sugar' "
-    "→ ADD(sugar,5) then SET_QUANTITY(sugar,2). Return both.\n"
-    "Add more: '5 kilo sugar... 10 kilo aur jod dena' "
-    "→ ADD(sugar,5) then ADD(sugar,10). Do NOT use SET_QUANTITY for adding more.\n"
-    "Cancel spoken: 'chips cancel kar do' → CANCEL operation. No ADD for chips.\n"
-    "Return: 'kal ke biscuits wapas lo' → RETURN(biscuits).\n"
-    "Substitute: 'Parle nahi toh Britannia' → SUBSTITUTE(Parle→Britannia). Not a normal ADD.\n"
-    "Previous order: 'same order bhej dena' → PREVIOUS_ORDER_REFERENCE. Never invent items.\n\n"
+        "## OPERATIONS (one per spoken event, in order)\n"
+        "Types: ADD | SET_QUANTITY | CANCEL | RETURN | SUBSTITUTE | PREVIOUS_ORDER_REFERENCE\n"
+        "Do NOT resolve corrections. Do NOT compute final state. Return every step.\n\n"
+        "Self-correction: '5 kilo sugar... nahi 2 kilo sugar' "
+        "→ ADD(sugar,5) then SET_QUANTITY(sugar,2). Return both.\n"
+        "Add more: '5 kilo sugar... 10 kilo aur jod dena' "
+        "→ ADD(sugar,5) then ADD(sugar,10). Do NOT use SET_QUANTITY for adding more.\n"
+        "Cancel spoken: 'chips cancel kar do' → CANCEL operation. No ADD for chips.\n"
+        "Return: 'kal ke biscuits wapas lo' → RETURN(biscuits).\n"
+        "Substitute: 'Parle nahi toh Britannia' → SUBSTITUTE(Parle→Britannia). Not a normal ADD.\n"
+        "Previous order: 'same order bhej dena' → PREVIOUS_ORDER_REFERENCE. Never invent items.\n\n"
 
-    "## EXAMPLES\n"
-    "'lal Surf dena' → name:'lal Surf'\n"
-    "'dus wala Parle' → name:'dus wala Parle'\n"
-    "'paanch rupaye wala toffee ka packet das dabba' → name:'5 rupaye wala toffee', quantity:10, unit:'dabba'\n"
-    "'udhaar mein likh dena' → payment_method:'Credit (Udhaar)'\n"
-    "'kal 5:30 baje Guptastore... unka naam Shayam hai' "
-    "→ customer_name:'Shayam', delivery_time_raw:'kal 5:30 baje', delivery_address:'Guptastore'\n"
-    "'chips bhej dena' → items:[{name:'chips', quantity:null, unit:null}], "
-    "extraction_notes:'Quantity not specified for chips'\n\n"
-
-    "## OUTPUT FORMAT\n"
-    "Return ONLY this JSON. No markdown. No explanation. No extra fields.\n"
-    "{\n"
+        "## EXAMPLES\n"
+        "'lal Surf dena' → name:'lal Surf'\n"
+        "'dus wala Parle' → name:'dus wala Parle'\n"
+        "'paanch rupaye wala toffee ka packet das dabba' → name:'5 rupaye wala toffee', quantity:10, unit:'dabba'\n"
+        "'udhaar mein likh dena' → payment_method:'Credit (Udhaar)'\n"
+        "'kal 5:30 baje Guptastore... unka naam Shayam hai' "
+        "→ customer_name:'Shayam', delivery_time_raw:'kal 5:30 baje', delivery_address:'Guptastore'\n"
+        "'chips bhej dena' → items:[{name:'chips', quantity:null, unit:null}], "
+        "extraction_notes:'Quantity not specified for chips'\n\n"
+        f"{business_rules}\n"
+        "## OUTPUT FORMAT\n"
+        "Return ONLY this JSON. No markdown. No explanation. No extra fields.\n"
+        "{\n"
     '  "transcript": "verbatim words spoken, with [unclear] markers where audio was unclear",\n'
     '  "transcript_normalized": "Romanized Hinglish — transliterate Devanagari if present, else identical to transcript",\n'
     '  "metadata": {\n'
@@ -976,8 +1055,9 @@ Return only the transcript text.
         }
 
     @staticmethod
-    async def extract_order_details(transcript_text: str, stt_provider: str = "gemini", extraction_provider: str = "gemini", pipeline: str = "gemini_gemini") -> dict:
+    async def extract_order_details(transcript_text: str, business_context: dict | None = None, stt_provider: str = "gemini", extraction_provider: str = "gemini", pipeline: str = "gemini_gemini") -> dict:
         """Extract structured order details from transcript."""
+        business_context = GeminiService._normalize_business_context(business_context)
         transcript = transcript_text.strip()
         if not transcript:
             raise ValueError("Transcript is empty.")
@@ -1010,8 +1090,10 @@ Return only the transcript text.
             normalization_instruction = "2. NORMALIZE TRANSCRIPT: Output the exact original transcript as `transcript_normalized` in the root JSON.\n"
             output_schema_additions = '  "transcript_normalized": "string",\n  "metadata": {"cancelled_items": [{"name": "string", "quantity": "string", "unit": "string"}]},\n'
 
+        business_rules = GeminiService._format_business_rules(business_context)
+
         prompt = (
-            "You are an expert grocery order extraction AI for PhoneERP, an Indian grocery/wholesale/kirana business.\n"
+            f"You are an expert order extraction AI for PhoneERP, tailored for a {business_context.get('business_type', 'grocery')} business.\n"
             "Your task is to extract structured entities from a customer transcript.\n"
             "Clients may speak Hindi (Devanagari), English, or Hinglish (mixed).\n\n"
             "## CORE RULES\n"
@@ -1021,7 +1103,7 @@ Return only the transcript text.
             "   - Example: 'ek badi thaili doodh ki' -> name: 'bada doodh', quantity: '1', unit: 'thaili'\n"
             "4. SYNTHESIZE FULL ADDRESSES: For `customer_name` and `delivery_address`, NEVER output Devanagari. Transliterate EXACTLY as spoken phonetically. DO NOT hallucinate, guess, or 'correct' location names.\n"
             "5. CLEAN ITEM NAMES: Remove all conversational action verbs from item names (e.g., 'bhijwa dena', 'pack kar dena').\n"
-            "6. GROCERY STORE CONTEXT: Assume all items are standard grocery or household products. Do not hallucinate non-grocery words.\n"
+            f"6. BUSINESS DOMAIN CONTEXT: Assume all items are relevant to the {business_context.get('business_type', 'grocery')} domain. Do not hallucinate unrelated words.\n"
             "7. DO NOT AGGREGATE DUPLICATES: If the same item is mentioned multiple times in the transcript, extract each mention as a SEPARATE item in the list. Do NOT do math. We will aggregate them later.\n"
             "8. NEVER MERGE UNRELATED ITEMS: Do not accidentally glue two completely different products into one name. Extract 'surf excel' and 'chawal' as TWO separate items. NEVER extract 'surf excel chawal'.\n"
             "9. PRESERVE RAW DELIVERY TIME: Detect time phrases (e.g., 'kal 5:30 baje', 'कल साढ़े पाँच बजे') and extract EXACTLY as it appears in the NORMALIZED transcript into `delivery_time_raw`. Do not put delivery-time words inside `delivery_address`.\n"
@@ -1032,7 +1114,8 @@ Return only the transcript text.
             "14. IN-FLIGHT CANCELLATIONS: If an item is added but later cancelled in the same transcript (e.g. 'ek tight surf add karo... nahi surf cancel kar dena'), DO NOT include it in `items`. Place it in `metadata.cancelled_items` instead.\n"
             "15. EXTRACT OPERATIONS: Extract an ordered sequence of events from the transcript into the `operations` array using ADD, SET_QUANTITY, CANCEL, RETURN, SUBSTITUTE, or PREVIOUS_ORDER_REFERENCE.\n"
             "    - MUST USE ADD for 'aur jod dena' or 'add more'. If a product is mentioned twice with quantities to be added, output multiple ADD operations. Do NOT do math and do NOT use SET_QUANTITY for 'aur jod dena'.\n"
-            "    - Example: '5 kilo aata... 5 kilo aata aur jod dena' -> ADD(atta, 5) then ADD(atta, 5).\n\n"
+            "    - Example: '5 kilo aata... 5 kilo aata aur jod dena' -> ADD(atta, 5) then ADD(atta, 5).\n"
+            f"{business_rules}\n"
             "## OUTPUT FORMAT\n"
             "Return ONLY a JSON object containing `transcript_normalized` and a `cards` array. No markdown, no explanation.\n"
             "{\n"

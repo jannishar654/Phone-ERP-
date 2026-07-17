@@ -4,6 +4,13 @@ import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authClient } from '@/lib/supabase/client';
+import type { BusinessType } from '@/lib/api_access';
+
+type PendingRegistration = {
+  role: 'owner' | 'staff';
+  businessType?: BusinessType;
+  inviteCode?: string;
+};
 
 function SignupContent() {
   const router = useRouter();
@@ -17,7 +24,9 @@ function SignupContent() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [businessType, setBusinessType] = useState<BusinessType>('grocery');
   const [error, setError] = useState<string | null>(null);
+  const [confirmationSent, setConfirmationSent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -37,10 +46,28 @@ function SignupContent() {
     setIsLoading(true);
 
     try {
-      const { user, error: authError } = await authClient.signUp(email, password, name);
+      const { user, error: authError, hasSession } = await authClient.signUp(
+        email,
+        password,
+        name,
+        role === 'owner' ? businessType : undefined,
+      );
       if (authError) {
         setError(authError);
       } else if (user) {
+        const pending: PendingRegistration = role === 'owner'
+          ? { role, businessType }
+          : { role, inviteCode };
+
+        if (!hasSession) {
+          window.localStorage.setItem(
+            'phoneerp-pending-registration',
+            JSON.stringify(pending),
+          );
+          setConfirmationSent(true);
+          return;
+        }
+
         if (role === 'staff') {
           try {
             const { registerStaff } = await import('@/lib/api_access');
@@ -53,15 +80,26 @@ function SignupContent() {
             }
             router.replace(redirectTo);
             router.refresh();
-          } catch (staffErr: any) {
-            setError(staffErr.message || 'Failed to link staff account. Your account was created, but you need a valid invite.');
+          } catch (staffErr: unknown) {
+            setError(staffErr instanceof Error ? staffErr.message : 'Failed to link staff account. Your account was created, but you need a valid invite.');
           }
         } else {
-          router.replace('/dashboard');
-          router.refresh();
+          try {
+            const { registerOwner } = await import('@/lib/api_access');
+            await registerOwner(businessType);
+            router.replace('/dashboard');
+            router.refresh();
+          } catch (ownerErr: unknown) {
+            console.error('Failed to register owner', ownerErr);
+            window.localStorage.setItem(
+              'phoneerp-pending-registration',
+              JSON.stringify(pending),
+            );
+            setError(ownerErr instanceof Error ? ownerErr.message : 'Account created, but business setup failed. Please sign in to retry.');
+          }
         }
       }
-    } catch (err: any) {
+    } catch {
       setError('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
@@ -102,6 +140,16 @@ function SignupContent() {
           </button>
         </div>
 
+        {confirmationSent ? (
+          <div className="space-y-5 text-center" role="status">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+              Check your email to confirm your account. Then sign in here to finish business setup.
+            </div>
+            <Link href="/login" className="inline-flex w-full justify-center rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700">
+              Continue to sign in
+            </Link>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           {role === 'staff' && (
             <div>
@@ -116,6 +164,27 @@ function SignupContent() {
                 className="w-full bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
                 placeholder="Paste your invite code here"
               />
+            </div>
+          )}
+
+          {role === 'owner' && (
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                Business Type
+              </label>
+              <select
+                value={businessType}
+                onChange={(e) => setBusinessType(e.target.value as BusinessType)}
+                className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 transition-colors"
+              >
+                <option value="grocery">Grocery Store</option>
+                <option value="wholesale">Wholesale Business</option>
+                <option value="restaurant">Restaurant</option>
+                <option value="pharmacy">Pharmacy</option>
+                <option value="bakery">Bakery</option>
+                <option value="hardware">Hardware Store</option>
+                <option value="general">General Business</option>
+              </select>
             </div>
           )}
 
@@ -183,6 +252,7 @@ function SignupContent() {
             {isLoading ? 'Creating account...' : 'Create Account'}
           </button>
         </form>
+        )}
 
         <div className="mt-6 text-center text-xs text-slate-500 font-medium">
           Already have an account?{' '}
