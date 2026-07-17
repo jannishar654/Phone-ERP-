@@ -119,14 +119,60 @@ def list_customer_requests(
     shop_id = get_user_shop_id(user_id)
     query = (
         supabase_client.table("customer_requests")
-        .select("*, customers(name, phone), orders(order_number, lifecycle_status, total_amount)")
+        .select("*")
         .eq("shop_id", shop_id)
         .order("created_at", desc=True)
     )
     if status != "all":
         query = query.eq("status", status)
     result = query.limit(100).execute()
-    return result.data or []
+    requests = result.data or []
+    if not requests:
+        return []
+
+    customer_ids = list({
+        request["customer_id"]
+        for request in requests
+        if request.get("customer_id")
+    })
+    order_ids = list({
+        request["order_id"]
+        for request in requests
+        if request.get("order_id")
+    })
+
+    customers_by_id: Dict[str, Dict[str, Any]] = {}
+    if customer_ids:
+        customers = (
+            supabase_client.table("customers")
+            .select("id, name, phone")
+            .eq("shop_id", shop_id)
+            .in_("id", customer_ids)
+            .execute()
+        )
+        customers_by_id = {
+            customer["id"]: customer for customer in customers.data or []
+        }
+
+    orders_by_id: Dict[str, Dict[str, Any]] = {}
+    if order_ids:
+        orders = (
+            supabase_client.table("orders")
+            .select("id, order_number, lifecycle_status, total_amount")
+            .eq("shop_id", shop_id)
+            .in_("id", order_ids)
+            .execute()
+        )
+        orders_by_id = {order["id"]: order for order in orders.data or []}
+
+    return [
+        {
+            **request,
+            "customers": customers_by_id.get(request.get("customer_id")),
+            "orders": orders_by_id.get(request.get("order_id")),
+        }
+        for request in requests
+    ]
 
 
 @router.patch("/{request_id}")

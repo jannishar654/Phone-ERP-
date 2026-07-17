@@ -395,6 +395,79 @@ def test_customer_portal_unhandled_failure_is_cors_safe(portal_context):
     assert response.json()["request_id"]
 
 
+def test_owner_customer_requests_are_enriched_without_embedded_relationships():
+    request = {
+        "id": "request-1",
+        "shop_id": "shop-1",
+        "customer_id": "customer-1",
+        "order_id": "order-1",
+        "request_type": "cancel_order",
+        "status": "pending",
+        "created_at": "2026-07-17T10:00:00+00:00",
+    }
+    db = FakeDb({
+        ("customer_requests", "select"): [[request]],
+        ("customers", "select"): [[{
+            "id": "customer-1", "name": "Danish", "phone": "+911234567890"
+        }]],
+        ("orders", "select"): [[{
+            "id": "order-1",
+            "order_number": 101,
+            "lifecycle_status": "packing",
+            "total_amount": 500,
+        }]],
+    })
+    app.dependency_overrides[get_current_user_id] = lambda: "owner-1"
+    try:
+        with patch("app.routes.customer_requests.supabase_client", db), patch(
+            "app.routes.customer_requests.get_user_shop_id", return_value="shop-1"
+        ):
+            response = client.get("/customer-requests?status=pending")
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+
+    assert response.status_code == 200
+    assert response.json()[0]["customers"]["name"] == "Danish"
+    assert response.json()[0]["orders"]["lifecycle_status"] == "packing"
+    request_query, customer_query, order_query = db.calls
+    assert request_query.filters == [
+        ("eq", "shop_id", "shop-1"),
+        ("eq", "status", "pending"),
+    ]
+    assert ("eq", "shop_id", "shop-1") in customer_query.filters
+    assert ("in", "id", ["customer-1"]) in customer_query.filters
+    assert ("eq", "shop_id", "shop-1") in order_query.filters
+    assert ("in", "id", ["order-1"]) in order_query.filters
+
+
+def test_owner_customer_requests_tolerate_missing_related_records():
+    request = {
+        "id": "request-2",
+        "shop_id": "shop-1",
+        "customer_id": "deleted-customer",
+        "order_id": None,
+        "request_type": "support",
+        "status": "pending",
+        "created_at": "2026-07-17T10:00:00+00:00",
+    }
+    db = FakeDb({
+        ("customer_requests", "select"): [[request]],
+        ("customers", "select"): [[]],
+    })
+    app.dependency_overrides[get_current_user_id] = lambda: "owner-1"
+    try:
+        with patch("app.routes.customer_requests.supabase_client", db), patch(
+            "app.routes.customer_requests.get_user_shop_id", return_value="shop-1"
+        ):
+            response = client.get("/customer-requests?status=pending")
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+
+    assert response.status_code == 200
+    assert response.json()[0]["customers"] is None
+    assert response.json()[0]["orders"] is None
+
+
 def test_customer_cannot_open_bill_for_another_customer(portal_context):
     db = FakeDb({("orders", "select"): [[]]})
     with patch("app.routes.customer.supabase_client", db):
