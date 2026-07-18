@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Union
 
 from app.config.business_defaults import (
     BUSINESS_DEFAULTS,
@@ -24,7 +24,7 @@ class BusinessConfigService:
         )
 
     @staticmethod
-    def normalize_business_type(value: BusinessType | str) -> BusinessType:
+    def normalize_business_type(value: Union[BusinessType, str]) -> BusinessType:
         try:
             return value if isinstance(value, BusinessType) else BusinessType(value)
         except (TypeError, ValueError) as exc:
@@ -55,7 +55,7 @@ class BusinessConfigService:
         return self._fallback(shop_id)
 
     def create_default_config(
-        self, shop_id: str, business_type: BusinessType | str = BusinessType.grocery
+        self, shop_id: str, business_type: Union[BusinessType, str] = BusinessType.grocery
     ) -> BusinessConfiguration:
         """Create once and recover safely if concurrent requests race."""
         selected_type = self.normalize_business_type(business_type)
@@ -99,7 +99,7 @@ class BusinessConfigService:
         return self.get_config(shop_id).workflow_stages
 
     def is_valid_transition(
-        self, shop_id: str, current_status: str | None, new_status: str
+        self, shop_id: str, current_status: Optional[str], new_status: str
     ) -> bool:
         config = self.get_config(shop_id)
         transitions = config.settings.get(

@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 # These stages match the existing orders.lifecycle_status constraint and routes.
@@ -29,11 +29,11 @@ def _default(
     default_unit: str,
     terminology: Dict[str, str],
     *,
-    required_order_fields: list[str] | None = None,
-    optional_order_fields: list[str] | None = None,
+    required_order_fields: Optional[list[str]] = None,
+    optional_order_fields: Optional[list[str]] = None,
     allow_partial_quantities: bool = True,
-    stage_labels: Dict[str, str] | None = None,
-    settings: Dict[str, Any] | None = None,
+    stage_labels: Optional[Dict[str, str]] = None,
+    settings: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     merged_settings: Dict[str, Any] = {
         "workflow_transitions": deepcopy(CANONICAL_TRANSITIONS),
@@ -93,20 +93,42 @@ BUSINESS_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "restaurant": _default(
         "restaurant",
         "Restaurant",
-        "prepared dishes, breads, beverages, add-ons, portions, and meal customizations",
+        "Indian restaurant dishes, breads, beverages. Common: biryani, paneer, dal, naan, dosa, thali, pizza, momos, noodles, cold coffee, chai. Sizes: half/full, large/medium/small. Add-ons: extra cheese, paneer, gravy, butter, masala, toppings. Spice: less spicy/kam mirch, medium, spicy/tez, extra spicy. Veg/Non-Veg. Order: takeaway/parcel/pack, delivery, dine-in/table. Examples: '2 paneer tikka, ek less spicy' -> 2+1 dishes with less spicy, 'Table 4 ke liye 3 cold coffee' -> table 4, 'Kal 8 baje 20 veg thali deliver' -> delivery kal 8baje 20 thali, '1 large pizza extra cheese takeaway' -> large pizza extra cheese takeaway, 'Do plate chicken biryani medium spicy parcel' -> 2 chicken biryani medium spicy takeaway",
         "portion",
         {
             "order": "food order",
             "customer": "guest",
             "delivery": "delivery",
             "packer": "kitchen staff",
+            "dish": "prepared food item / dish",
+            "size_variant": "size: half, full, large, medium, small, regular, jumbo, family pack",
+            "add_ons": "extras: extra cheese, paneer, gravy, butter, masala, mayonnaise, salad, chutney, raita",
+            "spice_level": "spice: less spicy/kam mirch/less mirchi, medium/medium spicy, spicy/tez/masaledar, extra spicy/bahut tez",
+            "veg_non_veg": "Veg/Shakahari or Non-Veg/Mansahari",
+            "takeaway_delivery_dine_in": "order type: takeaway/parcel/pack/le kar jayenge, delivery/ghar bhej do/deliver kar do/pahuncha do, dine-in/yahan khaana hai/table/baithe khaana",
+            "table_number": "table number for dine-in (e.g. Table 4 / table number chaar)",
+            "special_instructions": "special instructions: kam mirch/kam spice, no onion/lahsun, extra butter, extra masala, without garlic",
+            "plate": "measure word for a single serving of a dish",
+            "half_plate": "half serving (aadha plate)",
+            "full_plate": "full serving (pura plate)",
+            "packet": "parcel/takeaway pack",
         },
+        required_order_fields=[
+            "items",
+            "quantity",
+            "size_variant",
+            "add_ons",
+            "spice_level",
+            "veg_non_veg",
+        ],
         optional_order_fields=[
             "customer_name",
             "customer_phone",
+            "takeaway_delivery_dine_in",
+            "table_number",
             "delivery_address",
             "delivery_time",
-            "table_number",
+            "payment_method",
             "special_instructions",
         ],
         allow_partial_quantities=False,
