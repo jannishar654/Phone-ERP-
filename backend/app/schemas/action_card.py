@@ -34,6 +34,10 @@ class Item(BaseModel):
     possible_matches: List[str] = Field(default_factory=list)
     resolution_confidence: Optional[float] = None
     alias_used: Optional[bool] = False
+    size_variant: Optional[str] = None
+    add_ons: List[str] = Field(default_factory=list)
+    spice_level: Optional[str] = None
+    veg_non_veg: Optional[str] = None
 
 
 class ActionCard(BaseModel):
@@ -57,6 +61,9 @@ class ActionCard(BaseModel):
     missing_fields: List[str] = Field(default_factory=list)
     validation_warnings: List[str] = Field(default_factory=list)
     payment_method: Optional[str] = None
+    takeaway_delivery_dine_in: Optional[str] = None
+    table_number: Optional[str] = None
+    special_instructions: Optional[str] = None
     status: str = "pending"
     source: str
     message_type: str = "ORDER"
@@ -96,6 +103,10 @@ class ActionCardCreate(BaseModel):
     risk_flags: List[str] = Field(default_factory=list)
     missing_fields: List[str] = Field(default_factory=list)
     validation_warnings: List[str] = Field(default_factory=list)
+    payment_method: Optional[str] = None
+    takeaway_delivery_dine_in: Optional[str] = None
+    table_number: Optional[str] = None
+    special_instructions: Optional[str] = None
     status: str = "pending"
     source: str = "text"
     message_type: str = "ORDER"
@@ -129,6 +140,10 @@ class ActionCardUpdate(BaseModel):
     risk_flags: Optional[List[str]] = None
     missing_fields: Optional[List[str]] = None
     validation_warnings: Optional[List[str]] = None
+    payment_method: Optional[str] = None
+    takeaway_delivery_dine_in: Optional[str] = None
+    table_number: Optional[str] = None
+    special_instructions: Optional[str] = None
     status: Optional[str] = None
     source: Optional[str] = None
     message_type: Optional[str] = None

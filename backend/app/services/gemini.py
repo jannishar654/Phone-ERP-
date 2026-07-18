@@ -1,3 +1,4 @@
+from __future__ import annotations
 import asyncio
 import json
 import logging
@@ -532,7 +533,8 @@ Return only the transcript text.
         "    Otherwise → 'Not Specified'\n"
         "12. IN-FLIGHT CANCELLATIONS: Item added then cancelled in same recording → "
         "omit from items, list in metadata.cancelled_items.\n"
-        "13. CONFIDENCE: Reduce when customer/quantity/product unclear or [unclear] markers present.\n\n"
+        "13. CONFIDENCE: Reduce when customer/quantity/product unclear or [unclear] markers present.\n"
+        "14. RESTAURANT FIELDS: If business_type is restaurant, extract size_variant (e.g. half, full, large, medium, small), add_ons (array of strings, e.g. ['extra cheese']), spice_level (e.g. less spicy, medium, spicy, extra spicy), and veg_non_veg (Veg or Non-Veg) for each item. Also extract order-level takeaway_delivery_dine_in (default to 'Not Specified' unless 'takeaway', 'delivery', or 'dine-in' is mentioned), table_number (table number e.g. 4 if dine-in), and special_instructions.\n\n"
 
         "## OPERATIONS (one per spoken event, in order)\n"
         "Types: ADD | SET_QUANTITY | CANCEL | RETURN | SUBSTITUTE | PREVIOUS_ORDER_REFERENCE\n"
@@ -585,11 +587,23 @@ Return only the transcript text.
     '      "customer_name": "exact name or store as spoken — UNKNOWN only if completely absent",\n'
     '      "customer_phone": "",\n'
     '      "items": [\n'
-    '        {"name": "core product only", "quantity": "string or null", "unit": "string or null", "price": 0}\n'
+    '        {\n'
+    '          "name": "core product only",\n'
+    '          "quantity": "string or null",\n'
+    '          "unit": "string or null",\n'
+    '          "price": 0,\n'
+    '          "size_variant": "string or null (e.g. large, medium, small, half, full)",\n'
+    '          "add_ons": ["string"],\n'
+    '          "spice_level": "string or null (e.g. less spicy, medium, spicy)",\n'
+    '          "veg_non_veg": "Veg|Non-Veg|Not Specified"\n'
+    '        }\n'
     '      ],\n'
     '      "delivery_address": "",\n'
     '      "delivery_time_raw": "exact spoken phrase e.g. kal subah, aaj 6 baje",\n'
     '      "payment_method": "Cash|Online|Credit (Udhaar)|Not Specified",\n'
+    '      "takeaway_delivery_dine_in": "Takeaway|Delivery|Dine-in|Not Specified",\n'
+    '      "table_number": "string or null",\n'
+    '      "special_instructions": "string or null",\n'
     '      "confidence": 0.9,\n'
     '      "extraction_notes": "ambiguities, missing fields, [unclear] items, substitutions noted here"\n'
     '    }\n'
@@ -695,6 +709,13 @@ Return only the transcript text.
                 clean_name = GeminiService.clean_product_name(safe_name)
                 safe_name = clean_name
 
+                size_variant = item.get("size_variant")
+                add_ons = item.get("add_ons") or []
+                if isinstance(add_ons, str):
+                    add_ons = [add_ons]
+                spice_level = item.get("spice_level")
+                veg_non_veg = item.get("veg_non_veg")
+
                 res = business_memory.resolve_product_detailed(safe_name, customer_id=cust_phone)
                 normalized_items.append({
                     "name": res["name"],
@@ -708,6 +729,10 @@ Return only the transcript text.
                     "price": price,
                     "matched": res["matched"],
                     "possible_matches": res["possible_matches"],
+                    "size_variant": size_variant,
+                    "add_ons": add_ons,
+                    "spice_level": spice_level,
+                    "veg_non_veg": veg_non_veg,
                 })
 
             for item in normalized_items:
@@ -777,6 +802,9 @@ Return only the transcript text.
                 "delivery_time_warning": time_data["warning"],
                 "delivery_time": time_data["normalized"] or raw_delivery_time,
                 "payment_method": str(primary_card.get("payment_method") or "").strip() or "Not Specified",
+                "takeaway_delivery_dine_in": primary_card.get("takeaway_delivery_dine_in") or "Not Specified",
+                "table_number": primary_card.get("table_number"),
+                "special_instructions": primary_card.get("special_instructions"),
                 "items": final_aggregated_items,
                 "type": primary_card.get("type", "ORDER"),
                 "confidence": primary_card.get("confidence", 0.0),
@@ -1115,6 +1143,7 @@ Return only the transcript text.
             "15. EXTRACT OPERATIONS: Extract an ordered sequence of events from the transcript into the `operations` array using ADD, SET_QUANTITY, CANCEL, RETURN, SUBSTITUTE, or PREVIOUS_ORDER_REFERENCE.\n"
             "    - MUST USE ADD for 'aur jod dena' or 'add more'. If a product is mentioned twice with quantities to be added, output multiple ADD operations. Do NOT do math and do NOT use SET_QUANTITY for 'aur jod dena'.\n"
             "    - Example: '5 kilo aata... 5 kilo aata aur jod dena' -> ADD(atta, 5) then ADD(atta, 5).\n"
+            "16. RESTAURANT FIELDS: If business_type is restaurant, extract size_variant (e.g. half, full, large, medium, small), add_ons (array of strings, e.g. ['extra cheese']), spice_level (e.g. less spicy, medium, spicy, extra spicy), and veg_non_veg (Veg or Non-Veg) for each item. Also extract order-level takeaway_delivery_dine_in (default to 'Not Specified' unless 'takeaway', 'delivery', or 'dine-in' is mentioned), table_number (table number e.g. 4 if dine-in), and special_instructions.\n"
             f"{business_rules}\n"
             "## OUTPUT FORMAT\n"
             "Return ONLY a JSON object containing `transcript_normalized` and a `cards` array. No markdown, no explanation.\n"
@@ -1139,10 +1168,24 @@ Return only the transcript text.
             '      "type": "ORDER" | "CANCEL" | "COMPLAINT" | "RETURN" | "QUERY" | "PAYMENT_REMINDER",\n'
             '      "customer_name": "string (Extract exact name or store. Use UNKNOWN only if completely unclear)",\n'
             '      "customer_phone": "string",\n'
-            '      "items": [{"name": "string (never prefix with missing)", "quantity": "STRING or null", "unit": "string or null", "price": number}],\n'
+            '      "items": [\n'
+            '        {\n'
+            '          "name": "string (never prefix with missing)",\n'
+            '          "quantity": "STRING or null",\n'
+            '          "unit": "string or null",\n'
+            '          "price": number,\n'
+            '          "size_variant": "string or null (e.g. large, medium, small, half, full)",\n'
+            '          "add_ons": ["string"],\n'
+            '          "spice_level": "string or null (e.g. less spicy, medium, spicy)",\n'
+            '          "veg_non_veg": "Veg|Non-Veg|Not Specified"\n'
+            '        }\n'
+            '      ],\n'
             '      "delivery_address": "string",\n'
             '      "delivery_time_raw": "string",\n'
             '      "payment_method": "string (e.g. Cash, Online, Credit/Udhaar)",\n'
+            '      "takeaway_delivery_dine_in": "Takeaway|Delivery|Dine-in|Not Specified",\n'
+            '      "table_number": "string or null",\n'
+            '      "special_instructions": "string or null",\n'
             '      "confidence": number (0.0 to 1.0. Reduce if name/qty/product is unclear),\n'
             '      "extraction_notes": "string (notes on ambiguity, missing fields, risky instructions, multiple orders, or unknown products)"\n'
             "    }\n"
@@ -1301,6 +1344,13 @@ Return only the transcript text.
                         qty = None
                         break
 
+                size_variant = item.get("size_variant")
+                add_ons = item.get("add_ons") or []
+                if isinstance(add_ons, str):
+                    add_ons = [add_ons]
+                spice_level = item.get("spice_level")
+                veg_non_veg = item.get("veg_non_veg")
+
                 res = business_memory.resolve_product_detailed(safe_name, customer_id=cust_phone)
                 normalized_items.append({
                     "name": res["name"],
@@ -1312,7 +1362,11 @@ Return only the transcript text.
                     "unit": unit,
                     "price": price,
                     "matched": res["matched"],
-                    "possible_matches": res["possible_matches"]
+                    "possible_matches": res["possible_matches"],
+                    "size_variant": size_variant,
+                    "add_ons": add_ons,
+                    "spice_level": spice_level,
+                    "veg_non_veg": veg_non_veg,
                 })
 
         for item in normalized_items:
