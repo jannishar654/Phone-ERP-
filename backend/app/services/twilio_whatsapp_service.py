@@ -389,7 +389,18 @@ class TwilioWhatsappService:
                     return self._generate_twiml("") # ignore duplicate
                     
                 from app.services.gemini import GeminiService
-                extracted = await GeminiService.extract_order_details(text)
+                from app.services.business_config_service import business_config_service
+
+                shop_id = customer.get("shop_id") or channel_data.get("shop_id")
+                business_context = (
+                    business_config_service.build_extraction_context(shop_id)
+                    if shop_id
+                    else None
+                )
+                extracted = await GeminiService.extract_order_details(
+                    text,
+                    business_context=business_context,
+                )
                 
                 # If Gemini finds no items, it's not a real order. Fall back to normal onboarding.
                 if not extracted.get("items"):

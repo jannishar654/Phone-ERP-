@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
@@ -63,7 +63,7 @@ def _merge_unique_rows(*row_groups: List[Dict[str, Any]]) -> List[Dict[str, Any]
 
 
 def get_customer_context(
-    x_customer_session: str | None = Header(default=None),
+    x_customer_session: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
     try:
         return validate_customer_session(x_customer_session or "")
@@ -90,7 +90,7 @@ def _customer_and_shop(context: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[st
     return customer.data[0], shop.data[0]
 
 
-def _latest_customer_order(context: Dict[str, Any]) -> Dict[str, Any] | None:
+def _latest_customer_order(context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     result = (
         supabase_client.table("orders")
         .select("id, order_number, total_amount, lifecycle_status, created_at")
@@ -107,8 +107,8 @@ def _create_pending_order_request(
     context: Dict[str, Any],
     order_id: str,
     request_type: str,
-    message: str | None = None,
-    payload: Dict[str, Any] | None = None,
+    message: Optional[str] = None,
+    payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     existing = (
         supabase_client.table("customer_requests")
@@ -214,7 +214,7 @@ def exchange_customer_access(payload: MagicLinkExchange):
 
 @router.post("/access/logout")
 def logout_customer(
-    x_customer_session: str | None = Header(default=None),
+    x_customer_session: Optional[str] = Header(default=None),
 ):
     revoke_customer_session(x_customer_session or "")
     return {"message": "Signed out"}

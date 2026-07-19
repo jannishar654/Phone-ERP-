@@ -131,6 +131,9 @@ class InMemoryStore:
             missing_fields=card_data.get("missing_fields", []),
             validation_warnings=card_data.get("validation_warnings", []),
             payment_method=card_data.get("payment_method", "Not Specified"),
+            takeaway_delivery_dine_in=card_data.get("takeaway_delivery_dine_in"),
+            table_number=card_data.get("table_number"),
+            special_instructions=card_data.get("special_instructions"),
             status=card_data.get("status", "pending"),
             source=card_data.get("source", "text"),
             message_type=card_data.get("message_type", "ORDER"),
@@ -175,6 +178,12 @@ class InMemoryStore:
             card.validation_warnings = card_data["validation_warnings"]
         if "payment_method" in card_data:
             card.payment_method = card_data["payment_method"]
+        if "takeaway_delivery_dine_in" in card_data:
+            card.takeaway_delivery_dine_in = card_data["takeaway_delivery_dine_in"]
+        if "table_number" in card_data:
+            card.table_number = card_data["table_number"]
+        if "special_instructions" in card_data:
+            card.special_instructions = card_data["special_instructions"]
         if "status" in card_data:
             card.status = card_data["status"]
         if "source" in card_data:

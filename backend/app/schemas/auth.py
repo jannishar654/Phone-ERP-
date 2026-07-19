@@ -1,6 +1,8 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 from datetime import datetime
+
+from app.schemas.business_config import BusinessType
 
 class StaffInviteCreate(BaseModel):
     shop_id: str
@@ -22,12 +24,10 @@ class StaffInviteResponse(BaseModel):
     raw_invite_code: Optional[str] = None  # Only returned on creation
 
 class RegisterOwnerRequest(BaseModel):
-    # Supabase handles the actual email/pwd signup, 
-    # this endpoint just sets up the shop if needed.
-    # Actually, owner registration might just use existing logic or be handled mostly by frontend,
-    # but we'll include it for completeness if the frontend calls it after signup.
-    shop_name: str
-    phone: str
+    # Supabase owns credentials; this endpoint provisions business data only.
+    shop_name: str = Field(default="Default Shop", min_length=1, max_length=120)
+    phone: Optional[str] = Field(default=None, max_length=30)
+    business_type: BusinessType = BusinessType.grocery
 
 class RegisterStaffRequest(BaseModel):
     invite_code: str
@@ -42,4 +42,4 @@ class MeResponse(BaseModel):
     shop_id: Optional[str] = None
     role: Optional[str] = None
     email: Optional[str] = None
-    permissions: list[str] = []
+    permissions: list[str] = Field(default_factory=list)

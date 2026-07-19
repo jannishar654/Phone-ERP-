@@ -4,6 +4,22 @@ import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authClient } from '@/lib/supabase/client';
+import type { BusinessType } from '@/lib/api_access';
+
+type PendingRegistration = {
+  role: 'owner' | 'staff';
+  businessType?: BusinessType;
+  inviteCode?: string;
+};
+
+function readPendingRegistration(): PendingRegistration | null {
+  try {
+    const raw = window.localStorage.getItem('phoneerp-pending-registration');
+    return raw ? JSON.parse(raw) as PendingRegistration : null;
+  } catch {
+    return null;
+  }
+}
 
 function LoginContent() {
   const router = useRouter();
@@ -24,19 +40,31 @@ function LoginContent() {
         setError(authError);
       } else if (user) {
         try {
-          const { getMe } = await import('@/lib/api_access');
+          const { getMe, registerOwner, registerStaff } = await import('@/lib/api_access');
           const me = await getMe();
+          const pending = readPendingRegistration();
           let redirectTo = '/dashboard';
           if (me.role === 'packer') {
             redirectTo = '/staff/packing';
           } else if (me.role === 'delivery') {
             redirectTo = '/staff/delivery';
-          } else if (me.role === 'owner') {
-            redirectTo = '/dashboard';
+          } else if (me.role === 'none') {
+            if (pending?.role === 'staff' && pending.inviteCode) {
+              const registered = await registerStaff(pending.inviteCode);
+              redirectTo = registered.role === 'delivery'
+                ? '/staff/delivery'
+                : '/staff/packing';
+            } else {
+              await registerOwner(
+                pending?.businessType || (user.businessType as BusinessType) || 'grocery',
+              );
+              redirectTo = '/dashboard';
+            }
+            window.localStorage.removeItem('phoneerp-pending-registration');
           }
           
           const paramRedirect = searchParams.get('redirectTo');
-          if (paramRedirect) {
+          if (paramRedirect?.startsWith('/') && !paramRedirect.startsWith('//')) {
             redirectTo = paramRedirect;
           }
           
@@ -44,12 +72,10 @@ function LoginContent() {
           router.refresh();
         } catch (meErr) {
           console.error("Failed to fetch role", meErr);
-          // Default fallback
-          router.replace('/dashboard');
-          router.refresh();
+          setError(meErr instanceof Error ? meErr.message : 'Unable to complete sign in. Please try again.');
         }
       }
-    } catch (err: any) {
+    } catch {
       setError('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);

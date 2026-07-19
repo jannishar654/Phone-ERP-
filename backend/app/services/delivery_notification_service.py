@@ -1,11 +1,12 @@
 import logging
+from typing import Optional
 from app.services.supabase import supabase_client
 from app.config.settings import settings
 from app.services.bill_link_service import ensure_public_bill_link
 
 logger = logging.getLogger(__name__)
 
-def send_delivery_notification(order_id: str, final_order: dict | None = None) -> dict:
+def send_delivery_notification(order_id: str, final_order: Optional[dict] = None) -> dict:
     notification_info = {
         "notification_attempted": True,
         "notification_sent": False,

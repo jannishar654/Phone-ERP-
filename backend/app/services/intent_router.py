@@ -15,6 +15,7 @@ from app.schemas.inbound import (
 )
 from app.services.gemini import GeminiService
 from app.services.supabase import supabase_client
+from app.services.business_config_service import business_config_service
 
 
 logger = logging.getLogger(__name__)
@@ -290,11 +291,11 @@ class IntentRouter:
         if classification.intent == ConversationIntent.NEW_ORDER:
             if confidence >= 0.85:
                 return await IntentRouter._process_high_confidence_order(
-                    msg, conversation, inbound_id
+                    msg, conversation, inbound_id, context
                 )
             if confidence >= 0.60:
                 return await IntentRouter._process_medium_confidence_order(
-                    msg, conversation, inbound_id
+                    msg, conversation, inbound_id, context
                 )
 
         return IntentRouter._handle_other_intent(
@@ -669,11 +670,12 @@ class IntentRouter:
         msg: NormalizedInboundMessage,
         conversation: Dict[str, Any],
         inbound_id: str,
+        context: Dict[str, Any],
     ) -> Dict[str, Any]:
         IntentRouter._update_inbound_status(inbound_id, "extracting")
         try:
             extracted = await asyncio.wait_for(
-                GeminiService.extract_order_details(msg.raw_text),
+                GeminiService.extract_order_details(msg.raw_text, business_context=context),
                 timeout=EXTRACTION_TIMEOUT_SECONDS,
             )
             card_data = IntentRouter._build_card_data(extracted, msg, inbound_id)
@@ -748,11 +750,12 @@ class IntentRouter:
         msg: NormalizedInboundMessage,
         conversation: Dict[str, Any],
         inbound_id: str,
+        context: Dict[str, Any],
     ) -> Dict[str, Any]:
         IntentRouter._update_inbound_status(inbound_id, "extracting")
         try:
             extracted = await asyncio.wait_for(
-                GeminiService.extract_order_details(msg.raw_text),
+                GeminiService.extract_order_details(msg.raw_text, business_context=context),
                 timeout=EXTRACTION_TIMEOUT_SECONDS,
             )
             card_data = IntentRouter._build_card_data(extracted, msg, inbound_id)
@@ -1116,10 +1119,9 @@ class IntentRouter:
     def _get_business_context(
         shop_id: str, metadata: Dict[str, Any]
     ) -> Dict[str, Any]:
-        configured = metadata.get("business_context")
-        if isinstance(configured, dict):
-            return configured
-        context: Dict[str, Any] = {"business_type": "general business"}
+        # Provider metadata is intentionally not trusted as prompt configuration.
+        context = business_config_service.build_extraction_context(shop_id)
+
         try:
             shop = (
                 supabase_client.table("shops")
