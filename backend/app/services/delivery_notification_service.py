@@ -80,16 +80,20 @@ def send_delivery_notification(order_id: str, final_order: Optional[dict] = None
                     telegram_chat_id = meta.get("telegram_chat_id")
                     
         whatsapp_channel = None
+        meta_whatsapp_channel = None
         telegram_channel = None
         for ch in channels:
             if ch.get("channel") == "whatsapp":
                 whatsapp_channel = ch
+            elif ch.get("channel") == "meta_whatsapp":
+                meta_whatsapp_channel = ch
             elif ch.get("channel") == "telegram":
                 telegram_channel = ch
                 
         channel_to_use = source
         if not channel_to_use:
             if telegram_channel: channel_to_use = "telegram"
+            elif meta_whatsapp_channel: channel_to_use = "meta_whatsapp"
             elif whatsapp_channel: channel_to_use = "whatsapp"
             elif full_order.get("customer_phone"): channel_to_use = "whatsapp"
             
@@ -106,6 +110,38 @@ def send_delivery_notification(order_id: str, final_order: Optional[dict] = None
                 notification_info["notification_error"] = "No Telegram chat ID found"
                 print("DELIVERY_NOTIFICATION_SKIPPED reason=no_telegram_chat_id", flush=True)
                 logger.warning("DELIVERY_NOTIFICATION_SKIPPED reason=no_telegram_chat_id")
+        elif channel_to_use == "meta_whatsapp":
+            wa_id = (
+                meta_whatsapp_channel.get("channel_user_id")
+                if meta_whatsapp_channel else None
+            )
+            phone_number_id = None
+            if action_card_id and card_res.data:
+                phone_number_id = (
+                    (card_res.data[0].get("metadata") or {})
+                    .get("meta_phone_number_id")
+                )
+            if wa_id:
+                from app.services.meta_whatsapp_service import meta_whatsapp_service
+                result = meta_whatsapp_service.send_text_sync(
+                    wa_id, bill_msg, phone_number_id
+                )
+                notification_info["notification_sent"] = result.get("sent", False)
+                notification_info["notification_channel"] = "meta_whatsapp"
+                notification_info["notification_sid"] = result.get("message_id")
+                notification_info["notification_error"] = result.get("error")
+                if result.get("sent"):
+                    logger.warning(
+                        "DELIVERY_NOTIFICATION_SENT channel=meta_whatsapp message_id=%s",
+                        result.get("message_id"),
+                    )
+                else:
+                    logger.warning("DELIVERY_NOTIFICATION_FAILED channel=meta_whatsapp")
+            else:
+                notification_info["notification_error"] = "No Meta WhatsApp recipient found"
+                logger.warning(
+                    "DELIVERY_NOTIFICATION_SKIPPED reason=no_meta_whatsapp_recipient"
+                )
         elif channel_to_use == "whatsapp":
             phone_to_use = (whatsapp_channel.get("phone") if whatsapp_channel else None) or full_order.get("customer_phone") or card_phone
             if not phone_to_use and customer_id:

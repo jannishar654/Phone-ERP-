@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     TWILIO_WHATSAPP_FROM: str = ""
     TWILIO_DEFAULT_OWNER_ID: Optional[str] = None
     TWILIO_DEFAULT_SHOP_ID: Optional[str] = None
+
+    # Meta WhatsApp Cloud API (server-only)
+    META_WHATSAPP_ACCESS_TOKEN: str = ""
+    META_WHATSAPP_PHONE_NUMBER_ID: str = ""
+    META_WHATSAPP_WABA_ID: str = ""
+    META_WHATSAPP_VERIFY_TOKEN: str = ""
+    META_APP_SECRET: str = ""
+    META_GRAPH_API_VERSION: str = "v25.0"
+    # Pilot fallback only. Multi-tenant routing should use whatsapp_connections.
+    META_WHATSAPP_DEFAULT_SHOP_ID: Optional[str] = None
     
     # Public Bill Configuration
     FRONTEND_PUBLIC_BASE_URL: str = "http://localhost:3000"
