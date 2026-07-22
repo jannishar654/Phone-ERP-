@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.config.settings import settings
 from app.main import app
+from app.services.meta_whatsapp_event_service import meta_whatsapp_event_service
 from app.services.meta_whatsapp_service import meta_whatsapp_service
 
 
@@ -94,8 +95,13 @@ def test_signed_message_webhook_queues_existing_pipeline():
     with (
         patch.object(settings, "META_APP_SECRET", "app-secret"),
         patch.object(
-            meta_whatsapp_service, "process_message", new_callable=AsyncMock
-        ) as process_message,
+            meta_whatsapp_event_service,
+            "persist_webhook_payload",
+            return_value=["event-1"],
+        ) as persist_webhook,
+        patch.object(
+            meta_whatsapp_event_service, "process_event", new_callable=AsyncMock
+        ) as process_event,
     ):
         response = client.post(
             "/meta/whatsapp/webhook",
@@ -108,14 +114,11 @@ def test_signed_message_webhook_queues_existing_pipeline():
 
     assert response.status_code == 200
     assert response.json() == {"received": True, "queued": 1}
-    process_message.assert_awaited_once()
-    phone_number_id, message, contact = process_message.await_args.args
-    assert phone_number_id == "phone-1"
-    assert message["id"] == "wamid-1"
-    assert contact["profile"]["name"] == "Danish"
+    persist_webhook.assert_called_once_with(_message_payload())
+    process_event.assert_awaited_once_with("event-1")
 
 
-def test_status_only_webhook_is_acknowledged_without_processing():
+def test_status_only_webhook_is_persisted_and_queued():
     payload = {
         "object": "whatsapp_business_account",
         "entry": [
@@ -136,8 +139,13 @@ def test_status_only_webhook_is_acknowledged_without_processing():
     with (
         patch.object(settings, "META_APP_SECRET", "app-secret"),
         patch.object(
-            meta_whatsapp_service, "process_message", new_callable=AsyncMock
-        ) as process_message,
+            meta_whatsapp_event_service,
+            "persist_webhook_payload",
+            return_value=["status-event-1"],
+        ),
+        patch.object(
+            meta_whatsapp_event_service, "process_event", new_callable=AsyncMock
+        ) as process_event,
     ):
         response = client.post(
             "/meta/whatsapp/webhook",
@@ -149,8 +157,49 @@ def test_status_only_webhook_is_acknowledged_without_processing():
         )
 
     assert response.status_code == 200
-    assert response.json()["queued"] == 0
-    process_message.assert_not_awaited()
+    assert response.json()["queued"] == 1
+    process_event.assert_awaited_once_with("status-event-1")
+
+
+def test_webhook_returns_retryable_error_when_persistence_fails():
+    body = json.dumps(_message_payload(), separators=(",", ":")).encode()
+    with (
+        patch.object(settings, "META_APP_SECRET", "app-secret"),
+        patch.object(
+            meta_whatsapp_event_service,
+            "persist_webhook_payload",
+            side_effect=RuntimeError("database unavailable"),
+        ),
+    ):
+        response = client.post(
+            "/meta/whatsapp/webhook",
+            content=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": _signature(body, "app-secret"),
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Webhook persistence is temporarily unavailable"
+
+
+def test_webhook_rejects_oversized_payload_before_processing():
+    body = json.dumps(_message_payload(), separators=(",", ":")).encode()
+    with (
+        patch.object(settings, "META_APP_SECRET", "app-secret"),
+        patch.object(settings, "META_WHATSAPP_MAX_WEBHOOK_BYTES", len(body) - 1),
+    ):
+        response = client.post(
+            "/meta/whatsapp/webhook",
+            content=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": _signature(body, "app-secret"),
+            },
+        )
+
+    assert response.status_code == 413
 
 
 @pytest.mark.asyncio

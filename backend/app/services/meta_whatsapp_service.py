@@ -1,4 +1,9 @@
+import datetime
+import hashlib
 import logging
+import os
+import re
+import uuid
 from typing import Any, Dict, Optional
 
 import httpx
@@ -21,15 +26,42 @@ class MetaWhatsAppService:
         version = settings.META_GRAPH_API_VERSION.strip("/") or "v25.0"
         return f"https://graph.facebook.com/{version}/{path.lstrip('/')}"
 
-    def _auth_headers(self) -> Dict[str, str]:
-        return {"Authorization": f"Bearer {settings.META_WHATSAPP_ACCESS_TOKEN}"}
+    _TOKEN_REFERENCE_PATTERN = re.compile(
+        r"^env:(META_WHATSAPP_ACCESS_TOKEN|META_WHATSAPP_TOKEN_[A-Z0-9_]+)$"
+    )
 
-    def resolve_connection(self, phone_number_id: str) -> Optional[Dict[str, Any]]:
+    def _resolve_access_token(self, connection: Dict[str, Any]) -> Optional[str]:
+        reference = str(connection.get("token_reference") or "").strip()
+        if reference:
+            match = self._TOKEN_REFERENCE_PATTERN.fullmatch(reference)
+            if not match:
+                logger.error("Meta connection has an invalid credential reference")
+                return None
+            return os.getenv(match.group(1))
+        # Backward-compatible pilot token. New connections should store an
+        # environment/secret-manager reference, never token plaintext.
+        return settings.META_WHATSAPP_ACCESS_TOKEN or None
+
+    def _auth_headers(self, connection: Dict[str, Any]) -> Dict[str, str]:
+        token = self._resolve_access_token(connection)
+        if not token:
+            raise RuntimeError("Meta WhatsApp credential is unavailable")
+        return {"Authorization": f"Bearer {token}"}
+
+    def resolve_connection(
+        self,
+        phone_number_id: str,
+        *,
+        allow_default: Optional[bool] = None,
+        raise_on_error: bool = False,
+    ) -> Optional[Dict[str, Any]]:
         if supabase_client:
             try:
                 result = (
                     supabase_client.table("whatsapp_connections")
-                    .select("id, shop_id, waba_id, phone_number_id, status")
+                    .select(
+                        "id, shop_id, waba_id, phone_number_id, status, token_reference"
+                    )
                     .eq("provider", "meta_cloud")
                     .eq("phone_number_id", phone_number_id)
                     .eq("status", "active")
@@ -39,21 +71,31 @@ class MetaWhatsAppService:
                 if result.data:
                     return result.data[0]
             except Exception as exc:
+                if raise_on_error:
+                    raise RuntimeError("Meta connection lookup failed") from exc
                 logger.warning(
                     "Meta WhatsApp connection lookup failed phone_number_id=%s error_type=%s",
                     phone_number_id,
                     type(exc).__name__,
                 )
 
+        fallback_enabled = (
+            settings.META_WHATSAPP_ALLOW_DEFAULT_CONNECTION_FALLBACK
+            if allow_default is None
+            else allow_default
+        )
         if (
-            settings.META_WHATSAPP_DEFAULT_SHOP_ID
+            fallback_enabled
+            and settings.META_WHATSAPP_DEFAULT_SHOP_ID
             and settings.META_WHATSAPP_PHONE_NUMBER_ID == phone_number_id
         ):
             return {
+                "id": None,
                 "shop_id": settings.META_WHATSAPP_DEFAULT_SHOP_ID,
                 "waba_id": settings.META_WHATSAPP_WABA_ID,
                 "phone_number_id": phone_number_id,
                 "status": "active",
+                "token_reference": "env:META_WHATSAPP_ACCESS_TOKEN",
             }
         return None
 
@@ -72,7 +114,15 @@ class MetaWhatsAppService:
         )
         existing = channel_query.execute()
         if existing.data:
-            return existing.data[0]
+            channel = existing.data[0]
+            inbound_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            metadata = dict(channel.get("metadata") or {})
+            metadata["last_inbound_at"] = inbound_at
+            supabase_client.table("customer_channels").update(
+                {"metadata": metadata}
+            ).eq("id", channel["id"]).execute()
+            channel["metadata"] = metadata
+            return channel
 
         phone = normalize_phone(wa_id)
         customer = None
@@ -112,6 +162,11 @@ class MetaWhatsAppService:
             "phone": phone,
             "state": "ready",
             "profile_completed": True,
+            "metadata": {
+                "last_inbound_at": datetime.datetime.now(
+                    datetime.timezone.utc
+                ).isoformat()
+            },
         }
         try:
             created_channel = (
@@ -135,9 +190,11 @@ class MetaWhatsAppService:
         self, to_wa_id: str, body: str, phone_number_id: Optional[str] = None
     ) -> Dict[str, Any]:
         sender_id = phone_number_id or settings.META_WHATSAPP_PHONE_NUMBER_ID
-        if not settings.META_WHATSAPP_ACCESS_TOKEN or not sender_id:
+        connection = self.resolve_connection(sender_id) if sender_id else None
+        if not sender_id or not connection:
             return {"sent": False, "error": "Meta WhatsApp is not configured"}
 
+        outbound_id = self._record_outbound_pending(connection, to_wa_id)
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
@@ -149,14 +206,23 @@ class MetaWhatsAppService:
             async with httpx.AsyncClient(timeout=15) as client:
                 response = await client.post(
                     self._graph_url(f"{sender_id}/messages"),
-                    headers={**self._auth_headers(), "Content-Type": "application/json"},
+                    headers={
+                        **self._auth_headers(connection),
+                        "Content-Type": "application/json",
+                    },
                     json=payload,
                 )
                 response.raise_for_status()
                 data = response.json()
             message_id = (data.get("messages") or [{}])[0].get("id")
+            if not message_id:
+                raise RuntimeError("Meta send response did not include a message id")
+            self._record_outbound_result(
+                outbound_id, sent=True, provider_message_id=message_id
+            )
             return {"sent": True, "message_id": message_id}
-        except httpx.HTTPError as exc:
+        except Exception as exc:
+            self._record_outbound_result(outbound_id, sent=False)
             logger.error(
                 "Meta WhatsApp send failed phone_number_id=%s error_type=%s",
                 sender_id,
@@ -169,8 +235,10 @@ class MetaWhatsAppService:
     ) -> Dict[str, Any]:
         """Synchronous sender for lifecycle hooks that are currently synchronous."""
         sender_id = phone_number_id or settings.META_WHATSAPP_PHONE_NUMBER_ID
-        if not settings.META_WHATSAPP_ACCESS_TOKEN or not sender_id:
+        connection = self.resolve_connection(sender_id) if sender_id else None
+        if not sender_id or not connection:
             return {"sent": False, "error": "Meta WhatsApp is not configured"}
+        outbound_id = self._record_outbound_pending(connection, to_wa_id)
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
@@ -182,14 +250,23 @@ class MetaWhatsAppService:
             with httpx.Client(timeout=15) as client:
                 response = client.post(
                     self._graph_url(f"{sender_id}/messages"),
-                    headers={**self._auth_headers(), "Content-Type": "application/json"},
+                    headers={
+                        **self._auth_headers(connection),
+                        "Content-Type": "application/json",
+                    },
                     json=payload,
                 )
                 response.raise_for_status()
                 data = response.json()
             message_id = (data.get("messages") or [{}])[0].get("id")
+            if not message_id:
+                raise RuntimeError("Meta send response did not include a message id")
+            self._record_outbound_result(
+                outbound_id, sent=True, provider_message_id=message_id
+            )
             return {"sent": True, "message_id": message_id}
-        except httpx.HTTPError as exc:
+        except Exception as exc:
+            self._record_outbound_result(outbound_id, sent=False)
             logger.error(
                 "Meta WhatsApp send failed phone_number_id=%s error_type=%s",
                 sender_id,
@@ -197,23 +274,167 @@ class MetaWhatsAppService:
             )
             return {"sent": False, "error": "Meta API request failed"}
 
-    async def _transcribe_audio(self, media_id: str) -> Optional[str]:
+    def _record_outbound_pending(
+        self, connection: Dict[str, Any], recipient_wa_id: str
+    ) -> Optional[str]:
+        if not supabase_client or not connection.get("id"):
+            return None
+        outbound_id = str(uuid.uuid4())
+        try:
+            supabase_client.table("whatsapp_outbound_messages").insert(
+                {
+                    "id": outbound_id,
+                    "provider": "meta_cloud",
+                    "connection_id": connection["id"],
+                    "shop_id": connection["shop_id"],
+                    "phone_number_id": connection["phone_number_id"],
+                    "recipient_hash": hashlib.sha256(
+                        recipient_wa_id.encode("utf-8")
+                    ).hexdigest(),
+                    "message_type": "text",
+                    "delivery_status": "pending",
+                }
+            ).execute()
+            return outbound_id
+        except Exception as exc:
+            logger.warning(
+                "Meta outbound status insert failed error_type=%s",
+                type(exc).__name__,
+            )
+            return None
+
+    def _record_outbound_result(
+        self,
+        outbound_id: Optional[str],
+        *,
+        sent: bool,
+        provider_message_id: Optional[str] = None,
+    ) -> None:
+        if not supabase_client or not outbound_id:
+            return
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        updates: Dict[str, Any] = {
+            "delivery_status": "accepted" if sent else "failed",
+            "sent_at": now if sent else None,
+            "failed_at": None if sent else now,
+        }
+        if provider_message_id:
+            updates["provider_message_id"] = provider_message_id
+        try:
+            supabase_client.table("whatsapp_outbound_messages").update(updates).eq(
+                "id", outbound_id
+            ).execute()
+        except Exception as exc:
+            logger.warning(
+                "Meta outbound status update failed error_type=%s",
+                type(exc).__name__,
+            )
+
+    @staticmethod
+    def _provider_timestamp(value: Any) -> str:
+        try:
+            timestamp = datetime.datetime.fromtimestamp(
+                int(value), tz=datetime.timezone.utc
+            )
+        except (TypeError, ValueError, OSError):
+            timestamp = datetime.datetime.now(datetime.timezone.utc)
+        return timestamp.isoformat()
+
+    def process_status(
+        self, connection: Dict[str, Any], status_payload: Dict[str, Any]
+    ) -> None:
+        if not supabase_client:
+            raise RuntimeError("Message status database is unavailable")
+        provider_message_id = str(status_payload.get("id") or "")
+        provider_status = str(status_payload.get("status") or "").lower()
+        if not provider_message_id or provider_status not in {
+            "sent",
+            "delivered",
+            "read",
+            "failed",
+        }:
+            return
+
+        occurred_at = self._provider_timestamp(status_payload.get("timestamp"))
+        updates: Dict[str, Any] = {"delivery_status": provider_status}
+        updates[f"{provider_status}_at"] = occurred_at
+        errors = status_payload.get("errors") or []
+        if provider_status == "failed" and errors:
+            updates["provider_error_code"] = str(errors[0].get("code") or "")[:64]
+
+        existing = (
+            supabase_client.table("whatsapp_outbound_messages")
+            .select("id")
+            .eq("provider", "meta_cloud")
+            .eq("provider_message_id", provider_message_id)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            supabase_client.table("whatsapp_outbound_messages").update(updates).eq(
+                "id", existing.data[0]["id"]
+            ).execute()
+            return
+
+        # A status can arrive for a message sent before this ledger was deployed.
+        supabase_client.table("whatsapp_outbound_messages").insert(
+            {
+                "provider": "meta_cloud",
+                "connection_id": connection.get("id"),
+                "shop_id": connection["shop_id"],
+                "phone_number_id": connection["phone_number_id"],
+                "provider_message_id": provider_message_id,
+                "recipient_hash": "unknown",
+                "message_type": "text",
+                **updates,
+            }
+        ).execute()
+
+    async def _transcribe_audio(
+        self, media_id: str, connection: Dict[str, Any]
+    ) -> Optional[str]:
+        allowed_mime_types = {
+            "audio/aac",
+            "audio/amr",
+            "audio/mpeg",
+            "audio/mp4",
+            "audio/ogg",
+        }
         async with httpx.AsyncClient(timeout=30) as client:
             metadata_response = await client.get(
-                self._graph_url(media_id), headers=self._auth_headers()
+                self._graph_url(media_id), headers=self._auth_headers(connection)
             )
             metadata_response.raise_for_status()
             metadata = metadata_response.json()
             media_url = metadata.get("url")
             if not media_url:
                 return None
-            media_response = await client.get(media_url, headers=self._auth_headers())
-            media_response.raise_for_status()
+            mime_type = str(metadata.get("mime_type") or "").split(";")[0].lower()
+            if mime_type not in allowed_mime_types:
+                raise ValueError("Unsupported WhatsApp audio MIME type")
+            try:
+                declared_size = int(metadata.get("file_size") or 0)
+            except (TypeError, ValueError):
+                declared_size = 0
+            if declared_size > settings.META_WHATSAPP_MAX_MEDIA_BYTES:
+                raise ValueError("WhatsApp audio exceeds configured size limit")
 
-        mime_type = str(metadata.get("mime_type") or "audio/ogg").split(";")[0]
+            content = bytearray()
+            async with client.stream(
+                "GET", media_url, headers=self._auth_headers(connection)
+            ) as media_response:
+                media_response.raise_for_status()
+                content_length = int(media_response.headers.get("content-length") or 0)
+                if content_length > settings.META_WHATSAPP_MAX_MEDIA_BYTES:
+                    raise ValueError("WhatsApp audio exceeds configured size limit")
+                async for chunk in media_response.aiter_bytes():
+                    content.extend(chunk)
+                    if len(content) > settings.META_WHATSAPP_MAX_MEDIA_BYTES:
+                        raise ValueError("WhatsApp audio exceeds configured size limit")
+
         extension = "ogg" if "ogg" in mime_type else "mp4" if "mp4" in mime_type else "bin"
         return await GeminiService.transcribe_audio_file(
-            media_response.content, f"meta-voice.{extension}", mime_type
+            bytes(content), f"meta-voice.{extension}", mime_type
         )
 
     async def process_message(
@@ -221,20 +442,17 @@ class MetaWhatsAppService:
         phone_number_id: str,
         message: Dict[str, Any],
         contact: Optional[Dict[str, Any]] = None,
-    ) -> None:
+        *,
+        connection: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         message_id = str(message.get("id") or "")
         wa_id = str(message.get("from") or "")
         if not message_id or not wa_id:
-            logger.warning("Ignoring malformed Meta WhatsApp message")
-            return
+            raise ValueError("Malformed Meta WhatsApp message")
 
-        connection = self.resolve_connection(phone_number_id)
+        connection = connection or self.resolve_connection(phone_number_id)
         if not connection:
-            logger.error(
-                "No active PhoneERP shop mapping for Meta phone_number_id=%s",
-                phone_number_id,
-            )
-            return
+            raise RuntimeError("No active PhoneERP shop mapping")
 
         profile_name = ((contact or {}).get("profile") or {}).get("name")
         try:
@@ -254,7 +472,11 @@ class MetaWhatsAppService:
                 normalized_type = "text"
             elif message_type == "audio":
                 media_id = (message.get("audio") or {}).get("id")
-                raw_text = await self._transcribe_audio(media_id) if media_id else None
+                raw_text = (
+                    await self._transcribe_audio(media_id, connection)
+                    if media_id
+                    else None
+                )
                 normalized_type = "voice"
             else:
                 await self.send_text(
@@ -262,7 +484,7 @@ class MetaWhatsAppService:
                     "Please send your order as text or a WhatsApp voice note.",
                     phone_number_id,
                 )
-                return
+                return True
 
             if not raw_text:
                 await self.send_text(
@@ -270,7 +492,7 @@ class MetaWhatsAppService:
                     "I could not read that message. Please send it again as text.",
                     phone_number_id,
                 )
-                return
+                return True
 
             inbound = NormalizedInboundMessage(
                 shop_id=connection["shop_id"],
@@ -293,17 +515,14 @@ class MetaWhatsAppService:
             reply = result.get("reply_message")
             if reply:
                 await self.send_text(wa_id, reply, phone_number_id)
+            return True
         except Exception as exc:
             logger.exception(
                 "Meta WhatsApp message processing failed message_id=%s error_type=%s",
                 message_id,
                 type(exc).__name__,
             )
-            await self.send_text(
-                wa_id,
-                "Sorry, I could not process that message. Please try again.",
-                phone_number_id,
-            )
+            raise
 
 
 meta_whatsapp_service = MetaWhatsAppService()

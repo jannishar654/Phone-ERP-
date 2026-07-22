@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from fastapi.responses import PlainTextResponse
 
 from app.config.settings import settings
-from app.services.meta_whatsapp_service import meta_whatsapp_service
+from app.services.meta_whatsapp_event_service import meta_whatsapp_event_service
 
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,8 @@ async def receive_meta_whatsapp_webhook(
     request: Request, background_tasks: BackgroundTasks
 ):
     raw_body = await request.body()
+    if len(raw_body) > settings.META_WHATSAPP_MAX_WEBHOOK_BYTES:
+        raise HTTPException(status_code=413, detail="Webhook payload is too large")
     signature = request.headers.get("X-Hub-Signature-256", "")
     if not _verify_signature(raw_body, signature):
         logger.warning("Rejected Meta WhatsApp webhook with invalid signature")
@@ -61,31 +63,22 @@ async def receive_meta_whatsapp_webhook(
     if payload.get("object") != "whatsapp_business_account":
         return {"received": True, "queued": 0}
 
-    queued = 0
-    for entry in payload.get("entry") or []:
-        for change in entry.get("changes") or []:
-            if change.get("field") != "messages":
-                continue
-            value = change.get("value") or {}
-            phone_number_id = str(
-                (value.get("metadata") or {}).get("phone_number_id") or ""
-            )
-            contacts = {
-                str(contact.get("wa_id")): contact
-                for contact in value.get("contacts") or []
-                if contact.get("wa_id")
-            }
-            for message in value.get("messages") or []:
-                if not phone_number_id:
-                    logger.warning("Meta WhatsApp event has no phone_number_id")
-                    continue
-                contact = contacts.get(str(message.get("from")))
-                background_tasks.add_task(
-                    meta_whatsapp_service.process_message,
-                    phone_number_id,
-                    message,
-                    contact,
-                )
-                queued += 1
+    try:
+        event_ids = meta_whatsapp_event_service.persist_webhook_payload(payload)
+    except Exception as exc:
+        logger.exception(
+            "Meta webhook persistence failed error_type=%s", type(exc).__name__
+        )
+        # Returning a retryable error is safer than acknowledging an event that
+        # was never stored. Meta can redeliver the signed webhook.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Webhook persistence is temporarily unavailable",
+        ) from exc
 
-    return {"received": True, "queued": queued}
+    for event_id in event_ids:
+        background_tasks.add_task(
+            meta_whatsapp_event_service.process_event, event_id
+        )
+
+    return {"received": True, "queued": len(event_ids)}

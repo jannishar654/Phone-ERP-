@@ -1,9 +1,27 @@
+import datetime
 import logging
 from app.services.supabase import supabase_client
 from app.config.settings import settings
 from app.services.bill_link_service import ensure_public_bill_link
 
 logger = logging.getLogger(__name__)
+
+
+def _meta_freeform_window_is_open(channel: dict | None) -> bool:
+    channel = channel or {}
+    value = channel.get("last_inbound_at") or (
+        channel.get("metadata") or {}
+    ).get("last_inbound_at")
+    if not value:
+        return False
+    try:
+        last_inbound = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if last_inbound.tzinfo is None:
+            last_inbound = last_inbound.replace(tzinfo=datetime.timezone.utc)
+    except (TypeError, ValueError):
+        return False
+    elapsed = datetime.datetime.now(datetime.timezone.utc) - last_inbound
+    return datetime.timedelta(0) <= elapsed < datetime.timedelta(hours=24)
 
 def send_delivery_notification(order_id: str, final_order: dict | None = None) -> dict:
     notification_info = {
@@ -120,7 +138,7 @@ def send_delivery_notification(order_id: str, final_order: dict | None = None) -
                     (card_res.data[0].get("metadata") or {})
                     .get("meta_phone_number_id")
                 )
-            if wa_id:
+            if wa_id and _meta_freeform_window_is_open(meta_whatsapp_channel):
                 from app.services.meta_whatsapp_service import meta_whatsapp_service
                 result = meta_whatsapp_service.send_text_sync(
                     wa_id, bill_msg, phone_number_id
@@ -136,10 +154,18 @@ def send_delivery_notification(order_id: str, final_order: dict | None = None) -
                     )
                 else:
                     logger.warning("DELIVERY_NOTIFICATION_FAILED channel=meta_whatsapp")
-            else:
+            elif not wa_id:
                 notification_info["notification_error"] = "No Meta WhatsApp recipient found"
                 logger.warning(
                     "DELIVERY_NOTIFICATION_SKIPPED reason=no_meta_whatsapp_recipient"
+                )
+            else:
+                notification_info["notification_channel"] = "meta_whatsapp"
+                notification_info["notification_error"] = (
+                    "Approved Meta template required outside 24-hour window"
+                )
+                logger.warning(
+                    "DELIVERY_NOTIFICATION_SKIPPED reason=meta_template_required"
                 )
         elif channel_to_use == "whatsapp":
             phone_to_use = (whatsapp_channel.get("phone") if whatsapp_channel else None) or full_order.get("customer_phone") or card_phone

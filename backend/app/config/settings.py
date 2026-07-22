@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     META_GRAPH_API_VERSION: str = "v25.0"
     # Pilot fallback only. Multi-tenant routing should use whatsapp_connections.
     META_WHATSAPP_DEFAULT_SHOP_ID: Optional[str] = None
+    META_WHATSAPP_ALLOW_DEFAULT_CONNECTION_FALLBACK: bool = False
+    META_WHATSAPP_MAX_WEBHOOK_BYTES: int = 1024 * 1024
+    META_WHATSAPP_MAX_MEDIA_BYTES: int = 15 * 1024 * 1024
+    META_WHATSAPP_WORKER_BATCH_SIZE: int = 10
+    META_WHATSAPP_WORKER_POLL_SECONDS: float = 2.0
+    META_WHATSAPP_RETRY_BASE_SECONDS: int = 30
     
     # Public Bill Configuration
     FRONTEND_PUBLIC_BASE_URL: str = "http://localhost:3000"
