@@ -298,25 +298,33 @@ class MetaWhatsAppService:
         customer: Dict[str, Any],
         text: str,
     ) -> Optional[str]:
-        if channel.get("profile_completed") is not False:
-            return None
-
         state = str(channel.get("state") or "awaiting_name")
-        if state == "awaiting_name":
+        if state in {"awaiting_name", "updating_name"}:
             name = self._extract_name_reply(text)
             if not name:
-                return (
-                    "Welcome to PhoneERP. Order ke liye apna naam batayein."
-                )
+                return "Please apna sahi naam batayein."
             supabase_client.table("customers").update({"name": name}).eq(
                 "id", customer["id"]
             ).eq("shop_id", channel["shop_id"]).execute()
+            if state == "updating_name":
+                supabase_client.table("customer_channels").update(
+                    {
+                        "display_name": name,
+                        "state": "ready",
+                        "profile_completed": True,
+                    }
+                ).eq("id", channel["id"]).eq(
+                    "shop_id", channel["shop_id"]
+                ).execute()
+                return f"Name updated: {name}"
             supabase_client.table("customer_channels").update(
                 {"display_name": name, "state": "awaiting_address"}
-            ).eq("id", channel["id"]).execute()
+            ).eq("id", channel["id"]).eq(
+                "shop_id", channel["shop_id"]
+            ).execute()
             return "Thanks! Apna delivery address batayein."
 
-        if state == "awaiting_address":
+        if state in {"awaiting_address", "updating_address"}:
             address = re.sub(
                 r"^(?:address|delivery address)\s*(?:is|hai|:)?\s*",
                 "",
@@ -338,10 +346,89 @@ class MetaWhatsAppService:
                     "profile_completed": True,
                     "metadata": metadata,
                 }
-            ).eq("id", channel["id"]).execute()
+            ).eq("id", channel["id"]).eq(
+                "shop_id", channel["shop_id"]
+            ).execute()
+            if state == "updating_address":
+                return f"Delivery address updated: {address}"
             return "Profile saved. Ab apna order text ya voice note mein bhejein."
 
         return None
+
+    def _handle_profile_command(
+        self,
+        channel: Dict[str, Any],
+        customer: Dict[str, Any],
+        text: str,
+        *,
+        has_active_draft: bool,
+    ) -> Optional[str]:
+        command = re.sub(r"\s+", " ", str(text or "").strip().lower())
+        if command in {"/", "menu", "/menu", "help", "/help"}:
+            return (
+                "PhoneERP menu:\n"
+                "• Order bhejne ke liye items aur quantity likhein\n"
+                "• Order status ke liye: track my order\n"
+                "• Profile dekhne ke liye: profile\n"
+                "• Naam badalne ke liye: edit name\n"
+                "• Address badalne ke liye: edit address"
+            )
+
+        profile_commands = {
+            "profile",
+            "/profile",
+            "my profile",
+            "mera profile",
+            "profile dikhao",
+        }
+        if command in profile_commands:
+            name = str(customer.get("name") or "Not saved").strip()
+            address = str(
+                customer.get("default_address")
+                or customer.get("address")
+                or "Not saved"
+            ).strip()
+            return (
+                f"Your PhoneERP profile:\nName: {name}\n"
+                f"Delivery address: {address}\n"
+                "Update ke liye 'edit name' ya 'edit address' bhejein."
+            )
+
+        name_commands = {
+            "edit name",
+            "/name",
+            "change name",
+            "update name",
+            "naam badlo",
+            "naam change",
+        }
+        address_commands = {
+            "edit address",
+            "/address",
+            "change address",
+            "update address",
+            "address badlo",
+            "address change",
+        }
+        if command not in name_commands | address_commands:
+            return None
+        if has_active_draft:
+            return (
+                "Pehle current order details complete karein. "
+                "Uske baad profile update kar sakte hain."
+            )
+
+        next_state = (
+            "updating_name" if command in name_commands else "updating_address"
+        )
+        supabase_client.table("customer_channels").update(
+            {"state": next_state}
+        ).eq("id", channel["id"]).eq("shop_id", channel["shop_id"]).execute()
+        return (
+            "Apna naya naam batayein."
+            if next_state == "updating_name"
+            else "Apna naya poora delivery address batayein."
+        )
 
     async def send_text(
         self, to_wa_id: str, body: str, phone_number_id: Optional[str] = None
@@ -654,9 +741,26 @@ class MetaWhatsAppService:
             has_active_draft = self._has_active_order_draft(
                 connection["shop_id"], customer_id
             )
+            if normalized_type == "text":
+                profile_command_reply = self._handle_profile_command(
+                    channel,
+                    customer,
+                    raw_text,
+                    has_active_draft=has_active_draft,
+                )
+                if profile_command_reply:
+                    await self.send_text(
+                        wa_id, profile_command_reply, phone_number_id
+                    )
+                    return True
+
+            channel_state = str(channel.get("state") or "")
             if (
                 normalized_type == "text"
-                and channel.get("profile_completed") is False
+                and (
+                    channel.get("profile_completed") is False
+                    or channel_state in {"updating_name", "updating_address"}
+                )
                 and not has_active_draft
                 and not self._looks_like_order(raw_text)
             ):

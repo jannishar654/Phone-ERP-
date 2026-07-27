@@ -311,6 +311,130 @@ async def test_unverified_meta_customer_is_asked_for_name_before_general_chat():
     assert "rahul" not in reply.lower()
 
 
+@pytest.mark.asyncio
+async def test_meta_slash_returns_menu_without_calling_intent_router():
+    channel = {
+        "id": "channel-1",
+        "shop_id": "shop-1",
+        "customer_id": "customer-1",
+        "state": "ready",
+        "profile_completed": True,
+        "customers": {
+            "id": "customer-1",
+            "name": "Danish",
+            "default_address": "Batla House Jamia Nagar",
+        },
+    }
+    with (
+        patch.object(
+            meta_whatsapp_service,
+            "resolve_connection",
+            return_value={"shop_id": "shop-1", "phone_number_id": "phone-1"},
+        ),
+        patch.object(
+            meta_whatsapp_service, "get_or_create_customer", return_value=channel
+        ),
+        patch.object(
+            meta_whatsapp_service, "_has_active_order_draft", return_value=False
+        ),
+        patch(
+            "app.services.meta_whatsapp_service.IntentRouter.process_inbound_message",
+            new_callable=AsyncMock,
+        ) as process_inbound,
+        patch.object(
+            meta_whatsapp_service,
+            "send_text",
+            new_callable=AsyncMock,
+            return_value={"sent": True},
+        ) as send_text,
+    ):
+        await meta_whatsapp_service.process_message(
+            "phone-1",
+            {
+                "id": "wamid-menu",
+                "from": "919012345678",
+                "type": "text",
+                "text": {"body": "/"},
+            },
+        )
+
+    process_inbound.assert_not_awaited()
+    reply = send_text.await_args.args[1].lower()
+    assert "phoneerp menu" in reply
+    assert "profile" in reply
+    assert "track my order" in reply
+
+
+def test_meta_profile_command_returns_saved_name_and_address():
+    reply = meta_whatsapp_service._handle_profile_command(
+        {"id": "channel-1", "shop_id": "shop-1"},
+        {
+            "id": "customer-1",
+            "name": "Danish",
+            "default_address": "Batla House Jamia Nagar",
+        },
+        "mera profile",
+        has_active_draft=False,
+    )
+
+    assert "Danish" in reply
+    assert "Batla House Jamia Nagar" in reply
+
+
+def test_meta_edit_address_command_starts_shop_scoped_update():
+    table = MagicMock()
+    table.update.return_value = table
+    table.eq.return_value = table
+    table.execute.return_value = MagicMock(data=[{"id": "channel-1"}])
+    database = MagicMock()
+    database.table.return_value = table
+
+    with patch("app.services.meta_whatsapp_service.supabase_client", database):
+        reply = meta_whatsapp_service._handle_profile_command(
+            {"id": "channel-1", "shop_id": "shop-1"},
+            {"id": "customer-1", "name": "Danish"},
+            "edit address",
+            has_active_draft=False,
+        )
+
+    assert "naya poora delivery address" in reply
+    table.update.assert_called_once_with({"state": "updating_address"})
+    assert any(call.args == ("shop_id", "shop-1") for call in table.eq.call_args_list)
+
+
+def test_meta_updated_address_is_saved_and_profile_returns_to_ready():
+    table = MagicMock()
+    table.update.return_value = table
+    table.eq.return_value = table
+    table.execute.return_value = MagicMock(data=[{"id": "channel-1"}])
+    database = MagicMock()
+    database.table.return_value = table
+    channel = {
+        "id": "channel-1",
+        "shop_id": "shop-1",
+        "state": "updating_address",
+        "profile_completed": True,
+        "metadata": {"identity_verified": True},
+    }
+
+    with patch("app.services.meta_whatsapp_service.supabase_client", database):
+        reply = meta_whatsapp_service._handle_profile_message(
+            channel,
+            {"id": "customer-1", "name": "Danish"},
+            "Okhla, New Delhi 110025",
+        )
+
+    update_payloads = [
+        call.args[0] for call in table.update.call_args_list if call.args
+    ]
+    assert {
+        "address": "Okhla, New Delhi 110025",
+        "default_address": "Okhla, New Delhi 110025",
+    } in update_payloads
+    assert any(payload.get("state") == "ready" for payload in update_payloads)
+    assert "updated" in reply.lower()
+
+
 def test_existing_meta_onboarding_keeps_awaiting_address_state():
     table = MagicMock()
     table.select.return_value = table

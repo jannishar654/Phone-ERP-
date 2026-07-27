@@ -173,6 +173,8 @@ class TestCatalogMatchingAndOrder(unittest.TestCase):
             "id": "card1",
             "shop_id": "shop1",
             "customer_id": "cust1",
+            "delivery_time": "2026-07-28 5:30 PM",
+            "delivery_time_normalized": "2026-07-28 5:30 PM",
             "items": [{"name": "surf", "quantity": 2, "price": 50.0, "price_status": "matched", "unit": "packet"}]
         }]
         
@@ -190,6 +192,12 @@ class TestCatalogMatchingAndOrder(unittest.TestCase):
         res = order_service.convert_action_card_to_order("card1", "user1")
         self.assertIsNotNone(res)
         self.assertEqual(res["id"], "order1")
+        inserted_order = next(
+            call.args[0]
+            for call in mock_supabase.table.return_value.insert.call_args_list
+            if call.args and isinstance(call.args[0], dict)
+        )
+        self.assertEqual(inserted_order["delivery_time"], "2026-07-28 5:30 PM")
 
     @patch.object(order_service, "supabase")
     @patch.object(matching_service, "match_product")

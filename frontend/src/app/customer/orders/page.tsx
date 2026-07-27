@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useState } from 'react';
 import {
   AlertCircle,
   Bot,
+  CalendarClock,
   ChevronDown,
   FileText,
   LogOut,
@@ -356,7 +357,17 @@ export default function CustomerOrdersPage() {
                         </div>
                       ))}
                     </div>
-                    {order.delivery_address && <p className="mt-4 text-sm text-slate-600">Delivery: {order.delivery_address}</p>}
+                    {(order.delivery_address || order.delivery_time) && (
+                      <div className="mt-4 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+                        {order.delivery_address && <p>Delivery: {order.delivery_address}</p>}
+                        {order.delivery_time && (
+                          <p className="inline-flex items-center gap-2">
+                            <CalendarClock className="h-4 w-4 shrink-0" aria-hidden="true" />
+                            Scheduled: {order.delivery_time}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {!isConvertedOrder && (
                       <p className="mt-4 text-sm font-medium text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded-md">
                         {order.can_edit

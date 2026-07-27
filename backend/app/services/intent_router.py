@@ -1081,6 +1081,22 @@ class IntentRouter:
                 GeminiService.extract_order_details(combined_text),
                 timeout=EXTRACTION_TIMEOUT_SECONDS,
             )
+            if current_field == "delivery_time":
+                # The customer is answering a direct delivery-time question.
+                # Prefer the deterministic Hinglish parser over an LLM rewrite
+                # that may drop short day tokens such as "kl".
+                from app.services.time_parser import parse_delivery_time
+
+                reply_time = parse_delivery_time(msg.raw_text)
+                if (
+                    reply_time.get("normalized")
+                    and float(reply_time.get("confidence") or 0) >= 0.8
+                ):
+                    extracted["delivery_time_raw"] = msg.raw_text.strip()
+                    extracted["delivery_time"] = reply_time["normalized"]
+                    extracted["delivery_time_normalized"] = reply_time["normalized"]
+                    extracted["delivery_time_confidence"] = reply_time["confidence"]
+                    extracted["delivery_time_warning"] = reply_time.get("warning")
             card_data = IntentRouter._build_card_data(
                 extracted, combined_msg, inbound_id
             )

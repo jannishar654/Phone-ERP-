@@ -279,6 +279,8 @@ def test_pending_action_card_appears_as_received_for_same_customer(portal_contex
                 "status": "pending",
                 "items": [{"name": "Aata", "raw_name": "aata", "quantity": 5, "unit": "kg", "price": 45}],
                 "delivery_address": "Batla House",
+                "delivery_time": "2026-07-28 5:30 PM",
+                "delivery_time_normalized": "2026-07-28 5:30 PM",
                 "created_at": "2026-07-16T10:00:00+00:00",
                 "updated_at": "2026-07-16T10:00:00+00:00",
             }]],
@@ -296,6 +298,7 @@ def test_pending_action_card_appears_as_received_for_same_customer(portal_contex
     assert order["display_reference"] == "Draft ac-1"
     assert order["can_edit"] is True
     assert order["revision"] == 1
+    assert order["delivery_time"] == "2026-07-28 5:30 PM"
     card_query = next(call for call in db.calls if call.table == "action_cards")
     assert ("eq", "shop_id", "shop-1") in card_query.filters
     assert ("eq", "customer_id", "customer-1") in card_query.filters

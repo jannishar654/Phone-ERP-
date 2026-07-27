@@ -119,6 +119,10 @@ class OrderService:
                 "status": status,
                 "lifecycle_status": "packing",
                 "delivery_address": action_card.get("delivery_address"),
+                "delivery_time": (
+                    action_card.get("delivery_time_normalized")
+                    or action_card.get("delivery_time")
+                ),
                 "payment_method": action_card.get("payment_method"),
                 "created_at": datetime.utcnow().isoformat()
             }

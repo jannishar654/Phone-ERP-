@@ -392,6 +392,11 @@ def get_customer_orders(context: Dict[str, Any] = Depends(get_customer_context))
                 total_amount=total_amount,
                 lifecycle_status=lifecycle_status,
                 delivery_address=card.get("delivery_address"),
+                delivery_time=(
+                    card.get("delivery_time_normalized")
+                    or card.get("delivery_time")
+                    or card.get("delivery_time_raw")
+                ),
                 created_at=card["created_at"],
                 updated_at=card.get("updated_at") or card["created_at"],
                 revision=int(card.get("revision") or 1),

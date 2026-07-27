@@ -39,7 +39,9 @@ class CustomerPortalOrder(BaseModel):
     total_amount: float = 0.0
     lifecycle_status: str
     delivery_address: Optional[str] = None
-    delivery_time: Optional[datetime] = None
+    # Orders store a timestamp while pending Action Cards retain the customer's
+    # normalized human-readable value. Keep the portal contract lossless.
+    delivery_time: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     packed_at: Optional[datetime] = None

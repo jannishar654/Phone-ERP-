@@ -177,6 +177,76 @@ async def test_meta_follow_up_is_merged_into_pending_order_before_creation():
 
 
 @pytest.mark.asyncio
+async def test_meta_short_kl_time_reply_overrides_llm_that_drops_the_day():
+    conversation = {
+        "id": "conv-meta",
+        "shop_id": "shop1",
+        "customer_id": "cust1",
+        "channel": "meta_whatsapp",
+        "state": "collecting_details",
+        "draft_payload": {
+            "original_text": (
+                "5 kilo aata bhej dena. Naam Danish, "
+                "address Batla House Jamia Nagar."
+            ),
+            "missing_fields": ["delivery_time"],
+            "requires_confirmation": False,
+        },
+    }
+    message = make_meta_msg("meta-short-time", "kl 5:30 pm")
+    captured = {}
+
+    def build_card(extracted, _message, _inbound_id):
+        captured.update(extracted)
+        return {
+            "items": [{"name": "Aata", "quantity": 5, "unit": "kg"}],
+            "customer_name": "Danish",
+            "delivery_address": "Batla House Jamia Nagar",
+            "delivery_time_normalized": extracted.get(
+                "delivery_time_normalized"
+            ),
+            "delivery_time_confidence": extracted.get(
+                "delivery_time_confidence"
+            ),
+        }
+
+    with (
+        patch.object(
+            GeminiService,
+            "extract_order_details",
+            new_callable=AsyncMock,
+            return_value={
+                "items": [{"name": "aata", "quantity": 5}],
+                "delivery_time_raw": "5:30 pm",
+            },
+        ),
+        patch.object(IntentRouter, "_build_card_data", side_effect=build_card),
+        patch.object(IntentRouter, "_update_conversation", return_value=True),
+        patch.object(
+            IntentRouter, "_conditional_conversation_update", return_value=True
+        ),
+        patch.object(IntentRouter, "_update_inbound_status", return_value=True),
+        patch.object(IntentRouter, "_persist_verified_meta_profile"),
+        patch.object(IntentRouter, "_require_owner_id", return_value="owner1"),
+        patch.object(
+            IntentRouter, "_order_received_reply", return_value="Order received"
+        ),
+        patch(
+            "app.services.intent_router.ActionCardController.create_card",
+            return_value={"id": "card1"},
+        ),
+    ):
+        result = await IntentRouter._handle_collecting_details(
+            conversation, message, "inbound-short-time"
+        )
+
+    assert result["status"] == "processed"
+    assert captured["delivery_time_raw"] == "kl 5:30 pm"
+    assert captured["delivery_time_normalized"].endswith("5:30 PM")
+    assert captured["delivery_time_confidence"] >= 0.8
+
+
+@pytest.mark.asyncio
 async def test_meta_follow_up_does_not_duplicate_an_already_claimed_draft():
     conversation = {
         "id": "conv-meta",
