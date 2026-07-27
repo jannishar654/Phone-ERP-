@@ -115,6 +115,86 @@ def test_verified_meta_profile_can_supply_existing_name_and_address():
     )
 
 
+def test_meta_verified_name_beats_hallucinated_name_not_present_in_message():
+    message = make_meta_msg(
+        "meta-name-1",
+        "kal 5 kilo aata bhej dena",
+        profile_completed=True,
+    )
+    safe_item = MagicMock()
+    safe_item.model_dump.return_value = {
+        "name": "Aata",
+        "quantity": 5,
+        "unit": "kg",
+        "price": 45,
+    }
+
+    with (
+        patch.object(
+            IntentRouter,
+            "_get_customer",
+            return_value={
+                "id": "cust1",
+                "name": "Danish",
+                "phone": "+919012345678",
+                "default_address": "Batla House Jamia Nagar",
+            },
+        ),
+        patch(
+            "app.routes.endpoints._safe_items_from_extracted",
+            return_value=[safe_item],
+        ),
+        patch(
+            "app.services.time_parser.parse_delivery_time",
+            return_value={
+                "normalized": "2026-07-28 5:30 PM",
+                "confidence": 0.95,
+                "warning": None,
+            },
+        ),
+        patch(
+            "app.services.confidence_scorer.ConfidenceScorer.calculate_confidence",
+            return_value=(95, "high", []),
+        ),
+    ):
+        card = IntentRouter._build_card_data(
+            {
+                "customer_name": "Rahul",
+                "delivery_address": "Batla House Jamia Nagar",
+                "delivery_time_raw": "kal 5:30 pm",
+                "items": [{"name": "aata", "quantity": 5, "unit": "kg"}],
+            },
+            message,
+            "inbound-name-1",
+        )
+
+    assert card["customer_name"] == "Danish"
+
+
+def test_meta_explicit_order_name_can_override_saved_profile_for_that_order():
+    message = make_meta_msg(
+        "meta-name-2",
+        "5 kilo aata bhej dena naam Rahul",
+        profile_completed=True,
+    )
+    assert IntentRouter._has_explicit_customer_name(
+        message.raw_text, "Rahul"
+    )
+    assert not IntentRouter._has_explicit_customer_name(
+        "5 kilo aata bhej dena", "Rahul"
+    )
+
+
+def test_meta_collected_profile_fields_are_cleaned_deterministically():
+    assert IntentRouter._clean_collected_name("mera naam Danish") == "Danish"
+    assert (
+        IntentRouter._clean_collected_address(
+            "address: Batla House Jamia Nagar"
+        )
+        == "Batla House Jamia Nagar"
+    )
+
+
 @pytest.mark.asyncio
 async def test_meta_follow_up_is_merged_into_pending_order_before_creation():
     conversation = {

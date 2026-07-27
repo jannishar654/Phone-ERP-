@@ -34,6 +34,55 @@ class IntentRouter:
     }
 
     @staticmethod
+    def _has_explicit_customer_name(text: str, candidate: Any) -> bool:
+        """Trust an order-specific name only when the customer actually stated it."""
+        candidate_text = re.sub(
+            r"\s+", " ", str(candidate or "").strip().lower()
+        )
+        if (
+            not candidate_text
+            or candidate_text in IntentRouter._PLACEHOLDER_CUSTOMER_NAMES
+        ):
+            return False
+        normalized = re.sub(r"\s+", " ", str(text or "").strip().lower())
+        candidate_pattern = re.escape(candidate_text).replace(r"\ ", r"\s+")
+        return bool(
+            re.search(
+                rf"(?:\bmera\s+naam\b|\bmy\s+name\b|\bnaam\b|\bname\b|नाम)"
+                rf"\s*(?:is|hai|:)?\s*{candidate_pattern}(?=\s|$|[,.!?।])",
+                normalized,
+            )
+        )
+
+    @staticmethod
+    def _clean_collected_name(value: Any) -> Optional[str]:
+        cleaned = re.sub(r"\s+", " ", str(value or "").strip())
+        cleaned = re.sub(
+            r"^(?:my name is|mera naam|naam|name)\s*(?:is|hai|:)?\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        ).strip(" .,-")
+        cleaned = re.sub(r"\s+hai$", "", cleaned, flags=re.IGNORECASE).strip()
+        if (
+            not cleaned
+            or len(cleaned) > 80
+            or any(char.isdigit() for char in cleaned)
+        ):
+            return None
+        return cleaned
+
+    @staticmethod
+    def _clean_collected_address(value: Any) -> Optional[str]:
+        cleaned = re.sub(
+            r"^(?:mera\s+)?(?:delivery\s+)?address\s*(?:is|hai|:)?\s*",
+            "",
+            str(value or "").strip(),
+            flags=re.IGNORECASE,
+        ).strip()
+        return cleaned if len(cleaned) >= 5 else None
+
+    @staticmethod
     def classify_intent_deterministically(
         text: str,
     ) -> Optional[IntentClassification]:
@@ -865,22 +914,33 @@ class IntentRouter:
             raise ValueError("No order items were extracted")
 
         customer = IntentRouter._get_customer(msg.customer_id)
-        customer_name = extracted.get("customer_name")
-        allow_profile_fallback = not (
-            msg.channel.value == "meta_whatsapp"
-            and not bool(msg.metadata.get("customer_profile_completed"))
+        extracted_customer_name = extracted.get("customer_name")
+        saved_customer_name = str(customer.get("name") or "").strip()
+        saved_name_is_valid = (
+            saved_customer_name.lower()
+            not in IntentRouter._PLACEHOLDER_CUSTOMER_NAMES
         )
-        if (
-            not customer_name
-            or str(customer_name).strip().lower()
-            in IntentRouter._PLACEHOLDER_CUSTOMER_NAMES
-        ) and allow_profile_fallback:
-            customer_name = customer.get("name") or "Unknown"
+        if msg.channel.value == "meta_whatsapp" and saved_name_is_valid:
+            customer_name = (
+                extracted_customer_name
+                if IntentRouter._has_explicit_customer_name(
+                    msg.raw_text, extracted_customer_name
+                )
+                else saved_customer_name
+            )
+        else:
+            customer_name = extracted_customer_name
+            if (
+                not customer_name
+                or str(customer_name).strip().lower()
+                in IntentRouter._PLACEHOLDER_CUSTOMER_NAMES
+            ):
+                customer_name = saved_customer_name or "Unknown"
         delivery_address = extracted.get("delivery_address")
         if (
             not delivery_address
             or str(delivery_address).strip().lower() == "unknown"
-        ) and allow_profile_fallback:
+        ):
             delivery_address = (
                 customer.get("default_address") or customer.get("address") or ""
             )
@@ -1081,7 +1141,17 @@ class IntentRouter:
                 GeminiService.extract_order_details(combined_text),
                 timeout=EXTRACTION_TIMEOUT_SECONDS,
             )
-            if current_field == "delivery_time":
+            if current_field == "customer_name":
+                collected_name = IntentRouter._clean_collected_name(msg.raw_text)
+                if collected_name:
+                    extracted["customer_name"] = collected_name
+            elif current_field == "delivery_address":
+                collected_address = IntentRouter._clean_collected_address(
+                    msg.raw_text
+                )
+                if collected_address:
+                    extracted["delivery_address"] = collected_address
+            elif current_field == "delivery_time":
                 # The customer is answering a direct delivery-time question.
                 # Prefer the deterministic Hinglish parser over an LLM rewrite
                 # that may drop short day tokens such as "kl".

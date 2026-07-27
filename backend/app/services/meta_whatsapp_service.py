@@ -138,14 +138,20 @@ class MetaWhatsAppService:
                     or ""
                 ).strip()
             )
+            # A previously incomplete channel must recover automatically once
+            # the canonical customer record contains both verified fields.
             identity_verified = bool(
-                metadata.get("identity_verified", has_confirmed_profile)
+                metadata.get("identity_verified") or has_confirmed_profile
             )
             updates = {
                 "metadata": {**metadata, "identity_verified": identity_verified}
             }
-            if not identity_verified:
-                current_state = str(channel.get("state") or "")
+            current_state = str(channel.get("state") or "")
+            if identity_verified:
+                updates["profile_completed"] = True
+                if current_state in {"awaiting_name", "awaiting_address", ""}:
+                    updates["state"] = "ready"
+            else:
                 updates.update(
                     {
                         "profile_completed": False,
@@ -302,7 +308,10 @@ class MetaWhatsAppService:
         if state in {"awaiting_name", "updating_name"}:
             name = self._extract_name_reply(text)
             if not name:
-                return "Please apna sahi naam batayein."
+                return (
+                    "PhoneERP mein welcome! Order start karne se pehle "
+                    "please apna naam batayein."
+                )
             supabase_client.table("customers").update({"name": name}).eq(
                 "id", customer["id"]
             ).eq("shop_id", channel["shop_id"]).execute()

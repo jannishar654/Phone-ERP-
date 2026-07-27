@@ -470,3 +470,41 @@ def test_existing_meta_onboarding_keeps_awaiting_address_state():
     assert update_payload["state"] == "awaiting_address"
     assert update_payload["profile_completed"] is False
     assert channel["state"] == "awaiting_address"
+
+
+def test_existing_meta_profile_recovers_from_stale_unverified_metadata():
+    table = MagicMock()
+    table.select.return_value = table
+    table.eq.return_value = table
+    table.limit.return_value = table
+    table.execute.return_value = MagicMock(
+        data=[
+            {
+                "id": "channel-1",
+                "shop_id": "shop-1",
+                "customer_id": "customer-1",
+                "state": "awaiting_name",
+                "profile_completed": False,
+                "metadata": {"identity_verified": False},
+                "customers": {
+                    "id": "customer-1",
+                    "name": "Danish",
+                    "default_address": "Batla House Jamia Nagar",
+                },
+            }
+        ]
+    )
+    table.update.return_value = table
+    database = MagicMock()
+    database.table.return_value = table
+
+    with patch("app.services.meta_whatsapp_service.supabase_client", database):
+        channel = meta_whatsapp_service.get_or_create_customer(
+            "shop-1", "919012345678", "WhatsApp Display Name"
+        )
+
+    update_payload = table.update.call_args.args[0]
+    assert update_payload["profile_completed"] is True
+    assert update_payload["state"] == "ready"
+    assert update_payload["metadata"]["identity_verified"] is True
+    assert channel["profile_completed"] is True

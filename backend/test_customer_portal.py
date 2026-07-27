@@ -503,6 +503,20 @@ def test_legacy_phone_linked_action_card_appears_in_customer_portal(portal_conte
     assert response.status_code == 200
     assert response.json()["orders"][0]["id"] == "action-card:legacy-card-1"
     assert response.json()["orders"][0]["lifecycle_status"] == "received"
+    legacy_order_query = [
+        call
+        for call in db.calls
+        if call.table == "orders"
+        and ("eq", "customer_phone", "+911234567890") in call.filters
+    ][0]
+    legacy_card_query = [
+        call
+        for call in db.calls
+        if call.table == "action_cards"
+        and ("eq", "customer_phone", "+911234567890") in call.filters
+    ][0]
+    assert ("is", "customer_id", "null") in legacy_order_query.filters
+    assert ("is", "customer_id", "null") in legacy_card_query.filters
 
 
 def test_action_card_controller_persists_customer_id():

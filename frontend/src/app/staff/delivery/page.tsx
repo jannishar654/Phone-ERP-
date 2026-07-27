@@ -136,7 +136,7 @@ function DeliveryDashboard() {
                   <ul className="list-disc pl-5 space-y-1">
                     {order.order_items?.map((item: any) => (
                       <li key={item.id}>
-                        {item.quantity}x {item.display_name || item.raw_name}
+                        {item.quantity}{item.unit ? ` ${item.unit}` : ' ×'} {item.display_name || item.raw_name}
                       </li>
                     ))}
                   </ul>
