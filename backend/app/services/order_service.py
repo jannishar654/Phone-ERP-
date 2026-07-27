@@ -1,9 +1,35 @@
 import logging
+from datetime import datetime
 from typing import Optional, Dict
+from zoneinfo import ZoneInfo
+
 from app.services.supabase import supabase_client
 from app.schemas.order import OrderCreate, OrderItemCreate
 
 logger = logging.getLogger(__name__)
+
+
+def _delivery_time_for_order(value: Optional[str]) -> Optional[str]:
+    """Convert PhoneERP's India-local normalized time into a DB-safe timestamp."""
+    if not value:
+        return None
+    text = str(value).strip()
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+        return parsed.isoformat()
+    except ValueError:
+        pass
+    for date_format in ("%Y-%m-%d %I:%M %p", "%Y-%m-%d %H:%M"):
+        try:
+            parsed = datetime.strptime(text, date_format)
+            return parsed.replace(tzinfo=ZoneInfo("Asia/Kolkata")).isoformat()
+        except ValueError:
+            continue
+    # Preserve legacy values rather than dropping an owner-reviewed schedule.
+    return text
+
 
 class OrderService:
     def __init__(self):
@@ -119,7 +145,7 @@ class OrderService:
                 "status": status,
                 "lifecycle_status": "packing",
                 "delivery_address": action_card.get("delivery_address"),
-                "delivery_time": (
+                "delivery_time": _delivery_time_for_order(
                     action_card.get("delivery_time_normalized")
                     or action_card.get("delivery_time")
                 ),

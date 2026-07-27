@@ -7,12 +7,18 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'app')))
 
 from app.services.matching_service import matching_service
-from app.services.order_service import order_service
+from app.services.order_service import _delivery_time_for_order, order_service
 from app.services.catalog_service import catalog_service
 from app.schemas.catalog import CatalogItemCreate
 import app.routes.catalog as catalog_routes
 
 class TestCatalogMatchingAndOrder(unittest.TestCase):
+
+    def test_naive_delivery_time_uses_india_timezone(self):
+        self.assertEqual(
+            _delivery_time_for_order("2026-07-28T17:30:00"),
+            "2026-07-28T17:30:00+05:30",
+        )
     
     def test_catalog_service_mock_mode(self):
         # Temporarily mock out supabase
@@ -197,7 +203,9 @@ class TestCatalogMatchingAndOrder(unittest.TestCase):
             for call in mock_supabase.table.return_value.insert.call_args_list
             if call.args and isinstance(call.args[0], dict)
         )
-        self.assertEqual(inserted_order["delivery_time"], "2026-07-28 5:30 PM")
+        self.assertEqual(
+            inserted_order["delivery_time"], "2026-07-28T17:30:00+05:30"
+        )
 
     @patch.object(order_service, "supabase")
     @patch.object(matching_service, "match_product")

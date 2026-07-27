@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { CalendarClock, MapPin, Phone, UserRound } from 'lucide-react';
 import { getStaffOrders, updateStaffOrderStatus, validateStaffToken, getMe } from '@/lib/api_access';
+import { formatDeliveryTime } from '@/lib/order_display';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 
 function DeliveryDashboard() {
@@ -111,11 +113,21 @@ function DeliveryDashboard() {
                   <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-semibold">Out for Delivery</span>
                 </div>
                 
-                {order.customer && (
-                  <div className="text-sm text-slate-600 mb-4 p-3 bg-slate-50 rounded-lg">
-                    <div className="font-semibold text-slate-800 mb-1">Customer Info:</div>
-                    <div>{order.customer.name}</div>
-                    {order.customer.phone && <div className="text-indigo-600">{order.customer.phone}</div>}
+                {(order.customer || order.customer_name || order.customer_phone) && (
+                  <div className="mb-4 space-y-2 bg-slate-50 p-3 text-sm text-slate-700 rounded-md">
+                    <div className="font-semibold text-slate-800">Customer</div>
+                    {(order.customer?.name || order.customer_name) && (
+                      <div className="flex items-center gap-2">
+                        <UserRound className="h-4 w-4 text-slate-500" aria-hidden="true" />
+                        <span>{order.customer?.name || order.customer_name}</span>
+                      </div>
+                    )}
+                    {(order.customer?.phone || order.customer_phone) && (
+                      <div className="flex items-center gap-2 text-indigo-700">
+                        <Phone className="h-4 w-4" aria-hidden="true" />
+                        <span>{order.customer?.phone || order.customer_phone}</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 
@@ -128,6 +140,24 @@ function DeliveryDashboard() {
                       </li>
                     ))}
                   </ul>
+                </div>
+                <div className="mb-4 space-y-3 border-t border-slate-100 pt-3 text-sm text-slate-700">
+                  <div className="flex items-start gap-2">
+                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
+                    <div>
+                      <p className="text-xs font-semibold uppercase text-slate-500">Delivery address</p>
+                      <p className="mt-0.5">{order.delivery_address || 'Address not provided'}</p>
+                    </div>
+                  </div>
+                  {order.delivery_time && (
+                    <div className="flex items-start gap-2">
+                      <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
+                      <div>
+                        <p className="text-xs font-semibold uppercase text-slate-500">Scheduled</p>
+                        <p className="mt-0.5">{formatDeliveryTime(order.delivery_time)}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               <button

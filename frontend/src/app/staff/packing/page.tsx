@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { CalendarClock, MapPin } from 'lucide-react';
 import { getStaffOrders, updateStaffOrderStatus, validateStaffToken, getMe } from '@/lib/api_access';
+import { formatDeliveryTime } from '@/lib/order_display';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 
 function PackingDashboard() {
@@ -119,6 +121,24 @@ function PackingDashboard() {
                       </li>
                     ))}
                   </ul>
+                </div>
+                <div className="mb-4 space-y-2 border-t border-slate-100 pt-3 text-sm text-slate-700">
+                  <div className="flex items-start gap-2">
+                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" aria-hidden="true" />
+                    <div>
+                      <p className="text-xs font-semibold uppercase text-slate-500">Delivery address</p>
+                      <p className="mt-0.5">{order.delivery_address || 'Address not provided'}</p>
+                    </div>
+                  </div>
+                  {order.delivery_time && (
+                    <div className="flex items-start gap-2">
+                      <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" aria-hidden="true" />
+                      <div>
+                        <p className="text-xs font-semibold uppercase text-slate-500">Scheduled</p>
+                        <p className="mt-0.5">{formatDeliveryTime(order.delivery_time)}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               <button
