@@ -42,6 +42,18 @@ def make_msg(msg_id, text, shop_id="shop1", cust_id="cust1"):
     )
 
 
+def make_meta_msg(msg_id, text, profile_completed=False):
+    return NormalizedInboundMessage(
+        shop_id="shop1",
+        customer_id="cust1",
+        channel="meta_whatsapp",
+        provider_message_id=msg_id,
+        message_type="text",
+        raw_text=text,
+        metadata={"customer_profile_completed": profile_completed},
+    )
+
+
 def test_normalized_message_rejects_missing_provider_id():
     with pytest.raises(ValidationError):
         make_msg("", "send 1 kg rice")
@@ -70,6 +82,135 @@ def test_normalized_message_rejects_oversized_metadata():
             raw_text="send 1 kg rice",
             metadata={"payload": "x" * 17_000},
         )
+
+
+def test_meta_requires_name_address_and_specific_delivery_time():
+    message = make_meta_msg("meta-1", "5 kilo aata bhej dena")
+    missing = IntentRouter._missing_required_order_fields(
+        {
+            "customer_name": "WhatsApp Customer",
+            "delivery_address": "",
+            "delivery_time_normalized": None,
+            "delivery_time_confidence": 0.2,
+        },
+        message,
+    )
+
+    assert missing == ["customer_name", "delivery_address", "delivery_time"]
+
+
+def test_verified_meta_profile_can_supply_existing_name_and_address():
+    message = make_meta_msg("meta-2", "kal 9:30 pm 5 kilo aata bhej dena", True)
+    assert (
+        IntentRouter._missing_required_order_fields(
+            {
+                "customer_name": "Danish",
+                "delivery_address": "Batla House Jamia Nagar",
+                "delivery_time_normalized": "2026-07-28 9:30 PM",
+                "delivery_time_confidence": 0.9,
+            },
+            message,
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_meta_follow_up_is_merged_into_pending_order_before_creation():
+    conversation = {
+        "id": "conv-meta",
+        "shop_id": "shop1",
+        "customer_id": "cust1",
+        "channel": "meta_whatsapp",
+        "state": "collecting_details",
+        "draft_payload": {
+            "original_text": (
+                "5 kilo aata bhej dena. Naam Danish, "
+                "address Batla House Jamia Nagar."
+            ),
+            "missing_fields": ["delivery_time"],
+            "requires_confirmation": False,
+        },
+    }
+    message = make_meta_msg("meta-follow-up", "kal 9:30 pm bhej dena")
+    completed_card = {
+        "items": [{"name": "Aata", "quantity": 5, "unit": "kg"}],
+        "customer_name": "Danish",
+        "delivery_address": "Batla House Jamia Nagar",
+        "delivery_time_normalized": "2026-07-28 9:30 PM",
+        "delivery_time_confidence": 0.9,
+    }
+
+    with (
+        patch.object(
+            GeminiService,
+            "extract_order_details",
+            new_callable=AsyncMock,
+            return_value={"items": [{"name": "aata", "quantity": 5}]},
+        ) as extract,
+        patch.object(IntentRouter, "_build_card_data", return_value=completed_card),
+        patch.object(IntentRouter, "_update_conversation", return_value=True),
+        patch.object(
+            IntentRouter, "_conditional_conversation_update", return_value=True
+        ),
+        patch.object(IntentRouter, "_update_inbound_status", return_value=True),
+        patch.object(IntentRouter, "_persist_verified_meta_profile"),
+        patch.object(IntentRouter, "_require_owner_id", return_value="owner1"),
+        patch.object(
+            IntentRouter, "_order_received_reply", return_value="Order received"
+        ),
+        patch(
+            "app.services.intent_router.ActionCardController.create_card",
+            return_value={"id": "card1"},
+        ) as create_card,
+    ):
+        result = await IntentRouter._handle_collecting_details(
+            conversation, message, "inbound-follow-up"
+        )
+
+    merged_text = extract.await_args.args[0]
+    assert "5 kilo aata" in merged_text
+    assert "Batla House Jamia Nagar" in merged_text
+    assert "kal 9:30 pm" in merged_text
+    create_card.assert_called_once_with(completed_card, user_id="owner1")
+    assert result["status"] == "processed"
+
+
+@pytest.mark.asyncio
+async def test_meta_follow_up_does_not_duplicate_an_already_claimed_draft():
+    conversation = {
+        "id": "conv-meta",
+        "shop_id": "shop1",
+        "customer_id": "cust1",
+        "channel": "meta_whatsapp",
+        "state": "collecting_details",
+        "draft_payload": {
+            "original_text": "5 kilo aata bhej dena",
+            "missing_fields": ["delivery_time"],
+            "requires_confirmation": False,
+        },
+    }
+    message = make_meta_msg("meta-race", "kal 9:30 pm bhej dena")
+
+    with (
+        patch.object(
+            IntentRouter, "_conditional_conversation_update", return_value=False
+        ),
+        patch.object(IntentRouter, "_update_inbound_status", return_value=True),
+        patch.object(
+            GeminiService, "extract_order_details", new_callable=AsyncMock
+        ) as extract,
+        patch(
+            "app.services.intent_router.ActionCardController.create_card"
+        ) as create_card,
+    ):
+        result = await IntentRouter._handle_collecting_details(
+            conversation, message, "inbound-race"
+        )
+
+    extract.assert_not_awaited()
+    create_card.assert_not_called()
+    assert result["status"] == "skipped"
 
 @pytest.mark.asyncio
 async def test_idempotency_duplicate_webhook(mock_supabase, mock_gemini, mock_action_card, mock_helpers):

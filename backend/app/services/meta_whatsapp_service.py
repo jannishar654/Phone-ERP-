@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 class MetaWhatsAppService:
     """Adapter from Meta Cloud API payloads to PhoneERP's inbound pipeline."""
 
+    _PLACEHOLDER_CUSTOMER_NAMES = {
+        "",
+        "unknown",
+        "whatsapp customer",
+        "meta whatsapp customer",
+    }
+
     def _graph_url(self, path: str) -> str:
         version = settings.META_GRAPH_API_VERSION.strip("/") or "v25.0"
         return f"https://graph.facebook.com/{version}/{path.lstrip('/')}"
@@ -118,10 +125,42 @@ class MetaWhatsAppService:
             inbound_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
             metadata = dict(channel.get("metadata") or {})
             metadata["last_inbound_at"] = inbound_at
-            supabase_client.table("customer_channels").update(
-                {"metadata": metadata}
-            ).eq("id", channel["id"]).execute()
+            if profile_name:
+                metadata["whatsapp_profile_name"] = profile_name
+
+            customer = channel.get("customers") or {}
+            has_confirmed_profile = bool(
+                str(customer.get("name") or "").strip().lower()
+                not in self._PLACEHOLDER_CUSTOMER_NAMES
+                and str(
+                    customer.get("default_address")
+                    or customer.get("address")
+                    or ""
+                ).strip()
+            )
+            identity_verified = bool(
+                metadata.get("identity_verified", has_confirmed_profile)
+            )
+            updates = {
+                "metadata": {**metadata, "identity_verified": identity_verified}
+            }
+            if not identity_verified:
+                current_state = str(channel.get("state") or "")
+                updates.update(
+                    {
+                        "profile_completed": False,
+                        "state": (
+                            current_state
+                            if current_state in {"awaiting_name", "awaiting_address"}
+                            else "awaiting_name"
+                        ),
+                    }
+                )
+            supabase_client.table("customer_channels").update(updates).eq(
+                "id", channel["id"]
+            ).execute()
             channel["metadata"] = metadata
+            channel.update(updates)
             return channel
 
         phone = normalize_phone(wa_id)
@@ -142,7 +181,8 @@ class MetaWhatsAppService:
                 .insert(
                     {
                         "shop_id": shop_id,
-                        "name": profile_name or "WhatsApp Customer",
+                        # A WhatsApp display name is not verified order identity.
+                        "name": "WhatsApp Customer",
                         "phone": phone,
                     }
                 )
@@ -153,6 +193,13 @@ class MetaWhatsAppService:
         if not customer:
             return None
 
+        has_confirmed_profile = bool(
+            str(customer.get("name") or "").strip().lower()
+            not in self._PLACEHOLDER_CUSTOMER_NAMES
+            and str(
+                customer.get("default_address") or customer.get("address") or ""
+            ).strip()
+        )
         channel_payload = {
             "shop_id": shop_id,
             "customer_id": customer["id"],
@@ -160,12 +207,15 @@ class MetaWhatsAppService:
             "channel_user_id": wa_id,
             "channel_chat_id": wa_id,
             "phone": phone,
-            "state": "ready",
-            "profile_completed": True,
+            "display_name": customer.get("name") if has_confirmed_profile else None,
+            "state": "ready" if has_confirmed_profile else "awaiting_name",
+            "profile_completed": has_confirmed_profile,
             "metadata": {
                 "last_inbound_at": datetime.datetime.now(
                     datetime.timezone.utc
-                ).isoformat()
+                ).isoformat(),
+                "whatsapp_profile_name": profile_name,
+                "identity_verified": has_confirmed_profile,
             },
         }
         try:
@@ -184,6 +234,113 @@ class MetaWhatsAppService:
             if existing.data:
                 return existing.data[0]
             raise
+        return None
+
+    @staticmethod
+    def _looks_like_order(text: str) -> bool:
+        classification = IntentRouter.classify_intent_deterministically(text)
+        return bool(
+            classification
+            and classification.intent.value == "new_order"
+            and classification.confidence >= 0.60
+        )
+
+    def _has_active_order_draft(
+        self, shop_id: str, customer_id: str
+    ) -> bool:
+        if not supabase_client:
+            return False
+        try:
+            result = (
+                supabase_client.table("customer_conversations")
+                .select("id")
+                .eq("shop_id", shop_id)
+                .eq("customer_id", customer_id)
+                .eq("channel", "meta_whatsapp")
+                .in_("state", ["collecting_details", "awaiting_confirmation"])
+                .limit(1)
+                .execute()
+            )
+            return bool(result.data)
+        except Exception as exc:
+            logger.warning(
+                "Meta order draft lookup failed customer_id=%s error_type=%s",
+                customer_id,
+                type(exc).__name__,
+            )
+            return False
+
+    @staticmethod
+    def _extract_name_reply(text: str) -> Optional[str]:
+        cleaned = re.sub(r"\s+", " ", str(text or "").strip())
+        match = re.search(
+            r"^(?:my name is|mera naam|naam)\s+(.+)$",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        candidate = (match.group(1) if match else cleaned).strip(" .,-")
+        if (
+            not candidate
+            or len(candidate) > 80
+            or any(char.isdigit() for char in candidate)
+            or re.fullmatch(
+                r"(?:hi|hello|hey|namaste|namaskar|नमस्ते|नमस्कार)[!. ]*",
+                candidate,
+                flags=re.IGNORECASE,
+            )
+        ):
+            return None
+        return candidate
+
+    def _handle_profile_message(
+        self,
+        channel: Dict[str, Any],
+        customer: Dict[str, Any],
+        text: str,
+    ) -> Optional[str]:
+        if channel.get("profile_completed") is not False:
+            return None
+
+        state = str(channel.get("state") or "awaiting_name")
+        if state == "awaiting_name":
+            name = self._extract_name_reply(text)
+            if not name:
+                return (
+                    "Welcome to PhoneERP. Order ke liye apna naam batayein."
+                )
+            supabase_client.table("customers").update({"name": name}).eq(
+                "id", customer["id"]
+            ).eq("shop_id", channel["shop_id"]).execute()
+            supabase_client.table("customer_channels").update(
+                {"display_name": name, "state": "awaiting_address"}
+            ).eq("id", channel["id"]).execute()
+            return "Thanks! Apna delivery address batayein."
+
+        if state == "awaiting_address":
+            address = re.sub(
+                r"^(?:address|delivery address)\s*(?:is|hai|:)?\s*",
+                "",
+                str(text or "").strip(),
+                flags=re.IGNORECASE,
+            ).strip()
+            if len(address) < 5:
+                return "Please poora delivery address bhejein."
+            supabase_client.table("customers").update(
+                {"address": address, "default_address": address}
+            ).eq("id", customer["id"]).eq(
+                "shop_id", channel["shop_id"]
+            ).execute()
+            metadata = dict(channel.get("metadata") or {})
+            metadata["identity_verified"] = True
+            supabase_client.table("customer_channels").update(
+                {
+                    "state": "ready",
+                    "profile_completed": True,
+                    "metadata": metadata,
+                }
+            ).eq("id", channel["id"]).execute()
+            return "Profile saved. Ab apna order text ya voice note mein bhejein."
+
         return None
 
     async def send_text(
@@ -494,6 +651,22 @@ class MetaWhatsAppService:
                 )
                 return True
 
+            has_active_draft = self._has_active_order_draft(
+                connection["shop_id"], customer_id
+            )
+            if (
+                normalized_type == "text"
+                and channel.get("profile_completed") is False
+                and not has_active_draft
+                and not self._looks_like_order(raw_text)
+            ):
+                profile_reply = self._handle_profile_message(
+                    channel, customer, raw_text
+                )
+                if profile_reply:
+                    await self.send_text(wa_id, profile_reply, phone_number_id)
+                    return True
+
             inbound = NormalizedInboundMessage(
                 shop_id=connection["shop_id"],
                 customer_id=customer_id,
@@ -508,6 +681,9 @@ class MetaWhatsAppService:
                     "meta_waba_id": connection.get("waba_id"),
                     "whatsapp_wa_id": wa_id,
                     "profile_name": profile_name,
+                    "customer_profile_completed": bool(
+                        channel.get("profile_completed")
+                    ),
                     "input_type": normalized_type,
                 },
             )

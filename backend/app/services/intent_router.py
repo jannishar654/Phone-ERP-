@@ -26,6 +26,13 @@ EXTRACTION_TIMEOUT_SECONDS = 8
 
 
 class IntentRouter:
+    _PLACEHOLDER_CUSTOMER_NAMES = {
+        "",
+        "unknown",
+        "whatsapp customer",
+        "meta whatsapp customer",
+    }
+
     @staticmethod
     def classify_intent_deterministically(
         text: str,
@@ -188,12 +195,13 @@ class IntentRouter:
             }
 
         state = conversation.get("state", "idle")
-        if state == "awaiting_confirmation" and IntentRouter._is_expired(
-            conversation.get("expires_at")
+        if (
+            state in {"awaiting_confirmation", "collecting_details"}
+            and IntentRouter._is_expired(conversation.get("expires_at"))
         ):
             expired_claimed = IntentRouter._conditional_conversation_update(
                 conversation["id"],
-                expected_state="awaiting_confirmation",
+                expected_state=state,
                 updates={
                     "state": "idle",
                     "pending_intent": None,
@@ -221,6 +229,19 @@ class IntentRouter:
             return await IntentRouter._handle_confirmation(
                 conversation, msg.raw_text, inbound_id
             )
+        if state == "collecting_details":
+            return await IntentRouter._handle_collecting_details(
+                conversation, msg, inbound_id
+            )
+        if state == "creating_order":
+            IntentRouter._update_inbound_status(inbound_id, "skipped")
+            return {
+                "status": "skipped",
+                "reply_message": (
+                    "Aapki pichhli order detail process ho rahi hai. "
+                    "Please ek moment wait karein."
+                ),
+            }
 
         IntentRouter._update_inbound_status(inbound_id, "classifying")
         context = IntentRouter._get_business_context(msg.shop_id, msg.metadata)
@@ -677,6 +698,18 @@ class IntentRouter:
                 timeout=EXTRACTION_TIMEOUT_SECONDS,
             )
             card_data = IntentRouter._build_card_data(extracted, msg, inbound_id)
+            missing_fields = IntentRouter._missing_required_order_fields(
+                card_data, msg
+            )
+            if missing_fields:
+                return IntentRouter._begin_collecting_details(
+                    conversation,
+                    msg,
+                    inbound_id,
+                    missing_fields,
+                    requires_confirmation=False,
+                )
+            IntentRouter._persist_verified_meta_profile(card_data, msg)
             owner_id = IntentRouter._require_owner_id(msg.shop_id)
             card = ActionCardController.create_card(card_data, user_id=owner_id)
             if not card:
@@ -756,6 +789,18 @@ class IntentRouter:
                 timeout=EXTRACTION_TIMEOUT_SECONDS,
             )
             card_data = IntentRouter._build_card_data(extracted, msg, inbound_id)
+            missing_fields = IntentRouter._missing_required_order_fields(
+                card_data, msg
+            )
+            if missing_fields:
+                return IntentRouter._begin_collecting_details(
+                    conversation,
+                    msg,
+                    inbound_id,
+                    missing_fields,
+                    requires_confirmation=True,
+                )
+            IntentRouter._persist_verified_meta_profile(card_data, msg)
             expires_at = (
                 datetime.datetime.now(datetime.timezone.utc)
                 + datetime.timedelta(minutes=30)
@@ -821,10 +866,21 @@ class IntentRouter:
 
         customer = IntentRouter._get_customer(msg.customer_id)
         customer_name = extracted.get("customer_name")
-        if not customer_name or str(customer_name).lower() == "unknown":
+        allow_profile_fallback = not (
+            msg.channel.value == "meta_whatsapp"
+            and not bool(msg.metadata.get("customer_profile_completed"))
+        )
+        if (
+            not customer_name
+            or str(customer_name).strip().lower()
+            in IntentRouter._PLACEHOLDER_CUSTOMER_NAMES
+        ) and allow_profile_fallback:
             customer_name = customer.get("name") or "Unknown"
         delivery_address = extracted.get("delivery_address")
-        if not delivery_address or str(delivery_address).lower() == "unknown":
+        if (
+            not delivery_address
+            or str(delivery_address).strip().lower() == "unknown"
+        ) and allow_profile_fallback:
             delivery_address = (
                 customer.get("default_address") or customer.get("address") or ""
             )
@@ -893,6 +949,307 @@ class IntentRouter:
         card_data["confidence_label"] = label
         card_data["confidence_reasons"] = reasons
         return card_data
+
+    @staticmethod
+    def _missing_required_order_fields(
+        card_data: Dict[str, Any], msg: NormalizedInboundMessage
+    ) -> list[str]:
+        """Require operational details for Meta without changing legacy channels."""
+        if msg.channel.value != "meta_whatsapp":
+            return []
+
+        missing = []
+        name = str(card_data.get("customer_name") or "").strip().lower()
+        if name in IntentRouter._PLACEHOLDER_CUSTOMER_NAMES:
+            missing.append("customer_name")
+        if not str(card_data.get("delivery_address") or "").strip():
+            missing.append("delivery_address")
+        if (
+            not card_data.get("delivery_time_normalized")
+            or float(card_data.get("delivery_time_confidence") or 0) < 0.8
+        ):
+            missing.append("delivery_time")
+        return missing
+
+    @staticmethod
+    def _missing_field_prompt(field: str) -> str:
+        prompts = {
+            "customer_name": "Order kis naam se banana hai? Apna naam batayein.",
+            "delivery_address": "Delivery ka poora address batayein.",
+            "delivery_time": (
+                "Delivery ka din aur time batayein, jaise kal 9:30 PM."
+            ),
+        }
+        return prompts[field]
+
+    @staticmethod
+    def _begin_collecting_details(
+        conversation: Dict[str, Any],
+        msg: NormalizedInboundMessage,
+        inbound_id: str,
+        missing_fields: list[str],
+        *,
+        requires_confirmation: bool,
+    ) -> Dict[str, Any]:
+        expires_at = (
+            datetime.datetime.now(datetime.timezone.utc)
+            + datetime.timedelta(minutes=30)
+        ).isoformat()
+        saved = IntentRouter._update_conversation(
+            conversation["id"],
+            {
+                "state": "collecting_details",
+                "pending_intent": ConversationIntent.NEW_ORDER.value,
+                "draft_payload": {
+                    "original_text": msg.raw_text,
+                    "missing_fields": missing_fields,
+                    "requires_confirmation": requires_confirmation,
+                },
+                "expires_at": expires_at,
+            },
+        )
+        if not saved:
+            IntentRouter._update_inbound_status(
+                inbound_id, "failed", last_error="DraftPersistenceFailed"
+            )
+            return {
+                "status": "error",
+                "reply_message": (
+                    "Order details save nahi ho sake. Please order dobara bhejein."
+                ),
+            }
+
+        IntentRouter._update_inbound_status(
+            inbound_id, "awaiting_confirmation"
+        )
+        return {
+            "status": "collecting_details",
+            "reply_message": IntentRouter._missing_field_prompt(missing_fields[0]),
+        }
+
+    @staticmethod
+    async def _handle_collecting_details(
+        conversation: Dict[str, Any],
+        msg: NormalizedInboundMessage,
+        inbound_id: str,
+    ) -> Dict[str, Any]:
+        draft = conversation.get("draft_payload") or {}
+        original_text = str(draft.get("original_text") or "").strip()
+        missing_fields = draft.get("missing_fields") or []
+        if not original_text or not missing_fields:
+            IntentRouter._update_conversation(
+                conversation["id"],
+                {
+                    "state": "idle",
+                    "pending_intent": None,
+                    "draft_payload": None,
+                    "expires_at": None,
+                },
+            )
+            IntentRouter._update_inbound_status(inbound_id, "processed")
+            return {
+                "status": "processed",
+                "reply_message": (
+                    "Order draft expire ho gaya. Please order dobara bhejein."
+                ),
+            }
+
+        claimed = IntentRouter._conditional_conversation_update(
+            conversation["id"],
+            expected_state="collecting_details",
+            updates={"state": "creating_order"},
+        )
+        if not claimed:
+            IntentRouter._update_inbound_status(inbound_id, "skipped")
+            return {
+                "status": "skipped",
+                "reply_message": (
+                    "Yeh order detail already process ho rahi hai. "
+                    "Please ek moment wait karein."
+                ),
+            }
+
+        current_field = str(missing_fields[0])
+        combined_text = (
+            f"{original_text}\n"
+            f"Additional {current_field.replace('_', ' ')}: {msg.raw_text}"
+        )
+        combined_msg = msg.model_copy(update={"raw_text": combined_text})
+        IntentRouter._update_inbound_status(inbound_id, "extracting")
+        try:
+            extracted = await asyncio.wait_for(
+                GeminiService.extract_order_details(combined_text),
+                timeout=EXTRACTION_TIMEOUT_SECONDS,
+            )
+            card_data = IntentRouter._build_card_data(
+                extracted, combined_msg, inbound_id
+            )
+            still_missing = IntentRouter._missing_required_order_fields(
+                card_data, combined_msg
+            )
+            if still_missing:
+                saved = IntentRouter._update_conversation(
+                    conversation["id"],
+                    {
+                        "state": "collecting_details",
+                        "draft_payload": {
+                            "original_text": combined_text,
+                            "missing_fields": still_missing,
+                            "requires_confirmation": bool(
+                                draft.get("requires_confirmation")
+                            ),
+                        },
+                    },
+                )
+                if not saved:
+                    raise RuntimeError("Failed to update order details draft")
+                IntentRouter._update_inbound_status(
+                    inbound_id, "awaiting_confirmation"
+                )
+                return {
+                    "status": "collecting_details",
+                    "reply_message": IntentRouter._missing_field_prompt(
+                        still_missing[0]
+                    ),
+                }
+
+            IntentRouter._persist_verified_meta_profile(card_data, combined_msg)
+            if bool(draft.get("requires_confirmation")):
+                expires_at = (
+                    datetime.datetime.now(datetime.timezone.utc)
+                    + datetime.timedelta(minutes=30)
+                ).isoformat()
+                saved = IntentRouter._update_conversation(
+                    conversation["id"],
+                    {
+                        "state": "awaiting_confirmation",
+                        "pending_intent": ConversationIntent.NEW_ORDER.value,
+                        "draft_payload": card_data,
+                        "expires_at": expires_at,
+                    },
+                )
+                if not saved:
+                    raise RuntimeError("Failed to save confirmation draft")
+                IntentRouter._update_inbound_status(
+                    inbound_id, "awaiting_confirmation"
+                )
+                item_list = ", ".join(
+                    f"{item['quantity']} {item.get('unit') or ''} {item['name']}".strip()
+                    for item in card_data["items"]
+                )
+                return {
+                    "status": "awaiting_confirmation",
+                    "reply_message": (
+                        f"I understood: {item_list}. "
+                        "Reply 'yes' to confirm or 'no' to cancel."
+                    ),
+                }
+
+            owner_id = IntentRouter._require_owner_id(msg.shop_id)
+            card = ActionCardController.create_card(card_data, user_id=owner_id)
+            if not card:
+                raise RuntimeError("Action card creation returned no result")
+            IntentRouter._update_conversation(
+                conversation["id"],
+                {
+                    "state": "order_created",
+                    "pending_intent": None,
+                    "draft_payload": None,
+                    "expires_at": None,
+                },
+            )
+            IntentRouter._update_inbound_status(inbound_id, "processed")
+            return {
+                "status": "processed",
+                "reply_message": IntentRouter._order_received_reply(
+                    msg.shop_id, msg.customer_id, msg.channel.value
+                ),
+            }
+        except ValueError:
+            IntentRouter._conditional_conversation_update(
+                conversation["id"],
+                expected_state="creating_order",
+                updates={"state": "collecting_details"},
+            )
+            IntentRouter._update_inbound_status(
+                inbound_id, "needs_review", last_error="InvalidOrderDetails"
+            )
+            return {
+                "status": "needs_review",
+                "reply_message": (
+                    "Order details samajh nahi aaye. Items aur quantity ke saath "
+                    "order dobara bhejein."
+                ),
+            }
+        except Exception as exc:
+            logger.error(
+                "Order detail collection failed for inbound_id=%s (%s)",
+                inbound_id,
+                type(exc).__name__,
+            )
+            IntentRouter._update_inbound_status(
+                inbound_id, "failed", last_error=type(exc).__name__
+            )
+            IntentRouter._conditional_conversation_update(
+                conversation["id"],
+                expected_state="creating_order",
+                updates={"state": "collecting_details"},
+            )
+            return {
+                "status": "error",
+                "reply_message": "Order processing failed. Please try again.",
+            }
+
+    @staticmethod
+    def _persist_verified_meta_profile(
+        card_data: Dict[str, Any], msg: NormalizedInboundMessage
+    ) -> None:
+        if (
+            msg.channel.value != "meta_whatsapp"
+            or bool(msg.metadata.get("customer_profile_completed"))
+        ):
+            return
+
+        name = str(card_data.get("customer_name") or "").strip()
+        address = str(card_data.get("delivery_address") or "").strip()
+        if (
+            name.lower() in IntentRouter._PLACEHOLDER_CUSTOMER_NAMES
+            or not address
+        ):
+            return
+        try:
+            supabase_client.table("customers").update(
+                {"name": name, "address": address, "default_address": address}
+            ).eq("id", msg.customer_id).eq("shop_id", msg.shop_id).execute()
+
+            channel_result = (
+                supabase_client.table("customer_channels")
+                .select("id, metadata")
+                .eq("shop_id", msg.shop_id)
+                .eq("customer_id", msg.customer_id)
+                .eq("channel", "meta_whatsapp")
+                .limit(1)
+                .execute()
+            )
+            if channel_result.data:
+                channel = channel_result.data[0]
+                metadata = dict(channel.get("metadata") or {})
+                metadata["identity_verified"] = True
+                supabase_client.table("customer_channels").update(
+                    {
+                        "display_name": name,
+                        "state": "ready",
+                        "profile_completed": True,
+                        "metadata": metadata,
+                    }
+                ).eq("id", channel["id"]).execute()
+        except Exception as exc:
+            # Order creation remains available even if profile enrichment fails.
+            logger.warning(
+                "Meta customer profile persistence failed customer_id=%s (%s)",
+                msg.customer_id,
+                type(exc).__name__,
+            )
 
     @staticmethod
     def _register_inbound_message(
@@ -1104,7 +1461,7 @@ class IntentRouter:
         try:
             result = (
                 supabase_client.table("customers")
-                .select("id, shop_id, name, phone, address")
+                .select("id, shop_id, name, phone, address, default_address")
                 .eq("id", customer_id)
                 .execute()
             )

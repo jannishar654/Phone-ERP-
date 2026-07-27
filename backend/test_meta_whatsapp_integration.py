@@ -1,7 +1,7 @@
 import hashlib
 import hmac
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -250,3 +250,99 @@ async def test_text_message_uses_normalized_intent_pipeline():
     send_text.assert_awaited_once_with(
         "919012345678", "Order received", "phone-1"
     )
+
+
+@pytest.mark.asyncio
+async def test_unverified_meta_customer_is_asked_for_name_before_general_chat():
+    channel = {
+        "id": "channel-1",
+        "shop_id": "shop-1",
+        "customer_id": "customer-1",
+        "state": "awaiting_name",
+        "profile_completed": False,
+        "metadata": {"whatsapp_profile_name": "Rahul"},
+        "customers": {
+            "id": "customer-1",
+            "name": "WhatsApp Customer",
+            "phone": "+919012345678",
+        },
+    }
+    with (
+        patch.object(
+            meta_whatsapp_service,
+            "resolve_connection",
+            return_value={
+                "shop_id": "shop-1",
+                "waba_id": "waba-1",
+                "phone_number_id": "phone-1",
+            },
+        ),
+        patch.object(
+            meta_whatsapp_service, "get_or_create_customer", return_value=channel
+        ),
+        patch.object(
+            meta_whatsapp_service, "_has_active_order_draft", return_value=False
+        ),
+        patch(
+            "app.services.meta_whatsapp_service.IntentRouter.process_inbound_message",
+            new_callable=AsyncMock,
+        ) as process_inbound,
+        patch.object(
+            meta_whatsapp_service,
+            "send_text",
+            new_callable=AsyncMock,
+            return_value={"sent": True},
+        ) as send_text,
+    ):
+        await meta_whatsapp_service.process_message(
+            "phone-1",
+            {
+                "id": "wamid-greeting",
+                "from": "919012345678",
+                "type": "text",
+                "text": {"body": "hello"},
+            },
+            {"wa_id": "919012345678", "profile": {"name": "Rahul"}},
+        )
+
+    process_inbound.assert_not_awaited()
+    reply = send_text.await_args.args[1]
+    assert "naam" in reply.lower()
+    assert "rahul" not in reply.lower()
+
+
+def test_existing_meta_onboarding_keeps_awaiting_address_state():
+    table = MagicMock()
+    table.select.return_value = table
+    table.eq.return_value = table
+    table.limit.return_value = table
+    table.execute.return_value = MagicMock(
+        data=[
+            {
+                "id": "channel-1",
+                "shop_id": "shop-1",
+                "customer_id": "customer-1",
+                "state": "awaiting_address",
+                "profile_completed": False,
+                "metadata": {"identity_verified": False},
+                "customers": {
+                    "id": "customer-1",
+                    "name": "Danish",
+                    "address": None,
+                },
+            }
+        ]
+    )
+    table.update.return_value = table
+    database = MagicMock()
+    database.table.return_value = table
+
+    with patch("app.services.meta_whatsapp_service.supabase_client", database):
+        channel = meta_whatsapp_service.get_or_create_customer(
+            "shop-1", "919012345678", "Rahul"
+        )
+
+    update_payload = table.update.call_args.args[0]
+    assert update_payload["state"] == "awaiting_address"
+    assert update_payload["profile_completed"] is False
+    assert channel["state"] == "awaiting_address"
