@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
@@ -63,7 +63,7 @@ def _merge_unique_rows(*row_groups: List[Dict[str, Any]]) -> List[Dict[str, Any]
 
 
 def get_customer_context(
-    x_customer_session: str | None = Header(default=None),
+    x_customer_session: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
     try:
         return validate_customer_session(x_customer_session or "")
@@ -90,7 +90,7 @@ def _customer_and_shop(context: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[st
     return customer.data[0], shop.data[0]
 
 
-def _latest_customer_order(context: Dict[str, Any]) -> Dict[str, Any] | None:
+def _latest_customer_order(context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     result = (
         supabase_client.table("orders")
         .select("id, order_number, total_amount, lifecycle_status, created_at")
@@ -107,8 +107,8 @@ def _create_pending_order_request(
     context: Dict[str, Any],
     order_id: str,
     request_type: str,
-    message: str | None = None,
-    payload: Dict[str, Any] | None = None,
+    message: Optional[str] = None,
+    payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     existing = (
         supabase_client.table("customer_requests")
@@ -214,7 +214,7 @@ def exchange_customer_access(payload: MagicLinkExchange):
 
 @router.post("/access/logout")
 def logout_customer(
-    x_customer_session: str | None = Header(default=None),
+    x_customer_session: Optional[str] = Header(default=None),
 ):
     revoke_customer_session(x_customer_session or "")
     return {"message": "Signed out"}
@@ -343,6 +343,7 @@ def get_customer_orders(context: Dict[str, Any] = Depends(get_customer_context))
         for item_index, item in enumerate(order_payload["items"]):
             item["id"] = str(item.get("id") or f"{order['id']}:{item_index}")
             item["raw_name"] = item.get("raw_name") or item.get("display_name") or "Item"
+            item["metadata"] = item.get("metadata") or {}
         orders.append(CustomerPortalOrder(**order_payload))
 
     converted_action_card_ids = {
@@ -373,8 +374,21 @@ def get_customer_orders(context: Dict[str, Any] = Depends(get_customer_context))
                     "unit": item.get("unit"),
                     "unit_price": unit_price,
                     "line_total": line_total,
+                    "metadata": {
+                        key: item.get(key)
+                        for key in (
+                            "size_variant",
+                            "add_ons",
+                            "spice_level",
+                            "veg_non_veg",
+                        )
+                        if item.get(key) not in (None, "", [])
+                    },
                 }
             )
+        card_metadata = card.get("metadata") or {}
+        if not isinstance(card_metadata, dict):
+            card_metadata = {}
         lifecycle_status = "approved" if card_status == "approved" else "received"
         events = [{
             "lifecycle_status": "received",
@@ -398,6 +412,13 @@ def get_customer_orders(context: Dict[str, Any] = Depends(get_customer_context))
                     card.get("delivery_time_normalized")
                     or card.get("delivery_time")
                     or card.get("delivery_time_raw")
+                ),
+                fulfillment_type=card_metadata.get(
+                    "takeaway_delivery_dine_in"
+                ),
+                table_number=card_metadata.get("table_number"),
+                special_instructions=card_metadata.get(
+                    "special_instructions"
                 ),
                 created_at=card["created_at"],
                 updated_at=card.get("updated_at") or card["created_at"],

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 class OrderItemBase(BaseModel):
@@ -10,6 +10,7 @@ class OrderItemBase(BaseModel):
     unit: Optional[str] = None
     unit_price: float = Field(default=0.0, ge=0.0)
     line_total: float = Field(default=0.0, ge=0.0)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 class OrderItemCreate(OrderItemBase):
     pass
@@ -34,6 +35,9 @@ class OrderBase(BaseModel):
     delivery_address: Optional[str] = None
     delivery_time: Optional[datetime] = None
     payment_method: Optional[str] = None
+    fulfillment_type: Optional[str] = None
+    table_number: Optional[str] = None
+    special_instructions: Optional[str] = None
     packed_at: Optional[datetime] = None
     out_for_delivery_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None

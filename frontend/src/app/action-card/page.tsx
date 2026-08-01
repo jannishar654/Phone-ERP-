@@ -8,6 +8,7 @@ import { format } from 'date-fns';
 import { Calendar as CalendarIcon, Phone, MapPin, Clock } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { fulfillmentLabel, restaurantItemDetails } from '@/lib/restaurant_order';
 
 const formatDeliveryTime = (value: string | undefined): string => {
   if (!value) return 'Immediate';
@@ -882,6 +883,11 @@ function ActionCardContent() {
                             })()}
                             <div className="truncate">
                               <span className="font-bold text-slate-900 block truncate" title={item.name}>{item.raw_name || item.name}</span>
+                              {restaurantItemDetails(item).length > 0 && (
+                                <span className="mt-0.5 block text-[10px] font-medium text-amber-700 whitespace-normal">
+                                  {restaurantItemDetails(item).join(' · ')}
+                                </span>
+                              )}
                               {item.resolution_status === 'suggested' && item.canonical_name && (
                                 <div className="mt-1 text-[10px] text-blue-650 font-bold flex flex-wrap items-center gap-1">
                                   <span className="bg-blue-50 border border-blue-200 px-1 rounded">Suggested: {item.canonical_name}</span>
@@ -910,6 +916,15 @@ function ActionCardContent() {
                         </div>
                       ))}
                     </div>
+                    {(fulfillmentLabel(selectedCard.takeaway_delivery_dine_in) || selectedCard.table_number || selectedCard.special_instructions) && (
+                      <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-700 space-y-1">
+                        {fulfillmentLabel(selectedCard.takeaway_delivery_dine_in) && (
+                          <p><span className="font-bold">Fulfilment:</span> {fulfillmentLabel(selectedCard.takeaway_delivery_dine_in)}</p>
+                        )}
+                        {selectedCard.table_number && <p><span className="font-bold">Table:</span> {selectedCard.table_number}</p>}
+                        {selectedCard.special_instructions && <p><span className="font-bold">Kitchen instructions:</span> {selectedCard.special_instructions}</p>}
+                      </div>
+                    )}
                     {(() => {
                       const orderTotal = selectedCard.items.reduce((sum, item) => sum + ((item.quantity || 0) * (item.price || 0)), 0);
                       const hasMissingPrice = selectedCard.items.some(item => item.price === undefined || item.price === null || item.price <= 0);

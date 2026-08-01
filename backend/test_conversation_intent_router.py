@@ -115,6 +115,52 @@ def test_verified_meta_profile_can_supply_existing_name_and_address():
     )
 
 
+def test_restaurant_dine_in_requires_table_not_delivery_details():
+    message = make_meta_msg("meta-restaurant-1", "table 4 ke liye 2 thali")
+    with patch(
+        "app.services.intent_router.business_config_service.get_config",
+        return_value=MagicMock(business_type=MagicMock(value="restaurant")),
+    ):
+        missing = IntentRouter._missing_required_order_fields(
+            {
+                "customer_name": "Danish",
+                "takeaway_delivery_dine_in": "Dine-in",
+                "table_number": "4",
+            },
+            message,
+        )
+    assert missing == []
+
+
+def test_restaurant_delivery_requires_address_and_time():
+    message = make_meta_msg("meta-restaurant-2", "2 thali delivery")
+    with patch(
+        "app.services.intent_router.business_config_service.get_config",
+        return_value=MagicMock(business_type=MagicMock(value="restaurant")),
+    ):
+        missing = IntentRouter._missing_required_order_fields(
+            {
+                "customer_name": "Danish",
+                "takeaway_delivery_dine_in": "delivery",
+            },
+            message,
+        )
+    assert missing == ["delivery_address", "delivery_time"]
+
+
+def test_restaurant_unspecified_fulfillment_is_collected():
+    message = make_meta_msg("meta-restaurant-3", "2 paneer tikka")
+    with patch(
+        "app.services.intent_router.business_config_service.get_config",
+        return_value=MagicMock(business_type=MagicMock(value="restaurant")),
+    ):
+        missing = IntentRouter._missing_required_order_fields(
+            {"customer_name": "Danish"},
+            message,
+        )
+    assert missing == ["fulfillment_type"]
+
+
 def test_meta_verified_name_beats_hallucinated_name_not_present_in_message():
     message = make_meta_msg(
         "meta-name-1",

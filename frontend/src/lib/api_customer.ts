@@ -16,6 +16,7 @@ export type CustomerOrderItem = {
   unit?: string;
   unit_price: number;
   line_total: number;
+  metadata?: Record<string, unknown>;
 };
 
 export type CustomerOrderEvent = {
@@ -33,6 +34,9 @@ export type CustomerOrder = {
   lifecycle_status: string;
   delivery_address?: string;
   delivery_time?: string;
+  fulfillment_type?: string;
+  table_number?: string;
+  special_instructions?: string;
   created_at: string;
   updated_at: string;
   packed_at?: string;
@@ -52,6 +56,10 @@ export type CustomerAmendmentItem = {
   name: string;
   quantity: number;
   unit?: string;
+  size_variant?: string;
+  add_ons?: string[];
+  spice_level?: string;
+  veg_non_veg?: string;
 };
 
 export type CustomerOrderAmendment = {

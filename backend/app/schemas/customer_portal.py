@@ -23,6 +23,7 @@ class CustomerPortalItem(BaseModel):
     unit: Optional[str] = None
     unit_price: float = 0.0
     line_total: float = 0.0
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class CustomerPortalEvent(BaseModel):
@@ -42,6 +43,9 @@ class CustomerPortalOrder(BaseModel):
     # Orders store a timestamp while pending Action Cards retain the customer's
     # normalized human-readable value. Keep the portal contract lossless.
     delivery_time: Optional[str] = None
+    fulfillment_type: Optional[str] = None
+    table_number: Optional[str] = None
+    special_instructions: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     packed_at: Optional[datetime] = None
@@ -72,6 +76,10 @@ class CustomerAmendmentItem(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     quantity: float = Field(gt=0, le=100000)
     unit: Optional[str] = Field(default=None, max_length=50)
+    size_variant: Optional[str] = Field(default=None, max_length=80)
+    add_ons: List[str] = Field(default_factory=list, max_length=20)
+    spice_level: Optional[str] = Field(default=None, max_length=80)
+    veg_non_veg: Optional[str] = Field(default=None, max_length=80)
 
 
 class CustomerOrderAmendment(BaseModel):

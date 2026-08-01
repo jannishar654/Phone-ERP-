@@ -6,6 +6,7 @@ import { CalendarClock, MapPin } from 'lucide-react';
 import { getStaffOrders, updateStaffOrderStatus, validateStaffToken, getMe } from '@/lib/api_access';
 import { formatDeliveryTime } from '@/lib/order_display';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
+import { fulfillmentLabel, restaurantItemDetails } from '@/lib/restaurant_order';
 
 function PackingDashboard() {
   const searchParams = useSearchParams();
@@ -118,6 +119,9 @@ function PackingDashboard() {
                     {order.order_items?.map((item: any) => (
                       <li key={item.id}>
                         {item.quantity}{item.unit ? ` ${item.unit}` : ' ×'} {item.display_name || item.raw_name}
+                        {restaurantItemDetails(item).length > 0 && (
+                          <span className="block text-xs text-amber-700">{restaurantItemDetails(item).join(' · ')}</span>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -137,6 +141,13 @@ function PackingDashboard() {
                         <p className="text-xs font-semibold uppercase text-slate-500">Scheduled</p>
                         <p className="mt-0.5">{formatDeliveryTime(order.delivery_time)}</p>
                       </div>
+                    </div>
+                  )}
+                  {(fulfillmentLabel(order.fulfillment_type) || order.table_number || order.special_instructions) && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                      {fulfillmentLabel(order.fulfillment_type) && <p><span className="font-semibold">Fulfilment:</span> {fulfillmentLabel(order.fulfillment_type)}</p>}
+                      {order.table_number && <p><span className="font-semibold">Table:</span> {order.table_number}</p>}
+                      {order.special_instructions && <p><span className="font-semibold">Kitchen instructions:</span> {order.special_instructions}</p>}
                     </div>
                   )}
                 </div>

@@ -10,6 +10,10 @@ export interface Item {
   possible_matches?: string[];
   resolution_confidence?: number;
   alias_used?: boolean;
+  size_variant?: string;
+  add_ons?: string[];
+  spice_level?: string;
+  veg_non_veg?: string;
 }
 
 export type ActionCardStatus = 'pending' | 'processing' | 'completed';
@@ -30,6 +34,9 @@ export interface ActionCard {
   missing_fields?: string[];
   validation_warnings?: string[];
   payment_method?: string;
+  takeaway_delivery_dine_in?: string;
+  table_number?: string;
+  special_instructions?: string;
   status: ActionCardStatus | string;
   source: 'audio' | 'text' | string;
   message_type?: string;

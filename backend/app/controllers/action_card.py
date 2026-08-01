@@ -25,10 +25,10 @@ class ActionCardController:
     def create_card(card_data: Dict[str, Any], user_id: Optional[str] = None) -> ActionCard:
         if user_id:
             card_data["user_id"] = user_id
-            
+
         if SupabaseService.is_available():
             card_id = card_data.get("id") or f"ac_{uuid.uuid4().hex[:8]}"
-            
+
             # Fetch and attach shop_id to ensure catalog matching works for this card
             if user_id and not card_data.get("shop_id"):
                 try:
@@ -40,7 +40,16 @@ class ActionCardController:
 
             items = card_data.get("items", [])
             items_dict = [i.model_dump() if hasattr(i, "model_dump") else i for i in items]
-            
+
+            metadata = card_data.get("metadata") or {}
+            if isinstance(metadata, dict):
+                metadata = metadata.copy()
+            else:
+                metadata = {}
+            for field in ["takeaway_delivery_dine_in", "table_number", "special_instructions"]:
+                if card_data.get(field) is not None:
+                    metadata[field] = card_data.get(field)
+
             insert_data = {
                 "id": card_id,
                 "user_id": card_data.get("user_id"),
@@ -68,7 +77,7 @@ class ActionCardController:
                 "confidence_reasons": card_data.get("confidence_reasons", []),
                 "stt_provider": card_data.get("stt_provider"),
                 "extraction_provider": card_data.get("extraction_provider"),
-                "metadata": card_data.get("metadata", {}),
+                "metadata": metadata,
                 "transcript": card_data.get("transcript", "Manual order entry")
             }
             # Remove None values to let DB defaults apply
@@ -85,6 +94,26 @@ class ActionCardController:
             update_data = {k: v for k, v in card_data.items() if k not in ["id", "created_at", "updated_at", "user_id"]}
             if "items" in update_data:
                 update_data["items"] = [i.model_dump() if hasattr(i, "model_dump") else i for i in update_data["items"]]
+
+            # Serialize restaurant fields to metadata update
+            existing = SupabaseService.get_by_id(card_id, user_id) or {}
+            existing_metadata = existing.get("metadata") or {}
+            metadata = update_data.get("metadata")
+            metadata = (
+                {**existing_metadata, **metadata}
+                if isinstance(metadata, dict)
+                else dict(existing_metadata)
+            )
+            for field in ["takeaway_delivery_dine_in", "table_number", "special_instructions"]:
+                if field in update_data:
+                    val = update_data.pop(field)
+                    if val is None:
+                        metadata.pop(field, None)
+                    else:
+                        metadata[field] = val
+            if metadata or "metadata" in update_data:
+                update_data["metadata"] = metadata
+
             result = SupabaseService.update(card_id, update_data, user_id)
             return ActionCardController._parse_supabase_card(result)
             
@@ -105,7 +134,17 @@ class ActionCardController:
 
     @staticmethod
     def _parse_supabase_card(data: dict) -> ActionCard:
+        if not data:
+            return None
         items = data.get("items") or []
         parsed_items = [Item(**i) if isinstance(i, dict) else i for i in items]
         data["items"] = parsed_items
+
+        # Deserialize restaurant fields from metadata
+        metadata = data.get("metadata") or {}
+        if isinstance(metadata, dict):
+            for field in ["takeaway_delivery_dine_in", "table_number", "special_instructions"]:
+                if field in metadata:
+                    data[field] = metadata[field]
+
         return ActionCard(**data)

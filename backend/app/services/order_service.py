@@ -9,6 +9,38 @@ from app.schemas.order import OrderCreate, OrderItemCreate
 logger = logging.getLogger(__name__)
 
 
+def _normalize_fulfillment_type(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    normalized = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "parcel": "takeaway",
+        "pack": "takeaway",
+        "take_away": "takeaway",
+        "dinein": "dine_in",
+        "not_specified": "not_specified",
+        "unknown": "not_specified",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return (
+        normalized
+        if normalized in {"delivery", "takeaway", "dine_in", "not_specified"}
+        else None
+    )
+
+
+def _restaurant_item_metadata(item: dict) -> dict:
+    metadata = dict(item.get("metadata") or {})
+    for field in ("size_variant", "spice_level", "veg_non_veg"):
+        value = item.get(field)
+        if value not in (None, ""):
+            metadata[field] = value
+    add_ons = item.get("add_ons")
+    if isinstance(add_ons, list) and add_ons:
+        metadata["add_ons"] = add_ons
+    return metadata
+
+
 def _delivery_time_for_order(value: Optional[str]) -> Optional[str]:
     """Convert PhoneERP's India-local normalized time into a DB-safe timestamp."""
     if not value:
@@ -126,7 +158,8 @@ class OrderService:
                     "quantity": qty,
                     "unit": item.get("unit"),
                     "unit_price": price,
-                    "line_total": line_total
+                    "line_total": line_total,
+                    "metadata": _restaurant_item_metadata(item),
                 })
             
             # 3. Insert order
@@ -134,6 +167,9 @@ class OrderService:
             from datetime import datetime
             
             order_id = str(uuid.uuid4())
+            action_metadata = action_card.get("metadata") or {}
+            if not isinstance(action_metadata, dict):
+                action_metadata = {}
             order_data = {
                 "id": order_id,
                 "shop_id": shop_id,
@@ -150,6 +186,18 @@ class OrderService:
                     or action_card.get("delivery_time")
                 ),
                 "payment_method": action_card.get("payment_method"),
+                "fulfillment_type": _normalize_fulfillment_type(
+                    action_card.get("takeaway_delivery_dine_in")
+                    or action_metadata.get("takeaway_delivery_dine_in")
+                ),
+                "table_number": (
+                    action_card.get("table_number")
+                    or action_metadata.get("table_number")
+                ),
+                "special_instructions": (
+                    action_card.get("special_instructions")
+                    or action_metadata.get("special_instructions")
+                ),
                 "created_at": datetime.utcnow().isoformat()
             }
             

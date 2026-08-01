@@ -1,11 +1,11 @@
 import datetime
 import logging
+from typing import Optional
 from app.services.supabase import supabase_client
 from app.config.settings import settings
 from app.services.bill_link_service import ensure_public_bill_link
 
 logger = logging.getLogger(__name__)
-
 
 def _meta_freeform_window_is_open(channel: dict | None) -> bool:
     channel = channel or {}
@@ -23,7 +23,7 @@ def _meta_freeform_window_is_open(channel: dict | None) -> bool:
     elapsed = datetime.datetime.now(datetime.timezone.utc) - last_inbound
     return datetime.timedelta(0) <= elapsed < datetime.timedelta(hours=24)
 
-def send_delivery_notification(order_id: str, final_order: dict | None = None) -> dict:
+def send_delivery_notification(order_id: str, final_order: Optional[dict] = None) -> dict:
     notification_info = {
         "notification_attempted": True,
         "notification_sent": False,

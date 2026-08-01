@@ -1,7 +1,9 @@
+from __future__ import annotations
 import sys
 import os
 import asyncio
 from datetime import datetime, timedelta
+from typing import Optional, List, Union, Tuple
 
 # Add backend dir to python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'app')))
@@ -839,9 +841,9 @@ def run_tests():
     from app.services.confidence_scorer import ConfidenceScorer
     class ScorerMockItem(BaseModel):
         name: str
-        quantity: float | None = None
-        unit: str | None = None
-        price: float | None = None
+        quantity: Optional[float] = None
+        unit: Optional[str] = None
+        price: Optional[float] = None
 
     # 1. Dict only
     dict_card = dict(perfect_card)

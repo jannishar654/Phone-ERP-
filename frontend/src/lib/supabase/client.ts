@@ -39,6 +39,8 @@ function eraseCookie(name: string) {
 export interface User {
   email: string;
   name: string;
+  businessType?: string;
+  businessName?: string;
 }
 
 const mockSupabaseAuth = {
@@ -49,12 +51,12 @@ const mockSupabaseAuth = {
     setCookie('phoneerp-session', JSON.stringify(userSession), 1);
     return { user: userSession, error: null };
   },
-  async signUp(email: string, password: string, name: string): Promise<{ user: User | null; error: string | null }> {
-    if (password.length < 6) return { user: null, error: 'Password must be at least 6 characters.' };
-    if (!name.trim()) return { user: null, error: 'Name cannot be empty.' };
-    const userSession = { email, name: name.trim() };
+  async signUp(email: string, password: string, name: string, businessType?: string, businessName?: string): Promise<{ user: User | null; error: string | null; hasSession: boolean }> {
+    if (password.length < 6) return { user: null, error: 'Password must be at least 6 characters.', hasSession: false };
+    if (!name.trim()) return { user: null, error: 'Name cannot be empty.', hasSession: false };
+    const userSession = { email, name: name.trim(), businessType, businessName };
     setCookie('phoneerp-session', JSON.stringify(userSession), 1);
-    return { user: userSession, error: null };
+    return { user: userSession, error: null, hasSession: true };
   },
   async signOut(): Promise<{ error: string | null }> {
     eraseCookie('phoneerp-session');
@@ -76,21 +78,37 @@ export const authClient = {
     if (supabase) {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return { user: null, error: error.message };
-      const userSession = { email: data.user.email || '', name: data.user.user_metadata?.name || 'User' };
+      const userSession = {
+        email: data.user.email || '',
+        name: data.user.user_metadata?.name || 'User',
+        businessType: data.user.user_metadata?.business_type,
+        businessName: data.user.user_metadata?.business_name,
+      };
       setCookie('phoneerp-session', JSON.stringify(userSession), 1);
       return { user: userSession, error: null };
     }
     return mockSupabaseAuth.signIn(email, password);
   },
-  async signUp(email: string, password: string, name: string) {
+  async signUp(email: string, password: string, name: string, businessType?: string, businessName?: string) {
     if (supabase) {
-      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name } } });
-      if (error) return { user: null, error: error.message };
-      const userSession = { email: data.user?.email || '', name };
-      setCookie('phoneerp-session', JSON.stringify(userSession), 1);
-      return { user: userSession, error: null };
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { name, business_type: businessType, business_name: businessName } },
+      });
+      if (error) return { user: null, error: error.message, hasSession: false };
+      const userSession = {
+        email: data.user?.email || '',
+        name,
+        businessType,
+        businessName,
+      };
+      if (data.session) {
+        setCookie('phoneerp-session', JSON.stringify(userSession), 1);
+      }
+      return { user: userSession, error: null, hasSession: Boolean(data.session) };
     }
-    return mockSupabaseAuth.signUp(email, password, name);
+    return mockSupabaseAuth.signUp(email, password, name, businessType, businessName);
   },
   async signOut() {
     if (supabase) {

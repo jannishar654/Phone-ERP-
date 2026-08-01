@@ -33,6 +33,7 @@ import {
   updateCustomerDraft,
 } from '@/lib/api_customer';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
+import { fulfillmentLabel, restaurantItemDetails } from '@/lib/restaurant_order';
 
 const stages = [
   { key: 'received', label: 'Received' },
@@ -84,6 +85,10 @@ function amendmentFromOrder(order: CustomerOrder): CustomerOrderAmendment {
       name: item.display_name || item.raw_name,
       quantity: item.quantity,
       unit: item.unit || '',
+      size_variant: typeof item.metadata?.size_variant === 'string' ? item.metadata.size_variant : undefined,
+      add_ons: Array.isArray(item.metadata?.add_ons) ? item.metadata.add_ons.map(String) : [],
+      spice_level: typeof item.metadata?.spice_level === 'string' ? item.metadata.spice_level : undefined,
+      veg_non_veg: typeof item.metadata?.veg_non_veg === 'string' ? item.metadata.veg_non_veg : undefined,
     })),
     delivery_address: order.delivery_address || '',
     delivery_time: order.delivery_time || '',
@@ -352,7 +357,12 @@ export default function CustomerOrdersPage() {
                     <div className="divide-y divide-slate-200">
                       {order.items.map((item) => (
                         <div key={item.id} className="py-2.5 flex justify-between gap-4 text-sm">
-                          <span className="font-medium text-slate-800">{item.display_name || item.raw_name} <span className="font-normal text-slate-500">× {item.quantity} {item.unit || ''}</span></span>
+                          <span className="font-medium text-slate-800">
+                            {item.display_name || item.raw_name} <span className="font-normal text-slate-500">× {item.quantity} {item.unit || ''}</span>
+                            {restaurantItemDetails(item).length > 0 && (
+                              <span className="mt-0.5 block text-xs font-normal text-amber-700">{restaurantItemDetails(item).join(' · ')}</span>
+                            )}
+                          </span>
                           <span className="font-semibold">₹{item.line_total.toFixed(2)}</span>
                         </div>
                       ))}
@@ -366,6 +376,13 @@ export default function CustomerOrdersPage() {
                             Scheduled: {order.delivery_time}
                           </p>
                         )}
+                      </div>
+                    )}
+                    {(fulfillmentLabel(order.fulfillment_type) || order.table_number || order.special_instructions) && (
+                      <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        {fulfillmentLabel(order.fulfillment_type) && <p><span className="font-semibold">Fulfilment:</span> {fulfillmentLabel(order.fulfillment_type)}</p>}
+                        {order.table_number && <p><span className="font-semibold">Table:</span> {order.table_number}</p>}
+                        {order.special_instructions && <p><span className="font-semibold">Instructions:</span> {order.special_instructions}</p>}
                       </div>
                     )}
                     {!isConvertedOrder && (

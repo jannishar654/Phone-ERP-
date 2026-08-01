@@ -2,6 +2,8 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, status, Form, De
 from typing import List, Dict, Any, Optional
 from app.dependencies.auth import get_current_user_id
 from app.schemas.action_card import ActionCard, Item, ActionCardCreate, ActionCardUpdate, StatusUpdate
+from app.services.action_card_validator import validate_action_card
+from app.services.business_config_service import business_config_service
 from app.controllers.action_card import ActionCardController
 from pydantic import BaseModel
 from datetime import datetime
@@ -329,10 +331,16 @@ async def extract_action_card_audio(
         )
 
     try:
+        from app.routes.catalog import get_user_shop_id
+        shop_id = get_user_shop_id(user_id) if user_id else None
+
+        context = business_config_service.build_extraction_context(shop_id) if shop_id else None
+
         extracted = await GeminiService.extract_order_details_from_audio(
             file_content=file_content,
             filename=file.filename,
             pipeline=pipeline,
+            business_context=context,
         )
         logger.info(f"Direct audio extraction (INFO): Pipeline={pipeline}, Items={len(extracted.get('items', []))}, Success=True")
     except Exception as error:
@@ -365,8 +373,14 @@ async def extract_action_card_audio(
 @router.post("/extract-action-card", response_model=ActionCard, status_code=status.HTTP_201_CREATED)
 async def extract_action_card(payload: ExtractRequest, user_id: Optional[str] = Depends(get_current_user_id)) -> ActionCard:
     try:
+        from app.routes.catalog import get_user_shop_id
+        shop_id = get_user_shop_id(user_id) if user_id else None
+
+        context = business_config_service.build_extraction_context(shop_id) if shop_id else None
+
         extracted = await GeminiService.extract_order_details(
             payload.transcript,
+            business_context=context,
             stt_provider=payload.stt_provider,
             extraction_provider=payload.extraction_provider,
             pipeline=payload.pipeline

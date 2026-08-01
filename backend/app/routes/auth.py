@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.dependencies.auth import get_current_user_id
 from app.services.supabase import supabase_client
-from app.schemas.auth import RegisterStaffRequest, RegisterStaffResponse, MeResponse
+from app.schemas.auth import RegisterStaffRequest, RegisterStaffResponse, MeResponse, RegisterOwnerRequest
+from app.services.business_config_service import business_config_service
 import hashlib
 from datetime import datetime
 
@@ -60,6 +61,76 @@ def register_staff(data: RegisterStaffRequest, user_id: str = Depends(get_curren
         success=True,
         shop_id=shop_id,
         role=role
+    )
+
+@router.post("/register-owner", response_model=MeResponse)
+def register_owner(data: RegisterOwnerRequest, user_id: str = Depends(get_current_user_id)):
+    from app.config.settings import settings
+    if not settings.REQUIRE_AUTH and not user_id:
+        user_id = "mock-user"
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    # Existing owners win over membership fallback rows. This keeps migrated
+    # owners idempotent even if they also have an owner shop_members record.
+    shop_res = supabase_client.table("shops").select("id").eq("owner_id", user_id).execute()
+    if shop_res.data:
+        shop_id = shop_res.data[0]["id"]
+    else:
+        mem_res = (
+            supabase_client.table("shop_members")
+            .select("id, role")
+            .eq("user_id", user_id)
+            .eq("status", "active")
+            .execute()
+        )
+        staff_roles = {"packer", "delivery"}
+        if any(member.get("role") in staff_roles for member in mem_res.data or []):
+            raise HTTPException(
+                status_code=403,
+                detail="A staff account cannot register an owner business",
+            )
+
+        shop_data = {
+            "owner_id": user_id,
+            "name": data.shop_name.strip(),
+            "phone": data.phone,
+        }
+        try:
+            new_shop = supabase_client.table("shops").insert(shop_data).execute()
+        except Exception:
+            # Recover cleanly from transient insert failures or a concurrent
+            # provisioning request when the database enforces owner uniqueness.
+            new_shop = None
+
+        if not new_shop or not new_shop.data:
+            recovered = (
+                supabase_client.table("shops")
+                .select("id")
+                .eq("owner_id", user_id)
+                .execute()
+            )
+            if recovered.data:
+                shop_id = recovered.data[0]["id"]
+            else:
+                raise HTTPException(status_code=500, detail="Failed to create shop")
+        else:
+            shop_id = new_shop.data[0]["id"]
+
+    try:
+        business_config_service.create_default_config(shop_id, data.business_type)
+    except RuntimeError as exc:
+        # A retry repairs a shop created before a transient config failure.
+        raise HTTPException(
+            status_code=503,
+            detail="Business setup is temporarily unavailable. Please retry.",
+        ) from exc
+
+    return MeResponse(
+        user_id=user_id,
+        shop_id=shop_id,
+        role="owner",
+        permissions=["owner"]
     )
 
 @router.get("/me", response_model=MeResponse)

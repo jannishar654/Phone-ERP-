@@ -15,6 +15,7 @@ from app.schemas.inbound import (
 )
 from app.services.gemini import GeminiService
 from app.services.supabase import supabase_client
+from app.services.business_config_service import business_config_service
 
 
 logger = logging.getLogger(__name__)
@@ -360,11 +361,11 @@ class IntentRouter:
         if classification.intent == ConversationIntent.NEW_ORDER:
             if confidence >= 0.85:
                 return await IntentRouter._process_high_confidence_order(
-                    msg, conversation, inbound_id
+                    msg, conversation, inbound_id, context
                 )
             if confidence >= 0.60:
                 return await IntentRouter._process_medium_confidence_order(
-                    msg, conversation, inbound_id
+                    msg, conversation, inbound_id, context
                 )
 
         return IntentRouter._handle_other_intent(
@@ -739,11 +740,12 @@ class IntentRouter:
         msg: NormalizedInboundMessage,
         conversation: Dict[str, Any],
         inbound_id: str,
+        context: Dict[str, Any],
     ) -> Dict[str, Any]:
         IntentRouter._update_inbound_status(inbound_id, "extracting")
         try:
             extracted = await asyncio.wait_for(
-                GeminiService.extract_order_details(msg.raw_text),
+                GeminiService.extract_order_details(msg.raw_text, business_context=context),
                 timeout=EXTRACTION_TIMEOUT_SECONDS,
             )
             card_data = IntentRouter._build_card_data(extracted, msg, inbound_id)
@@ -830,11 +832,12 @@ class IntentRouter:
         msg: NormalizedInboundMessage,
         conversation: Dict[str, Any],
         inbound_id: str,
+        context: Dict[str, Any],
     ) -> Dict[str, Any]:
         IntentRouter._update_inbound_status(inbound_id, "extracting")
         try:
             extracted = await asyncio.wait_for(
-                GeminiService.extract_order_details(msg.raw_text),
+                GeminiService.extract_order_details(msg.raw_text, business_context=context),
                 timeout=EXTRACTION_TIMEOUT_SECONDS,
             )
             card_data = IntentRouter._build_card_data(extracted, msg, inbound_id)
@@ -992,6 +995,11 @@ class IntentRouter:
             "delivery_time_confidence": time_data.get("confidence", 0.0),
             "delivery_time_warning": time_data.get("warning"),
             "payment_method": extracted.get("payment_method", "UNKNOWN"),
+            "takeaway_delivery_dine_in": extracted.get(
+                "takeaway_delivery_dine_in"
+            ),
+            "table_number": extracted.get("table_number"),
+            "special_instructions": extracted.get("special_instructions"),
             "items": valid_items,
             "operations": extracted.get("operations", []),
             "status": "pending",
@@ -1014,21 +1022,57 @@ class IntentRouter:
     def _missing_required_order_fields(
         card_data: Dict[str, Any], msg: NormalizedInboundMessage
     ) -> list[str]:
-        """Require operational details for Meta without changing legacy channels."""
+        """Require channel and business-specific operational details."""
         if msg.channel.value != "meta_whatsapp":
             return []
 
         missing = []
+        business_type = business_config_service.get_config(
+            msg.shop_id
+        ).business_type.value
         name = str(card_data.get("customer_name") or "").strip().lower()
         if name in IntentRouter._PLACEHOLDER_CUSTOMER_NAMES:
             missing.append("customer_name")
-        if not str(card_data.get("delivery_address") or "").strip():
-            missing.append("delivery_address")
-        if (
-            not card_data.get("delivery_time_normalized")
-            or float(card_data.get("delivery_time_confidence") or 0) < 0.8
-        ):
-            missing.append("delivery_time")
+
+        fulfillment = (
+            str(card_data.get("takeaway_delivery_dine_in") or "")
+            .strip()
+            .lower()
+            .replace("-", "_")
+            .replace(" ", "_")
+        )
+        if fulfillment in {"parcel", "pack", "take_away"}:
+            fulfillment = "takeaway"
+        elif fulfillment == "dinein":
+            fulfillment = "dine_in"
+
+        if business_type == "restaurant":
+            if fulfillment not in {"delivery", "takeaway", "dine_in"}:
+                missing.append("fulfillment_type")
+            elif fulfillment == "dine_in":
+                if not str(card_data.get("table_number") or "").strip():
+                    missing.append("table_number")
+            elif fulfillment == "delivery":
+                if not str(card_data.get("delivery_address") or "").strip():
+                    missing.append("delivery_address")
+                if (
+                    not card_data.get("delivery_time_normalized")
+                    or float(card_data.get("delivery_time_confidence") or 0) < 0.8
+                ):
+                    missing.append("delivery_time")
+            elif (
+                not card_data.get("delivery_time_normalized")
+                or float(card_data.get("delivery_time_confidence") or 0) < 0.8
+            ):
+                missing.append("delivery_time")
+        else:
+            if not str(card_data.get("delivery_address") or "").strip():
+                missing.append("delivery_address")
+            if (
+                not card_data.get("delivery_time_normalized")
+                or float(card_data.get("delivery_time_confidence") or 0) < 0.8
+            ):
+                missing.append("delivery_time")
         return missing
 
     @staticmethod
@@ -1039,6 +1083,10 @@ class IntentRouter:
             "delivery_time": (
                 "Delivery ka din aur time batayein, jaise kal 9:30 PM."
             ),
+            "fulfillment_type": (
+                "Order delivery, takeaway/parcel, ya dine-in ke liye hai?"
+            ),
+            "table_number": "Dine-in ke liye table number batayein.",
         }
         return prompts[field]
 
@@ -1137,8 +1185,14 @@ class IntentRouter:
         combined_msg = msg.model_copy(update={"raw_text": combined_text})
         IntentRouter._update_inbound_status(inbound_id, "extracting")
         try:
+            business_context = business_config_service.build_extraction_context(
+                msg.shop_id
+            )
             extracted = await asyncio.wait_for(
-                GeminiService.extract_order_details(combined_text),
+                GeminiService.extract_order_details(
+                    combined_text,
+                    business_context=business_context,
+                ),
                 timeout=EXTRACTION_TIMEOUT_SECONDS,
             )
             if current_field == "customer_name":
@@ -1167,6 +1221,18 @@ class IntentRouter:
                     extracted["delivery_time_normalized"] = reply_time["normalized"]
                     extracted["delivery_time_confidence"] = reply_time["confidence"]
                     extracted["delivery_time_warning"] = reply_time.get("warning")
+            elif current_field == "fulfillment_type":
+                reply = msg.raw_text.strip().lower()
+                if any(word in reply for word in ("dine-in", "dine in", "table")):
+                    extracted["takeaway_delivery_dine_in"] = "dine_in"
+                elif any(word in reply for word in ("takeaway", "take away", "parcel", "pack")):
+                    extracted["takeaway_delivery_dine_in"] = "takeaway"
+                elif any(word in reply for word in ("delivery", "deliver", "bhej", "pahuncha")):
+                    extracted["takeaway_delivery_dine_in"] = "delivery"
+            elif current_field == "table_number":
+                table_match = re.search(r"\b(?:table\s*)?(\d{1,3})\b", msg.raw_text, re.I)
+                if table_match:
+                    extracted["table_number"] = table_match.group(1)
             card_data = IntentRouter._build_card_data(
                 extracted, combined_msg, inbound_id
             )
@@ -1559,10 +1625,9 @@ class IntentRouter:
     def _get_business_context(
         shop_id: str, metadata: Dict[str, Any]
     ) -> Dict[str, Any]:
-        configured = metadata.get("business_context")
-        if isinstance(configured, dict):
-            return configured
-        context: Dict[str, Any] = {"business_type": "general business"}
+        # Provider metadata is intentionally not trusted as prompt configuration.
+        context = business_config_service.build_extraction_context(shop_id)
+
         try:
             shop = (
                 supabase_client.table("shops")

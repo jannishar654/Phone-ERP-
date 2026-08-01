@@ -24,6 +24,11 @@ def normalize_amendment_items(
         unit_price = float(match.get("unit_price") or 0) if matched else 0.0
         unit = str(payload.get("unit") or match.get("unit") or "").strip()
         display_name = match.get("display_name") or raw_name
+        restaurant_metadata = {
+            key: payload.get(key)
+            for key in ("size_variant", "add_ons", "spice_level", "veg_non_veg")
+            if payload.get(key) not in (None, "", [])
+        }
         normalized.append(
             {
                 "name": display_name,
@@ -35,8 +40,10 @@ def normalize_amendment_items(
                 "price_status": None if matched else "Pending Price Verification",
                 "resolution_status": match.get("resolution_status") or "unmatched",
                 "possible_matches": match.get("possible_matches") or [],
+                **restaurant_metadata,
                 "metadata": {
                     "catalog_item_id": match.get("catalog_item_id"),
+                    **restaurant_metadata,
                 },
             }
         )

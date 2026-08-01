@@ -1,5 +1,14 @@
 import { supabase } from './supabase/client';
 
+export type BusinessType =
+  | 'grocery'
+  | 'wholesale'
+  | 'restaurant'
+  | 'pharmacy'
+  | 'bakery'
+  | 'hardware'
+  | 'general';
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -29,6 +38,23 @@ export async function registerStaff(inviteCode: string): Promise<any> {
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.detail || 'Failed to register staff');
+  }
+  return res.json();
+}
+
+export async function registerOwner(
+  businessType: BusinessType,
+  shopName: string = 'Default Shop',
+): Promise<any> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/auth/register-owner`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ business_type: businessType, shop_name: shopName })
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to register owner');
   }
   return res.json();
 }
