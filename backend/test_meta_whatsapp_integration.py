@@ -211,7 +211,7 @@ async def test_text_message_uses_normalized_intent_pipeline():
             meta_whatsapp_service,
             "resolve_connection",
             return_value={
-                "shop_id": "shop-1",
+                "shop_id": "restaurant-shop",
                 "waba_id": "waba-1",
                 "phone_number_id": "phone-1",
             },
@@ -237,16 +237,24 @@ async def test_text_message_uses_normalized_intent_pipeline():
                 "id": "wamid-1",
                 "from": "919012345678",
                 "type": "text",
-                "text": {"body": "kal 5 kilo aata bhej dena"},
+                "text": {
+                    "body": (
+                        "2 paneer tikka less spicy delivery kal 8 baje "
+                        "Batla House bhej dena"
+                    )
+                },
             },
             {"wa_id": "919012345678", "profile": {"name": "Danish"}},
         )
 
     inbound = process_inbound.await_args.args[0]
-    assert inbound.shop_id == "shop-1"
+    assert inbound.shop_id == "restaurant-shop"
     assert inbound.channel.value == "meta_whatsapp"
     assert inbound.provider_message_id == "wamid-1"
-    assert inbound.raw_text == "kal 5 kilo aata bhej dena"
+    assert inbound.raw_text == (
+        "2 paneer tikka less spicy delivery kal 8 baje "
+        "Batla House bhej dena"
+    )
     send_text.assert_awaited_once_with(
         "919012345678", "Order received", "phone-1"
     )

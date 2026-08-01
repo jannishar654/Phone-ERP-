@@ -26,6 +26,10 @@ CLASSIFICATION_TIMEOUT_SECONDS = 5
 EXTRACTION_TIMEOUT_SECONDS = 8
 
 
+class CatalogItemUnavailableError(ValueError):
+    """Raised when a menu-backed business receives an unavailable item."""
+
+
 class IntentRouter:
     _PLACEHOLDER_CUSTOMER_NAMES = {
         "",
@@ -748,7 +752,9 @@ class IntentRouter:
                 GeminiService.extract_order_details(msg.raw_text, business_context=context),
                 timeout=EXTRACTION_TIMEOUT_SECONDS,
             )
-            card_data = IntentRouter._build_card_data(extracted, msg, inbound_id)
+            card_data = IntentRouter._build_card_data(
+                extracted, msg, inbound_id, context
+            )
             missing_fields = IntentRouter._missing_required_order_fields(
                 card_data, msg
             )
@@ -781,6 +787,19 @@ class IntentRouter:
                     msg.shop_id,
                     msg.customer_id,
                     msg.channel.value,
+                ),
+            }
+        except CatalogItemUnavailableError:
+            IntentRouter._update_inbound_status(
+                inbound_id,
+                "needs_review",
+                last_error="CatalogItemUnavailableError",
+            )
+            return {
+                "status": "needs_review",
+                "reply_message": (
+                    "Ye item restaurant ke current menu me nahi mila. "
+                    "Please menu se available item choose karke order dobara bhejein."
                 ),
             }
         except ValueError as exc:
@@ -840,7 +859,9 @@ class IntentRouter:
                 GeminiService.extract_order_details(msg.raw_text, business_context=context),
                 timeout=EXTRACTION_TIMEOUT_SECONDS,
             )
-            card_data = IntentRouter._build_card_data(extracted, msg, inbound_id)
+            card_data = IntentRouter._build_card_data(
+                extracted, msg, inbound_id, context
+            )
             missing_fields = IntentRouter._missing_required_order_fields(
                 card_data, msg
             )
@@ -882,6 +903,19 @@ class IntentRouter:
                     "Reply 'yes' to confirm or 'no' to cancel."
                 ),
             }
+        except CatalogItemUnavailableError:
+            IntentRouter._update_inbound_status(
+                inbound_id,
+                "needs_review",
+                last_error="CatalogItemUnavailableError",
+            )
+            return {
+                "status": "needs_review",
+                "reply_message": (
+                    "Ye item restaurant ke current menu me nahi mila. "
+                    "Please menu se available item choose karke order dobara bhejein."
+                ),
+            }
         except ValueError as exc:
             IntentRouter._update_inbound_status(
                 inbound_id, "needs_review", last_error=type(exc).__name__
@@ -912,6 +946,7 @@ class IntentRouter:
         extracted: Dict[str, Any],
         msg: NormalizedInboundMessage,
         inbound_id: str,
+        business_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         if not extracted or not extracted.get("items"):
             raise ValueError("No order items were extracted")
@@ -952,15 +987,35 @@ class IntentRouter:
         from app.routes.endpoints import _safe_items_from_extracted
 
         safe_items = _safe_items_from_extracted(extracted, msg.shop_id)
+        context = business_context or {}
+        enforce_restaurant_menu = (
+            str(context.get("business_type") or "").lower() == "restaurant"
+            and bool(context.get("offerings"))
+        )
+        unavailable_items = []
         valid_items = []
         for item in safe_items:
             item_data = item.model_dump()
+            if (
+                enforce_restaurant_menu
+                and item_data.get("resolution_status")
+                not in {"matched", "suggested"}
+            ):
+                unavailable_items.append(
+                    item_data.get("raw_name") or item_data.get("name")
+                )
+                continue
             try:
                 quantity = float(item_data.get("quantity") or 0)
             except (TypeError, ValueError):
                 quantity = 0
             if quantity > 0 and item_data.get("name"):
                 valid_items.append(item_data)
+        if unavailable_items:
+            raise CatalogItemUnavailableError(
+                "Unavailable restaurant menu items: "
+                + ", ".join(str(name) for name in unavailable_items if name)
+            )
         if not valid_items:
             raise ValueError("No valid catalog items with positive quantities")
 
@@ -1185,8 +1240,8 @@ class IntentRouter:
         combined_msg = msg.model_copy(update={"raw_text": combined_text})
         IntentRouter._update_inbound_status(inbound_id, "extracting")
         try:
-            business_context = business_config_service.build_extraction_context(
-                msg.shop_id
+            business_context = IntentRouter._get_business_context(
+                msg.shop_id, msg.metadata
             )
             extracted = await asyncio.wait_for(
                 GeminiService.extract_order_details(
@@ -1234,7 +1289,7 @@ class IntentRouter:
                 if table_match:
                     extracted["table_number"] = table_match.group(1)
             card_data = IntentRouter._build_card_data(
-                extracted, combined_msg, inbound_id
+                extracted, combined_msg, inbound_id, business_context
             )
             still_missing = IntentRouter._missing_required_order_fields(
                 card_data, combined_msg
@@ -1315,6 +1370,24 @@ class IntentRouter:
                 "status": "processed",
                 "reply_message": IntentRouter._order_received_reply(
                     msg.shop_id, msg.customer_id, msg.channel.value
+                ),
+            }
+        except CatalogItemUnavailableError:
+            IntentRouter._conditional_conversation_update(
+                conversation["id"],
+                expected_state="creating_order",
+                updates={"state": "collecting_details"},
+            )
+            IntentRouter._update_inbound_status(
+                inbound_id,
+                "needs_review",
+                last_error="CatalogItemUnavailableError",
+            )
+            return {
+                "status": "needs_review",
+                "reply_message": (
+                    "Ye item restaurant ke current menu me nahi mila. "
+                    "Please menu se available item choose karke order dobara bhejein."
                 ),
             }
         except ValueError:
@@ -1641,7 +1714,8 @@ class IntentRouter:
                 supabase_client.table("catalog_items")
                 .select("canonical_name, display_name, category")
                 .eq("shop_id", shop_id)
-                .eq("is_active", True)
+                .eq("active", True)
+                .eq("in_stock", True)
                 .limit(50)
                 .execute()
             )

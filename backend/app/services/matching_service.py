@@ -19,6 +19,11 @@ class MatchingService:
         try:
             from app.services.catalog_service import catalog_service
             items = catalog_service.get_items_by_shop(shop_id)
+            items = [
+                item
+                for item in items
+                if item.get("active", True) and item.get("in_stock", True)
+            ]
             if not items:
                 return self._unmatched(raw_name)
         except Exception as e:

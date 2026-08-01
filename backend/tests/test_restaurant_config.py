@@ -9,8 +9,17 @@ from app.config.business_defaults import (
 )
 from app.schemas.action_card import ActionCard, Item
 from app.schemas.business_config import BusinessType
-from app.services.business_config_service import BusinessConfigService
+from app.schemas.inbound import NormalizedInboundMessage
+from app.services.business_config_service import (
+    BusinessConfigService,
+    business_config_service,
+)
 from app.services.gemini import GeminiService
+from app.services.intent_router import (
+    CatalogItemUnavailableError,
+    IntentRouter,
+)
+from app.services.matching_service import matching_service
 
 
 def make_query(data=None):
@@ -90,6 +99,73 @@ class TestRestaurantDefaults:
 
 class TestRestaurantConfigIntegration:
 
+    def test_out_of_stock_restaurant_item_is_not_orderable(self):
+        with patch(
+            "app.services.catalog_service.catalog_service.get_items_by_shop",
+            return_value=[
+                {
+                    "id": "dish-1",
+                    "canonical_name": "paneer_tikka",
+                    "display_name": "Paneer Tikka",
+                    "base_price": 250,
+                    "unit": "plate",
+                    "active": True,
+                    "in_stock": False,
+                    "aliases": ["paneer tikka"],
+                }
+            ],
+        ):
+            result = matching_service.match_product(
+                "paneer tikka", "restaurant-shop"
+            )
+
+        assert result["resolution_status"] == "unmatched"
+
+    def test_restaurant_context_loads_active_in_stock_menu_items(self):
+        shop_query = MagicMock()
+        shop_query.select.return_value = shop_query
+        shop_query.eq.return_value = shop_query
+        shop_query.execute.return_value = MagicMock(
+            data=[{"name": "PhoneERP Test Kitchen"}]
+        )
+
+        catalog_query = MagicMock()
+        catalog_query.select.return_value = catalog_query
+        catalog_query.eq.return_value = catalog_query
+        catalog_query.limit.return_value = catalog_query
+        catalog_query.execute.return_value = MagicMock(
+            data=[
+                {
+                    "canonical_name": "paneer_tikka",
+                    "display_name": "Paneer Tikka",
+                    "category": "Starters",
+                }
+            ]
+        )
+
+        database = MagicMock()
+        database.table.side_effect = lambda table: (
+            shop_query if table == "shops" else catalog_query
+        )
+        with (
+            patch(
+                "app.services.intent_router.supabase_client", database
+            ),
+            patch.object(
+                business_config_service,
+                "build_extraction_context",
+                return_value={"business_type": "restaurant"},
+            ),
+        ):
+            context = IntentRouter._get_business_context(
+                "restaurant-shop", {}
+            )
+
+        assert context["offerings"] == ["Paneer Tikka"]
+        catalog_query.eq.assert_any_call("shop_id", "restaurant-shop")
+        catalog_query.eq.assert_any_call("active", True)
+        catalog_query.eq.assert_any_call("in_stock", True)
+
     def test_build_extraction_context_contains_restaurant_fields(self):
         from app.schemas.business_config import BusinessConfiguration, BusinessType
         service = BusinessConfigService()
@@ -145,6 +221,183 @@ class TestRestaurantConfigIntegration:
         assert "size_variant" in rules
         assert "spice_level" in rules
         assert "takeaway_delivery_dine_in" in rules
+
+    def test_restaurant_menu_rejects_an_unmatched_item(self):
+        message = NormalizedInboundMessage(
+            shop_id="restaurant-shop",
+            customer_id="customer-1",
+            channel="meta_whatsapp",
+            provider_message_id="wamid-menu-reject",
+            message_type="text",
+            raw_text="5 kilo aata bhej dena",
+        )
+        unmatched = Item(
+            name="aata",
+            raw_name="aata",
+            quantity=5,
+            unit="kg",
+            resolution_status="unmatched",
+        )
+
+        with (
+            patch.object(
+                IntentRouter,
+                "_get_customer",
+                return_value={
+                    "name": "Danish",
+                    "phone": "919000000000",
+                    "default_address": "Batla House",
+                },
+            ),
+            patch(
+                "app.routes.endpoints._safe_items_from_extracted",
+                return_value=[unmatched],
+            ),
+        ):
+            with pytest.raises(CatalogItemUnavailableError):
+                IntentRouter._build_card_data(
+                    {
+                        "customer_name": "Danish",
+                        "items": [
+                            {"name": "aata", "quantity": 5, "unit": "kg"}
+                        ],
+                    },
+                    message,
+                    "inbound-menu-reject",
+                    {
+                        "business_type": "restaurant",
+                        "offerings": ["Paneer Tikka", "Veg Thali"],
+                    },
+                )
+
+    def test_restaurant_menu_accepts_a_matched_dish(self):
+        message = NormalizedInboundMessage(
+            shop_id="restaurant-shop",
+            customer_id="customer-1",
+            channel="meta_whatsapp",
+            provider_message_id="wamid-menu-accept",
+            message_type="text",
+            raw_text=(
+                "2 paneer tikka less spicy delivery kal 8 baje "
+                "Batla House bhej dena"
+            ),
+        )
+        matched = Item(
+            name="Paneer Tikka",
+            raw_name="paneer tikka",
+            quantity=2,
+            unit="plate",
+            price=250,
+            resolution_status="matched",
+            spice_level="less spicy",
+            veg_non_veg="Veg",
+        )
+
+        with (
+            patch.object(
+                IntentRouter,
+                "_get_customer",
+                return_value={
+                    "name": "Danish",
+                    "phone": "919000000000",
+                    "default_address": "Batla House",
+                },
+            ),
+            patch(
+                "app.routes.endpoints._safe_items_from_extracted",
+                return_value=[matched],
+            ),
+            patch(
+                "app.services.time_parser.parse_delivery_time",
+                return_value={
+                    "normalized": "2026-08-03 8:00 PM",
+                    "confidence": 0.95,
+                    "warning": None,
+                },
+            ),
+        ):
+            card = IntentRouter._build_card_data(
+                {
+                    "customer_name": "Danish",
+                    "delivery_address": "Batla House",
+                    "delivery_time_raw": "kal 8 baje",
+                    "takeaway_delivery_dine_in": "delivery",
+                    "items": [
+                        {
+                            "name": "paneer tikka",
+                            "quantity": 2,
+                            "unit": "plate",
+                            "spice_level": "less spicy",
+                        }
+                    ],
+                },
+                message,
+                "inbound-menu-accept",
+                {
+                    "business_type": "restaurant",
+                    "offerings": ["Paneer Tikka", "Veg Thali"],
+                },
+            )
+
+        assert card["shop_id"] == "restaurant-shop"
+        assert card["items"][0]["name"] == "Paneer Tikka"
+        assert card["items"][0]["spice_level"] == "less spicy"
+
+    def test_grocery_context_stays_backward_compatible_with_unmatched_item(self):
+        message = NormalizedInboundMessage(
+            shop_id="grocery-shop",
+            customer_id="customer-1",
+            channel="meta_whatsapp",
+            provider_message_id="wamid-grocery-compat",
+            message_type="text",
+            raw_text="5 kilo aata kal 9 baje bhej dena",
+        )
+        unmatched = Item(
+            name="aata",
+            raw_name="aata",
+            quantity=5,
+            unit="kg",
+            resolution_status="unmatched",
+        )
+
+        with (
+            patch.object(
+                IntentRouter,
+                "_get_customer",
+                return_value={
+                    "name": "Danish",
+                    "phone": "919000000000",
+                    "default_address": "Batla House",
+                },
+            ),
+            patch(
+                "app.routes.endpoints._safe_items_from_extracted",
+                return_value=[unmatched],
+            ),
+            patch(
+                "app.services.time_parser.parse_delivery_time",
+                return_value={
+                    "normalized": "2026-08-03 9:00 PM",
+                    "confidence": 0.95,
+                    "warning": None,
+                },
+            ),
+        ):
+            card = IntentRouter._build_card_data(
+                {
+                    "customer_name": "Danish",
+                    "delivery_address": "Batla House",
+                    "delivery_time_raw": "kal 9 baje",
+                    "items": [
+                        {"name": "aata", "quantity": 5, "unit": "kg"}
+                    ],
+                },
+                message,
+                "inbound-grocery-compat",
+                {"business_type": "grocery", "offerings": []},
+            )
+
+        assert card["items"][0]["name"] == "aata"
 
 
 class TestRestaurantActionCardSchema:

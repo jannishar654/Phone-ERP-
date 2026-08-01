@@ -322,7 +322,7 @@ async def test_meta_short_kl_time_reply_overrides_llm_that_drops_the_day():
     message = make_meta_msg("meta-short-time", "kl 5:30 pm")
     captured = {}
 
-    def build_card(extracted, _message, _inbound_id):
+    def build_card(extracted, _message, _inbound_id, _business_context=None):
         captured.update(extracted)
         return {
             "items": [{"name": "Aata", "quantity": 5, "unit": "kg"}],
@@ -766,7 +766,7 @@ async def test_cross_shop_isolation(mock_supabase, mock_gemini, mock_action_card
         return_value={"items": [{"name": "rice", "quantity": 1, "unit": "kg"}]}
     )
 
-    def build_card(_extracted, msg, _inbound_id):
+    def build_card(_extracted, msg, _inbound_id, _business_context=None):
         return {
             "shop_id": msg.shop_id,
             "customer_id": msg.customer_id,
