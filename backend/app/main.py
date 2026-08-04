@@ -75,6 +75,7 @@ from app.routes.customer import router as customer_router
 from app.routes.customer_requests import router as customer_requests_router
 from app.routes.owner_notifications import router as owner_notifications_router
 from app.routes.meta_whatsapp import router as meta_whatsapp_router
+from app.routes.whatsapp_integrations import router as whatsapp_integrations_router
 
 # Register routes
 app.include_router(api_router)
@@ -89,6 +90,7 @@ app.include_router(customer_router)
 app.include_router(customer_requests_router)
 app.include_router(owner_notifications_router)
 app.include_router(meta_whatsapp_router)
+app.include_router(whatsapp_integrations_router)
 
 @app.get("/")
 def read_root():

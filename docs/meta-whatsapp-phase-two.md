@@ -41,11 +41,28 @@ Before public onboarding:
 6. Billing ownership is decided: customer-paid directly to Meta or PhoneERP
    invoicing customers. Do not mix models silently.
 
-## Backend additions
+## Implemented foundation
+
+PhoneERP now includes:
+
+- owner-only onboarding, callback, status, health-check, and disconnect APIs
+- one-time, hashed signup state with atomic consumption
+- server-side Meta code exchange and granted-asset verification
+- one phone-number-to-one-shop enforcement
+- AES-256-GCM encrypted per-business credentials in a service-role-only table
+- WABA webhook subscription and activation only after a Graph API health check
+- Cloud API phone registration with a one-time six-digit PIN that is not stored
+- an owner settings page using Meta's JavaScript SDK
+- reconnect state, safe audit logs, and a per-shop pilot allowlist
+
+The feature defaults to off. Existing production connections continue to use
+their current environment-token references and webhook pipeline.
+
+## Backend design
 
 ### Onboarding sessions
 
-Create a short-lived `whatsapp_onboarding_sessions` table containing:
+The short-lived `whatsapp_onboarding_sessions` table contains:
 
 - random state nonce (store only a hash)
 - authenticated owner user ID and shop ID
@@ -58,7 +75,7 @@ consume the state before exchanging Meta's authorization code.
 
 ### Connection lifecycle
 
-Extend `whatsapp_connections` with the minimum onboarding metadata:
+`whatsapp_connections` contains the minimum onboarding metadata:
 
 - Meta business ID
 - WABA ID
@@ -72,19 +89,21 @@ Keep the existing unique `(provider, phone_number_id)` constraint. Add an
 appropriate uniqueness rule for active WABA/phone ownership after validating
 Meta's current coexistence behavior.
 
-Access tokens must live in a managed server-side secret store or encrypted
-credential service. Supabase rows store only an opaque `token_reference`.
+Access tokens are encrypted using AES-256-GCM. The owner-readable connection
+row stores only an opaque `db:<connection-id>` reference; encrypted values live
+in a separate service-role-only table. The master key exists only in Render.
 
 ### API endpoints
 
-Implement owner-only endpoints:
+Implemented owner-only endpoints:
 
 - `POST /integrations/whatsapp/onboarding-session`
 - `POST /integrations/whatsapp/callback`
 - `GET /integrations/whatsapp/status`
 - `POST /integrations/whatsapp/health-check`
-- `POST /integrations/whatsapp/reconnect`
 - `DELETE /integrations/whatsapp/connection`
+
+Reconnect starts a fresh onboarding session through the same Connect action.
 
 The callback must:
 
@@ -100,9 +119,9 @@ The callback must:
 If any step fails, leave a recoverable pending/error record and never partially
 activate tenant routing.
 
-## Frontend additions
+## Frontend
 
-Build `Settings -> Integrations -> WhatsApp` for owners only. It should show:
+`Settings -> Integrations -> WhatsApp` is owner-only and shows:
 
 - Not connected / Connecting / Active / Reconnect required / Error
 - display phone number and verified business name
@@ -147,6 +166,48 @@ region, account state, and onboarding flow. During signup:
 4. Complete App Review/Advanced Access and operational support readiness.
 5. Enable self-service Embedded Signup gradually behind a feature flag.
 
+Use both rollout controls in Render:
+
+```text
+META_WHATSAPP_EMBEDDED_SIGNUP_ENABLED=true
+META_WHATSAPP_EMBEDDED_SIGNUP_ALLOWED_SHOP_IDS=<pilot-shop-uuid>
+```
+
+Add comma-separated shop UUIDs as pilots are approved. An empty allowlist means
+no business can start signup. Use `*` only after public Meta approval and
+operational readiness.
+
+## Deployment runbook
+
+1. In Meta Developer Dashboard, configure WhatsApp Embedded Signup and record
+   its configuration ID. Keep the PhoneERP callback domain and privacy/data
+   deletion URLs current.
+2. Apply `022_meta_whatsapp_cloud_api.sql` and
+   `023_meta_whatsapp_phase_one_hardening.sql` if they are not already present,
+   then apply `025_meta_whatsapp_embedded_signup.sql` in Supabase.
+3. Generate a 32-byte encryption key locally and store it only in Render:
+
+   ```bash
+   python3 -c "import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
+   ```
+
+4. Set the new Render variables from `backend/.env.example`, initially with the
+   feature disabled. Do not put the app secret or encryption key in Vercel.
+5. Deploy the backend and frontend. Verify the existing production number still
+   receives and replies to a grocery order.
+6. Add only the internal test shop UUID to the allowlist, enable the feature,
+   and redeploy Render.
+7. Sign in as that shop owner, open the WhatsApp integration page, and complete
+   Meta signup with a separate test WABA/number. Enter the existing two-step
+   PIN for an already configured number, or choose a new PIN for a new number.
+8. Run Test connection, then verify inbound text, Hinglish order, voice note,
+   duplicate delivery, status callbacks, customer portal, and disconnect.
+9. Check that the same phone cannot be connected to a second PhoneERP shop and
+   that a non-allowlisted shop cannot start signup.
+
+No new secret is required in Vercel. Vercel continues to use only the public
+backend URL and existing Supabase public values.
+
 Release gates for each pilot business:
 
 - tenant routing test proves no cross-shop access
@@ -165,4 +226,3 @@ business workflows against `shop_id`. The Meta integration owns connection
 authorization, WABA subscription, credentials, and phone-number routing. Both
 areas meet only at the existing shop record and `whatsapp_connections`; neither
 team should fork or replace the intent router and Action Card pipeline.
-

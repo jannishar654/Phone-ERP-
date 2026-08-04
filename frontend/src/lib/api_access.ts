@@ -11,6 +11,95 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   return {};
 }
 
+export interface WhatsAppConnectionStatus {
+  embedded_signup_enabled: boolean;
+  configured: boolean;
+  status: 'not_connected' | 'pending' | 'active' | 'reconnect_required' | 'disconnected' | 'error';
+  display_phone_number?: string | null;
+  verified_name?: string | null;
+  waba_id?: string | null;
+  phone_number_id?: string | null;
+  last_webhook_at?: string | null;
+  last_health_check_at?: string | null;
+  last_error?: string | null;
+  connected_at?: string | null;
+  token_expires_at?: string | null;
+}
+
+export interface WhatsAppOnboardingSession {
+  state: string;
+  app_id: string;
+  configuration_id: string;
+  graph_api_version: string;
+  expires_in_seconds: number;
+}
+
+async function integrationError(res: Response, fallback: string): Promise<Error> {
+  const payload = await res.json().catch(() => ({}));
+  return new Error(payload.detail || fallback);
+}
+
+export async function getWhatsAppConnectionStatus(): Promise<WhatsAppConnectionStatus> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/integrations/whatsapp/status`, {
+    headers,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw await integrationError(res, 'Failed to load WhatsApp connection');
+  return res.json();
+}
+
+export async function createWhatsAppOnboardingSession(): Promise<WhatsAppOnboardingSession> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/integrations/whatsapp/onboarding-session`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw await integrationError(res, 'Failed to start WhatsApp connection');
+  return res.json();
+}
+
+export async function completeWhatsAppOnboarding(data: {
+  state: string;
+  code: string;
+  waba_id?: string;
+  phone_number_id?: string;
+  registration_pin: string;
+}): Promise<WhatsAppConnectionStatus> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/integrations/whatsapp/callback`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw await integrationError(res, 'Failed to complete WhatsApp connection');
+  return res.json();
+}
+
+export async function checkWhatsAppConnection(): Promise<{
+  healthy: boolean;
+  status: string;
+  display_phone_number?: string;
+  verified_name?: string;
+}> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/integrations/whatsapp/health-check`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw await integrationError(res, 'WhatsApp connection check failed');
+  return res.json();
+}
+
+export async function disconnectWhatsApp(): Promise<void> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/integrations/whatsapp/connection`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!res.ok) throw await integrationError(res, 'Failed to disconnect WhatsApp');
+}
+
 // Auth API
 export async function getMe(): Promise<any> {
   const headers = await getAuthHeaders();

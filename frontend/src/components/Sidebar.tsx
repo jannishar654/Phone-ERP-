@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { authClient } from '@/lib/supabase/client';
-import { Inbox } from 'lucide-react';
+import { Inbox, MessageCircle } from 'lucide-react';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -27,6 +27,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { name: 'Action Cards', href: '/action-card', icon: CardsIcon },
     { name: 'Customer Requests', href: '/customer-requests', icon: Inbox },
     { name: 'Catalog', href: '/catalog', icon: CatalogIcon },
+    { name: 'WhatsApp', href: '/settings/integrations/whatsapp', icon: MessageCircle },
   ];
 
   return (
