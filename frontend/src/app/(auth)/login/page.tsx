@@ -55,12 +55,18 @@ function LoginContent() {
               redirectTo = registered.role === 'delivery'
                 ? '/staff/delivery'
                 : '/staff/packing';
-            } else {
+            } else if (pending?.role === 'owner' || user.registrationRole === 'owner') {
               await registerOwner(
                 pending?.businessType || (user.businessType as BusinessType) || 'grocery',
                 pending?.businessName || user.businessName || 'Default Shop',
               );
               redirectTo = '/dashboard';
+            } else {
+              throw new Error(
+                user.registrationRole === 'staff'
+                  ? 'Staff setup is incomplete. Please sign up again using a valid invite code.'
+                  : 'Account setup is incomplete. Please return to sign up and choose Owner or Staff.',
+              );
             }
             window.localStorage.removeItem('phoneerp-pending-registration');
           }
@@ -140,7 +146,7 @@ function LoginContent() {
         </form>
 
         <div className="mt-6 text-center text-xs text-slate-500 font-medium">
-          Don't have an account?{' '}
+          Don&apos;t have an account?{' '}
           <Link href="/signup" className="text-indigo-600 hover:text-indigo-850 font-bold">
             Create an account
           </Link>

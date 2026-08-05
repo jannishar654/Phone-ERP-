@@ -74,8 +74,14 @@ export default function LandingPage() {
       </main>
 
       {/* Footer */}
-      <footer className="max-w-7xl mx-auto w-full px-6 lg:px-8 py-8 border-t border-slate-100 text-center text-xs text-slate-450 font-medium">
-        &copy; {new Date().getFullYear()} PhoneERP Inc. All rights reserved.
+      <footer className="max-w-7xl mx-auto flex w-full flex-col items-center justify-between gap-4 border-t border-slate-100 px-6 py-8 text-xs font-medium text-slate-500 sm:flex-row lg:px-8">
+        <span>&copy; {new Date().getFullYear()} PhoneERP project team.</span>
+        <nav className="flex flex-wrap justify-center gap-x-4 gap-y-2" aria-label="Legal and support">
+          <Link href="/privacy" className="hover:text-indigo-700">Privacy</Link>
+          <Link href="/terms" className="hover:text-indigo-700">Terms</Link>
+          <Link href="/data-deletion" className="hover:text-indigo-700">Data deletion</Link>
+          <Link href="/support" className="hover:text-indigo-700">Support</Link>
+        </nav>
       </footer>
     </div>
   );

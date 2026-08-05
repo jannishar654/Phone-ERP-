@@ -66,6 +66,18 @@ class Settings(BaseSettings):
     META_WHATSAPP_WORKER_BATCH_SIZE: int = 10
     META_WHATSAPP_WORKER_POLL_SECONDS: float = 2.0
     META_WHATSAPP_RETRY_BASE_SECONDS: int = 30
+    # Multi-business Embedded Signup. Keep disabled until Meta App Review and
+    # the database migration are complete.
+    META_WHATSAPP_EMBEDDED_SIGNUP_ENABLED: bool = False
+    # Comma-separated shop UUIDs allowed into the supervised pilot. Use "*"
+    # only after Meta approval when self-service onboarding is ready.
+    META_WHATSAPP_EMBEDDED_SIGNUP_ALLOWED_SHOP_IDS: Union[List[str], str] = []
+    META_APP_ID: str = ""
+    META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID: str = ""
+    # URL-safe base64 encoded 32-byte AES key. This encrypts per-business
+    # credentials at rest and must exist only on the backend.
+    META_WHATSAPP_TOKEN_ENCRYPTION_KEY: str = ""
+    META_WHATSAPP_TOKEN_KEY_VERSION: int = 1
     
     # Public Bill Configuration
     FRONTEND_PUBLIC_BASE_URL: str = "http://localhost:3000"
@@ -77,6 +89,15 @@ class Settings(BaseSettings):
     def parse_cors_origins(cls, v: Any) -> List[str]:
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
+
+    @field_validator("META_WHATSAPP_EMBEDDED_SIGNUP_ALLOWED_SHOP_IDS", mode="before")
+    @classmethod
+    def parse_embedded_signup_shop_ids(cls, v: Any) -> List[str]:
+        if not v:
+            return []
+        if isinstance(v, str):
+            return [shop_id.strip() for shop_id in v.split(",") if shop_id.strip()]
         return v
 
     model_config = SettingsConfigDict(

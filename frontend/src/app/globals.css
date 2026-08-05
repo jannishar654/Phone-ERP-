@@ -31,3 +31,56 @@ body {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
 }
+
+.legal-content {
+  color: #334155;
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+.legal-content > * + * {
+  margin-top: 1rem;
+}
+
+.legal-content section {
+  margin-top: 2.25rem;
+}
+
+.legal-content h2 {
+  color: #0f172a;
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.legal-content section > * + * {
+  margin-top: 0.75rem;
+}
+
+.legal-content ul,
+.legal-content ol {
+  padding-left: 1.5rem;
+}
+
+.legal-content ul {
+  list-style: disc;
+}
+
+.legal-content ol {
+  list-style: decimal;
+}
+
+.legal-content li + li {
+  margin-top: 0.5rem;
+}
+
+.legal-content a {
+  color: #4338ca;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.legal-content strong {
+  color: #1e293b;
+}

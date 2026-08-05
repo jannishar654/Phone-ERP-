@@ -56,6 +56,7 @@ function SignupContent() {
         email,
         password,
         name,
+        role,
         role === 'owner' ? businessType : undefined,
         role === 'owner' ? businessName.trim() : undefined,
       );

@@ -14,7 +14,8 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   const [role, setRole] = useState<string | null>(null);
   const [isCheckingRole, setIsCheckingRole] = useState(true);
 
-  const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname.startsWith('/bill/') || pathname.startsWith('/customer/');
+  const publicRoutes = ['/privacy', '/terms', '/data-deletion', '/support'];
+  const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/signup' || publicRoutes.includes(pathname) || pathname.startsWith('/bill/') || pathname.startsWith('/customer/');
 
   useEffect(() => {
     authClient.getUser().then(setUser);

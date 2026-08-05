@@ -36,10 +36,39 @@ class MetaWhatsAppService:
     _TOKEN_REFERENCE_PATTERN = re.compile(
         r"^env:(META_WHATSAPP_ACCESS_TOKEN|META_WHATSAPP_TOKEN_[A-Z0-9_]+)$"
     )
+    _DATABASE_TOKEN_REFERENCE_PATTERN = re.compile(r"^db:([0-9a-fA-F-]{36})$")
 
     def _resolve_access_token(self, connection: Dict[str, Any]) -> Optional[str]:
         reference = str(connection.get("token_reference") or "").strip()
         if reference:
+            database_match = self._DATABASE_TOKEN_REFERENCE_PATTERN.fullmatch(reference)
+            if database_match:
+                connection_id = database_match.group(1)
+                if str(connection.get("id") or "") != connection_id or not supabase_client:
+                    logger.error("Meta connection has an invalid database credential reference")
+                    return None
+                try:
+                    credential_result = (
+                        supabase_client.table("whatsapp_connection_credentials")
+                        .select("encrypted_token,token_nonce,key_version")
+                        .eq("connection_id", connection_id)
+                        .limit(1)
+                        .execute()
+                    )
+                    if not credential_result.data:
+                        return None
+                    from app.services.credential_cipher import credential_cipher
+
+                    return credential_cipher.decrypt(
+                        connection_id, credential_result.data[0]
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Meta credential resolution failed connection_id=%s error_type=%s",
+                        connection_id,
+                        type(exc).__name__,
+                    )
+                    return None
             match = self._TOKEN_REFERENCE_PATTERN.fullmatch(reference)
             if not match:
                 logger.error("Meta connection has an invalid credential reference")

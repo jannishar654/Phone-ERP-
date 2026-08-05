@@ -39,6 +39,7 @@ function eraseCookie(name: string) {
 export interface User {
   email: string;
   name: string;
+  registrationRole?: 'owner' | 'staff';
   businessType?: string;
   businessName?: string;
 }
@@ -51,10 +52,10 @@ const mockSupabaseAuth = {
     setCookie('phoneerp-session', JSON.stringify(userSession), 1);
     return { user: userSession, error: null };
   },
-  async signUp(email: string, password: string, name: string, businessType?: string, businessName?: string): Promise<{ user: User | null; error: string | null; hasSession: boolean }> {
+  async signUp(email: string, password: string, name: string, registrationRole: 'owner' | 'staff', businessType?: string, businessName?: string): Promise<{ user: User | null; error: string | null; hasSession: boolean }> {
     if (password.length < 6) return { user: null, error: 'Password must be at least 6 characters.', hasSession: false };
     if (!name.trim()) return { user: null, error: 'Name cannot be empty.', hasSession: false };
-    const userSession = { email, name: name.trim(), businessType, businessName };
+    const userSession = { email, name: name.trim(), registrationRole, businessType, businessName };
     setCookie('phoneerp-session', JSON.stringify(userSession), 1);
     return { user: userSession, error: null, hasSession: true };
   },
@@ -81,6 +82,7 @@ export const authClient = {
       const userSession = {
         email: data.user.email || '',
         name: data.user.user_metadata?.name || 'User',
+        registrationRole: data.user.user_metadata?.registration_role,
         businessType: data.user.user_metadata?.business_type,
         businessName: data.user.user_metadata?.business_name,
       };
@@ -89,17 +91,18 @@ export const authClient = {
     }
     return mockSupabaseAuth.signIn(email, password);
   },
-  async signUp(email: string, password: string, name: string, businessType?: string, businessName?: string) {
+  async signUp(email: string, password: string, name: string, registrationRole: 'owner' | 'staff', businessType?: string, businessName?: string) {
     if (supabase) {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { name, business_type: businessType, business_name: businessName } },
+        options: { data: { name, registration_role: registrationRole, business_type: businessType, business_name: businessName } },
       });
       if (error) return { user: null, error: error.message, hasSession: false };
       const userSession = {
         email: data.user?.email || '',
         name,
+        registrationRole,
         businessType,
         businessName,
       };
@@ -108,7 +111,7 @@ export const authClient = {
       }
       return { user: userSession, error: null, hasSession: Boolean(data.session) };
     }
-    return mockSupabaseAuth.signUp(email, password, name, businessType, businessName);
+    return mockSupabaseAuth.signUp(email, password, name, registrationRole, businessType, businessName);
   },
   async signOut() {
     if (supabase) {
@@ -123,7 +126,13 @@ export const authClient = {
     if (supabase) {
       const { data } = await supabase.auth.getUser();
       if (data.user) {
-        return { email: data.user.email || '', name: data.user.user_metadata?.name || 'User' };
+        return {
+          email: data.user.email || '',
+          name: data.user.user_metadata?.name || 'User',
+          registrationRole: data.user.user_metadata?.registration_role,
+          businessType: data.user.user_metadata?.business_type,
+          businessName: data.user.user_metadata?.business_name,
+        };
       }
       return null;
     }
