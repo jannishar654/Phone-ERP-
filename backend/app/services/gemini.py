@@ -1035,8 +1035,10 @@ Return only the transcript text.
         unit_tokens = (
             r"(?:kg|kgs|kilo|kilogram|g|gm|gram|packet|packets|pack|peti|"
             r"carton|cartons|box|boxes|litre|litres|liter|liters|l|piece|"
-            r"pieces|pcs|bag|bags|tin|tins|bottle|bottles|bora|केजी|किलो|"
-            r"किलोग्राम|ग्राम|लीटर|मिलीलीटर|पैकेट|पेटी|बोरा)"
+            r"pieces|pcs|bag|bags|tin|tins|bottle|bottles|bora|plate|plates|"
+            r"portion|portions|serving|servings|bowl|bowls|cup|cups|glass|"
+            r"glasses|thali|thalis|केजी|किलो|किलोग्राम|ग्राम|लीटर|मिलीलीटर|"
+            r"पैकेट|पेटी|बोरा|प्लेट|कटोरी|गिलास|थाली)"
         )
 
         item_source = re.sub(
@@ -1055,6 +1057,21 @@ Return only the transcript text.
         item_source = re.sub(
             r"\b(?:kal|kl|aaj|today|tomorrow|subah|shaam|savera|morning|evening|raat|"
             r"कल|आज|सुबह|शाम|रात)\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm|baje)\b",
+            " ",
+            item_source,
+            flags=re.I,
+        )
+        # Profile clauses are metadata, not dish names. Remove them before
+        # scanning item phrases so fallback extraction remains catalog-matchable.
+        item_source = re.sub(
+            r"\b(?:naam|name|my name is|mera naam)\s+.+?"
+            r"(?=\s*(?:,|\.|\baddress\b|\bpata\b|$))",
+            " ",
+            item_source,
+            flags=re.I,
+        )
+        item_source = re.sub(
+            r"\b(?:address|delivery address|pata)\s*(?:is|hai|:)?\s*.+?$",
             " ",
             item_source,
             flags=re.I,
@@ -1078,13 +1095,35 @@ Return only the transcript text.
                 qty = parsed_qty if parsed_qty is not None else 0
 
             unit = unit_token.strip()
+            spice_level = None
+            spice_match = re.search(
+                r"\b(extra spicy|medium spicy|less spicy|kam mirch|kam spicy|"
+                r"bahut tez|tez|spicy)\b",
+                name,
+                re.I,
+            )
+            if spice_match:
+                spice_level = spice_match.group(1).lower()
+                name = (name[: spice_match.start()] + name[spice_match.end() :]).strip()
+            name = re.sub(
+                r"\b(?:parcel|takeaway|delivery|deliver|pack)\b.*$",
+                "",
+                name,
+                flags=re.I,
+            ).strip(" ,.-")
+            if not name and spice_level and foods:
+                foods[-1]["spice_level"] = spice_level
+                continue
             if name and qty > 0:
-                foods.append({
+                item = {
                     "name": name,
                     "quantity": qty,
                     "unit": unit,
                     "price": None,
-                })
+                }
+                if spice_level:
+                    item["spice_level"] = spice_level
+                foods.append(item)
 
         return {
             "customer_name": customer_name,

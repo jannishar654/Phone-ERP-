@@ -492,6 +492,32 @@ def test_multilingual_deterministic_intent_fallback(
 
 
 @pytest.mark.parametrize(
+    "text",
+    [
+        "2 plate chicken biryani medium spicy aur 1 paneer tikka less spicy",
+        "Do plate chicken biryani medium spicy parcel",
+        "1 paneer tikka less spicy",
+    ],
+)
+def test_restaurant_catalog_orders_are_classified_without_ai(text):
+    classification = IntentRouter.classify_intent_deterministically(
+        text,
+        business_context={
+            "business_type": "restaurant",
+            "offerings": ["Chicken Biryani", "Paneer Tikka"],
+        },
+    )
+
+    assert classification is not None
+    assert classification.intent.value == "new_order"
+    assert classification.confidence >= 0.95
+
+
+def test_restaurant_units_do_not_change_grocery_classification_rules():
+    assert IntentRouter.classify_intent_deterministically("2 plate biryani") is None
+
+
+@pytest.mark.parametrize(
     ("text", "expected_items"),
     [
         ("Send 10 kg rice tomorrow", [("rice", 10, "kg")]),

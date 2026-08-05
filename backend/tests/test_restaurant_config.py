@@ -472,6 +472,33 @@ class TestRestaurantHindiOrders:
         item = next((i for i in result["items"] if expected_name in i["name"].lower()), None)
         assert item is not None, f"Item '{expected_name}' not found in {result['items']}"
         assert item["quantity"] == expected_qty
+        assert item.get("spice_level") == expected_spice
+
+    def test_fallback_parser_keeps_profile_fields_out_of_restaurant_items(self):
+        result = GeminiService._parse_order_fallback(
+            "2 plate chicken biryani medium spicy aur 1 paneer tikka less spicy. "
+            "Naam Danish, address Batla House, kal 8 PM."
+        )
+
+        assert result["customer_name"] == "Danish"
+        assert result["delivery_address"] == "Batla House"
+        assert result["delivery_time"] == "kal 8 PM"
+        assert result["items"] == [
+            {
+                "name": "chicken biryani",
+                "quantity": 2,
+                "unit": "plate",
+                "price": None,
+                "spice_level": "medium spicy",
+            },
+            {
+                "name": "paneer tikka",
+                "quantity": 1,
+                "unit": "",
+                "price": None,
+                "spice_level": "less spicy",
+            },
+        ]
 
     def test_fallback_parser_extracts_delivery_time_for_restaurant(self):
         result = GeminiService._parse_order_fallback("Kal 8 baje 20 veg thali deliver kar dena")
