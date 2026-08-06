@@ -48,7 +48,7 @@ export default function Dashboard() {
 
   const metrics = [
     { name: 'Pending Review (Action Cards)', value: pendingActionCards, color: 'text-amber-600' },
-    { name: 'Packing Orders', value: packingOrders, color: 'text-indigo-650' },
+    { name: 'Packing Orders', value: packingOrders, color: 'text-indigo-600' },
     { name: 'Out for Delivery Orders', value: outForDeliveryOrders, color: 'text-emerald-600' },
     { name: 'Delivered Orders', value: deliveredOrders, color: 'text-cyan-600' },
   ];
@@ -119,14 +119,14 @@ export default function Dashboard() {
                     <th className="py-3 px-4 text-right">Items</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-sm text-slate-650">
+                <tbody className="divide-y divide-slate-100 text-sm text-slate-600">
                   {recentCards.map((card) => (
                     <tr key={card.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-4 px-4">
                         <Link href={`/action-card?id=${card.id}`} className="font-bold text-slate-900 hover:text-indigo-600 transition-colors block">
                           {card.customer_name || 'Anonymous Customer'}
                         </Link>
-                        <div className="text-xs text-slate-450">{card.customer_phone}</div>
+                        <div className="text-xs text-slate-400">{card.customer_phone}</div>
                       </td>
                       <td className="py-4 px-4 max-w-xs truncate">
                         <div className="truncate text-slate-700 font-medium">{card.delivery_address}</div>
@@ -137,10 +137,10 @@ export default function Dashboard() {
                           card.status === 'completed' || card.status === 'delivered'
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                             : card.status === 'approved'
-                            ? 'bg-indigo-50 text-indigo-705 border-indigo-200'
+                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
                             : card.status === 'rejected'
                             ? 'bg-red-50 text-red-700 border-red-200'
-                            : 'bg-amber-50 text-amber-700 border-amber-250'
+                            : 'bg-amber-50 text-amber-700 border-amber-200'
                         }`}>
                           {card.status}
                         </span>

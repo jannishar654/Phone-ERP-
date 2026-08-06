@@ -35,8 +35,8 @@ function Calendar({
         week: "flex w-full mt-1.5",
         day: "h-9 w-9 p-0 font-medium text-slate-800 rounded-md hover:bg-slate-100 flex items-center justify-center transition-all cursor-pointer",
         selected: "bg-indigo-600 text-white hover:bg-indigo-700 hover:text-white focus:bg-indigo-600 focus:text-white font-bold shadow-xs",
-        today: "border border-indigo-250 text-indigo-700 font-bold",
-        outside: "text-slate-350 opacity-40 hover:bg-slate-50",
+        today: "border border-indigo-200 text-indigo-700 font-bold",
+        outside: "text-slate-300 opacity-40 hover:bg-slate-50",
         disabled: "text-slate-300 opacity-20 cursor-not-allowed hover:bg-transparent",
         hidden: "invisible",
         ...classNames,
@@ -44,9 +44,9 @@ function Calendar({
       components={{
         Chevron: ({ orientation }) => {
           if (orientation === "left") {
-            return <ChevronLeft className="h-4 w-4 text-slate-650" />
+            return <ChevronLeft className="h-4 w-4 text-slate-600" />
           }
-          return <ChevronRight className="h-4 w-4 text-slate-650" />
+          return <ChevronRight className="h-4 w-4 text-slate-600" />
         }
       }}
       {...props}

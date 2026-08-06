@@ -69,7 +69,7 @@ export default function LandingPage() {
               'Packing and delivery role workspaces',
               'Private customer order tracking',
               'Delivery notifications and public invoices',
-              'Configurable grocery and restaurant workflows',
+              'Production grocery workflow and restaurant pilot',
             ].map((item) => <div key={item}><Check size={15} /><span>{item}</span></div>)}
           </div>
         </div>
@@ -83,7 +83,7 @@ export default function LandingPage() {
           </div>
           <div className="public-status-columns">
             <div><span className="status-dot status-live" /> <strong>Available now</strong><p>Order capture, review, fulfilment, tracking and billing.</p></div>
-            <div><span className="status-dot status-progress" /> <strong>In progress</strong><p>Self-service WhatsApp onboarding, shared inbox and deeper business configuration.</p></div>
+            <div><span className="status-dot status-progress" /> <strong>In progress</strong><p>Self-service WhatsApp onboarding, shared inbox, owner alerts and deeper business configuration.</p></div>
           </div>
         </div>
       </section>

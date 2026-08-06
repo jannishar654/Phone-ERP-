@@ -358,6 +358,23 @@ body {
 .public-info-row > span { color: var(--pe-gold); font-size: 0.72rem; font-weight: 700; }
 .public-info-row h3 { margin-bottom: 0.42rem; font-size: 1rem; font-weight: 600; }
 .public-info-row p { color: var(--pe-text-secondary); font-size: 0.88rem; line-height: 1.65; }
+.public-business-title { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; margin-bottom: .42rem; }
+.public-business-title h2 { font-size: 1rem; font-weight: 600; }
+.public-availability, .public-channel-status {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid var(--pe-border);
+  border-radius: 999px;
+  padding: .22rem .5rem;
+  color: var(--pe-text-secondary);
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.public-availability.is-live { border-color: rgba(75,193,139,.3); color: var(--pe-success); }
+.public-availability.is-pilot { border-color: rgba(200,169,107,.35); color: var(--pe-gold); }
+.public-availability.is-planned { color: var(--pe-text-muted); }
 
 .phoneerp-hero {
   position: relative;
@@ -451,6 +468,7 @@ body {
 .public-capability-list { border-top: 1px solid var(--pe-border); }
 .public-capability-list article { display: grid; grid-template-columns: 2.5rem minmax(0,1fr); gap: 1.2rem; border-bottom: 1px solid var(--pe-border); padding: 1.7rem 0; }
 .public-capability-list article > svg { color: var(--pe-gold); }
+.public-channel-status { margin-bottom: .65rem; color: var(--pe-gold); }
 .public-capability-list h2 { font-size: 1.05rem; font-weight: 600; }
 .public-capability-list p { max-width: 48rem; margin-top: .4rem; color: var(--pe-text-secondary); line-height: 1.65; }
 .public-capability-list a { display: inline-flex; align-items: center; gap: .35rem; margin-top: .7rem; color: var(--pe-gold); font-size: .78rem; }
@@ -747,6 +765,11 @@ body {
 .auth-theme input:focus, .auth-theme select:focus { border-color: #c8a96b !important; }
 .auth-theme .bg-indigo-600 { background: #f2f1ec !important; color: #090a0b !important; }
 .auth-theme .text-indigo-600 { color: #c8a96b !important; }
+.auth-theme .auth-error {
+  border-color: rgba(248,113,113,.38) !important;
+  background: rgba(127,29,29,.22) !important;
+  color: #fecaca !important;
+}
 
 .workspace-theme {
   --workspace-surface: #141619;

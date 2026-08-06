@@ -125,7 +125,7 @@ function SignupContent() {
         </div>
 
         {error && (
-          <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-red-650 text-sm font-medium">
+          <div role="alert" aria-live="polite" className="auth-error mb-6 p-4 rounded-lg border text-sm font-medium">
             {error}
           </div>
         )}
@@ -200,13 +200,16 @@ function SignupContent() {
                   className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 transition-colors"
                 >
                   <option value="grocery">Grocery Store</option>
-                  <option value="wholesale">Wholesale Business</option>
-                  <option value="restaurant">Restaurant</option>
-                  <option value="pharmacy">Pharmacy</option>
-                  <option value="bakery">Bakery</option>
-                  <option value="hardware">Hardware Store</option>
-                  <option value="general">General Business</option>
+                  <option value="restaurant">Restaurant (Pilot)</option>
+                  <option value="wholesale" disabled>Wholesale Business (Coming soon)</option>
+                  <option value="pharmacy" disabled>Pharmacy (Coming soon)</option>
+                  <option value="bakery" disabled>Bakery (Coming soon)</option>
+                  <option value="hardware" disabled>Hardware Store (Coming soon)</option>
+                  <option value="general" disabled>General Business (Coming soon)</option>
                 </select>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  Grocery is available now. Restaurant onboarding is currently a guided pilot.
+                </p>
               </div>
             </div>
           )}
@@ -246,6 +249,7 @@ function SignupContent() {
             <input
               type="password"
               required
+              minLength={6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
@@ -260,6 +264,7 @@ function SignupContent() {
             <input
               type="password"
               required
+              minLength={6}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
@@ -270,7 +275,7 @@ function SignupContent() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-indigo-600 hover:bg-indigo-705 disabled:bg-indigo-400 text-white rounded-lg py-3 text-sm font-semibold transition-colors shadow-sm cursor-pointer"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-lg py-3 text-sm font-semibold transition-colors shadow-sm cursor-pointer"
           >
             {isLoading ? 'Creating account...' : 'Create Account'}
           </button>
@@ -279,7 +284,7 @@ function SignupContent() {
 
         <div className="mt-6 text-center text-xs text-slate-500 font-medium">
           Already have an account?{' '}
-          <Link href="/login" className="text-indigo-600 hover:text-indigo-850 font-bold">
+          <Link href="/login" className="text-indigo-600 hover:text-indigo-800 font-bold">
             Sign in
           </Link>
         </div>
