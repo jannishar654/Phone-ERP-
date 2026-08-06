@@ -1,88 +1,103 @@
 import Link from 'next/link';
+import { ArrowRight, Check, MessageSquareText, ShieldCheck, Sparkles } from 'lucide-react';
+import OrderFlowVisual from '@/components/public/OrderFlowVisual';
+import PublicSiteShell from '@/components/public/PublicSiteShell';
+
+const workflow = [
+  ['01', 'Capture', 'Receive customer text, voice notes and order details from connected channels.'],
+  ['02', 'Understand', 'Classify intent and convert natural Hindi, Hinglish or English into structured data.'],
+  ['03', 'Review', 'Give the owner an editable action card before anything enters operations.'],
+  ['04', 'Fulfil', 'Move approved orders through packing, delivery, tracking and billing.'],
+];
 
 export default function LandingPage() {
   return (
-    <div className="bg-white text-slate-900 min-h-screen flex flex-col justify-between font-sans selection:bg-indigo-600 selection:text-white">
-      {/* Top Navigation */}
-      <header className="max-w-7xl mx-auto w-full px-6 lg:px-8 h-20 flex items-center justify-between border-b border-slate-100">
-        <div className="flex items-center space-x-2">
-          <span className="text-2xl font-extrabold text-slate-900">
-            Phone<span className="text-indigo-600">ERP</span>
-          </span>
-        </div>
-        <div className="flex items-center space-x-4">
-          <Link href="/login" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">
-            Sign in
-          </Link>
-          <Link href="/signup" className="text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm shadow-indigo-105">
-            Get Started
-          </Link>
-        </div>
-      </header>
-
-      {/* Hero Section */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-6 lg:px-8 py-20 flex flex-col justify-center text-center">
-        <div className="max-w-3xl mx-auto">
-          <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight text-slate-900 leading-tight">
-            Automate Phone Orders using <span className="text-indigo-600">AI Intelligence</span>
-          </h1>
-          <p className="mt-6 text-lg text-slate-600 leading-relaxed">
-            Eliminate manual data entry. PhoneERP transcribes customer order calls, extracts line items, quantities, addresses, and delivery requirements using AI, and loads them directly into your verification pipeline.
-          </p>
-          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/signup" className="w-full sm:w-auto text-center font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-xl transition-all shadow-md shadow-indigo-100 text-base">
-              Start Your Free Trial
-            </Link>
-            <Link href="/login" className="w-full sm:w-auto text-center font-bold bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 px-8 py-4 rounded-xl transition-all text-base">
-              Access Dashboard
-            </Link>
-          </div>
-        </div>
-
-        {/* Feature Grid */}
-        <div className="mt-24 grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="p-8 rounded-2xl border border-slate-200 bg-slate-50 text-left shadow-sm">
-            <div className="h-10 w-10 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg flex items-center justify-center font-bold text-lg mb-6">
-              1
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Voice Transcription</h3>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              Upload customer voicemail transcripts or record audio streams. Converts speech into precise text.
+    <PublicSiteShell>
+      <section className="phoneerp-hero">
+        <div className="public-container phoneerp-hero-grid">
+          <div className="phoneerp-hero-copy">
+            <p className="public-kicker"><span /> AI operations for conversational commerce</p>
+            <h1>PhoneERP</h1>
+            <p className="phoneerp-hero-lead">Turn WhatsApp orders into organised business operations.</p>
+            <p className="phoneerp-hero-summary">
+              PhoneERP understands customer messages and voice notes, creates editable orders, and keeps owners, packers, delivery teams and customers aligned.
             </p>
-          </div>
-
-          <div className="p-8 rounded-2xl border border-slate-200 bg-slate-50 text-left shadow-sm">
-            <div className="h-10 w-10 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg flex items-center justify-center font-bold text-lg mb-6">
-              2
+            <div className="phoneerp-hero-actions">
+              <Link href="/how-it-works" className="public-button public-button-primary">
+                View the workflow <ArrowRight size={16} />
+              </Link>
+              <Link href="/login" className="public-button public-button-secondary">Open workspace</Link>
             </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">AI Entity Extraction</h3>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              Google Gemini parses raw voice logs to extract customers, phone numbers, items, quantities, and delivery coordinates automatically.
-            </p>
-          </div>
-
-          <div className="p-8 rounded-2xl border border-slate-200 bg-slate-50 text-left shadow-sm">
-            <div className="h-10 w-10 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg flex items-center justify-center font-bold text-lg mb-6">
-              3
+            <div className="phoneerp-trust-line">
+              <span><ShieldCheck size={15} /> Human-reviewed</span>
+              <span><MessageSquareText size={15} /> Multichannel</span>
+              <span><Sparkles size={15} /> Hindi + Hinglish aware</span>
             </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Review & Confirm</h3>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              View extracted details inside structured Action Cards. Verify items, make edits, and approve straight into the order queue.
-            </p>
+          </div>
+          <OrderFlowVisual />
+        </div>
+      </section>
+
+      <section className="public-section" id="workflow">
+        <div className="public-container">
+          <div className="public-section-heading">
+            <p className="public-kicker">One connected workflow</p>
+            <h2>From conversation to fulfilment, without losing the context.</h2>
+            <p>AI handles the repetitive interpretation. People retain control over approval, exceptions and customer relationships.</p>
+          </div>
+          <div className="public-panel">
+            {workflow.map(([number, title, description]) => (
+              <div className="public-info-row" key={number}>
+                <span>{number}</span>
+                <div><h3>{title}</h3><p>{description}</p></div>
+              </div>
+            ))}
           </div>
         </div>
-      </main>
+      </section>
 
-      {/* Footer */}
-      <footer className="max-w-7xl mx-auto flex w-full flex-col items-center justify-between gap-4 border-t border-slate-100 px-6 py-8 text-xs font-medium text-slate-500 sm:flex-row lg:px-8">
-        <span>&copy; {new Date().getFullYear()} PhoneERP project team.</span>
-        <nav className="flex flex-wrap justify-center gap-x-4 gap-y-2" aria-label="Legal and support">
-          <Link href="/privacy" className="hover:text-indigo-700">Privacy</Link>
-          <Link href="/terms" className="hover:text-indigo-700">Terms</Link>
-          <Link href="/data-deletion" className="hover:text-indigo-700">Data deletion</Link>
-          <Link href="/support" className="hover:text-indigo-700">Support</Link>
-        </nav>
-      </footer>
-    </div>
+      <section className="public-section public-capability-section">
+        <div className="public-container public-grid-2 public-feature-split">
+          <div>
+            <p className="public-kicker">Built around real operations</p>
+            <h2>Useful after the AI has understood the message.</h2>
+          </div>
+          <div className="public-check-list">
+            {[
+              'Editable action cards before approval',
+              'Catalog-aware item and price matching',
+              'Packing and delivery role workspaces',
+              'Private customer order tracking',
+              'Delivery notifications and public invoices',
+              'Configurable grocery and restaurant workflows',
+            ].map((item) => <div key={item}><Check size={15} /><span>{item}</span></div>)}
+          </div>
+        </div>
+      </section>
+
+      <section className="public-section">
+        <div className="public-container public-status-band">
+          <div>
+            <p className="public-kicker">Product status</p>
+            <h2>A working production prototype, becoming a reusable platform.</h2>
+          </div>
+          <div className="public-status-columns">
+            <div><span className="status-dot status-live" /> <strong>Available now</strong><p>Order capture, review, fulfilment, tracking and billing.</p></div>
+            <div><span className="status-dot status-progress" /> <strong>In progress</strong><p>Self-service WhatsApp onboarding, shared inbox and deeper business configuration.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section className="public-section public-final-cta">
+        <div className="public-container">
+          <p className="public-kicker">Explore the system</p>
+          <h2>See what PhoneERP does, how it works, and where it is going.</h2>
+          <div>
+            <Link href="/docs" className="public-button public-button-primary">Read documentation <ArrowRight size={16} /></Link>
+            <Link href="/about" className="public-button public-button-secondary">About the project</Link>
+          </div>
+        </div>
+      </section>
+    </PublicSiteShell>
   );
 }

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authClient } from '@/lib/supabase/client';
 import type { BusinessType } from '@/lib/api_access';
+import PhoneERPLogo from '@/components/brand/PhoneERPLogo';
 
 type PendingRegistration = {
   role: 'owner' | 'staff';
@@ -91,12 +92,10 @@ function LoginContent() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center p-4">
+    <div className="auth-theme min-h-screen flex items-center justify-center p-4">
       <div className="max-w-md w-full p-8 rounded-2xl border border-slate-200 bg-white shadow-lg flex flex-col">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-block text-3xl font-extrabold text-slate-900 mb-2">
-            Phone<span className="text-indigo-600">ERP</span>
-          </Link>
+          <PhoneERPLogo className="mb-3" />
           <h2 className="text-xl font-bold text-slate-900">Sign in to your account</h2>
           <p className="text-xs text-slate-500 mt-1">Access dashboard or staff portals</p>
         </div>
@@ -158,7 +157,7 @@ function LoginContent() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center p-4 font-semibold">Loading login...</div>}>
+    <Suspense fallback={<div className="auth-theme min-h-screen flex items-center justify-center p-4 font-semibold">Loading login...</div>}>
       <LoginContent />
     </Suspense>
   );

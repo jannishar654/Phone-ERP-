@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { authClient, User } from '@/lib/supabase/client';
 import OwnerNotificationCenter from '@/components/OwnerNotificationCenter';
+import PhoneERPLogo from '@/components/brand/PhoneERPLogo';
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -14,8 +15,9 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   const [role, setRole] = useState<string | null>(null);
   const [isCheckingRole, setIsCheckingRole] = useState(true);
 
+  const publicPrefixes = ['/product', '/how-it-works', '/businesses', '/integrations', '/docs', '/about', '/contact'];
   const publicRoutes = ['/privacy', '/terms', '/data-deletion', '/support'];
-  const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/signup' || publicRoutes.includes(pathname) || pathname.startsWith('/bill/') || pathname.startsWith('/customer/');
+  const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/signup' || publicRoutes.includes(pathname) || publicPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)) || pathname.startsWith('/bill/') || pathname.startsWith('/customer/');
 
   useEffect(() => {
     authClient.getUser().then(setUser);
@@ -47,21 +49,21 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   };
 
   if (isPublicRoute) {
-    return <div className="min-h-screen w-full bg-white text-slate-900">{children}</div>;
+    return <div className="min-h-screen w-full">{children}</div>;
   }
 
   if (isCheckingRole) {
-    return <div className="min-h-screen flex items-center justify-center bg-white text-slate-900">Loading workspace...</div>;
+    return <div className="workspace-theme min-h-screen flex items-center justify-center">Loading workspace...</div>;
   }
 
   const isStaff = role === 'packer' || role === 'delivery';
 
   if (isStaff) {
     return (
-      <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+      <div className="workspace-theme min-h-screen flex flex-col">
         <header className="h-16 border-b border-slate-200 flex items-center justify-between px-4 sm:px-8 bg-white sticky top-0 z-10 shadow-sm">
           <div className="flex items-center space-x-4">
-             <span className="text-xl font-extrabold tracking-tight">Phone<span className="text-indigo-600">ERP</span></span>
+             <PhoneERPLogo />
              <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-md uppercase border border-indigo-100 shadow-sm">
                {role}
              </span>
@@ -81,7 +83,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   }
 
   return (
-    <div className="min-h-screen flex bg-white text-slate-900">
+    <div className="workspace-theme min-h-screen flex">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       
       <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">

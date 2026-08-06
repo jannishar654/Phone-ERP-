@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { authClient } from '@/lib/supabase/client';
 import { Inbox, MessageCircle } from 'lucide-react';
+import PhoneERPLogo from '@/components/brand/PhoneERPLogo';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -47,9 +48,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       >
         <div className="p-6 border-b border-slate-200 flex items-center justify-between">
           <Link href="/dashboard" className="flex flex-col" onClick={onClose}>
-            <span className="text-2xl font-extrabold text-slate-900">
-              Phone<span className="text-indigo-600">ERP</span>
-            </span>
+            <PhoneERPLogo href="" />
             <span className="text-[10px] w-fit uppercase tracking-wider bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 font-semibold mt-1">
               AI Powered
             </span>
