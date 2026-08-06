@@ -462,6 +462,42 @@ body {
 .public-note-band { max-width: 58rem; }
 .public-note-band > p:last-child { max-width: 46rem; margin-top: 1.4rem; color: var(--pe-text-secondary); line-height: 1.75; }
 .public-note-band a { color: var(--pe-gold); }
+.public-note-band .public-contact-email {
+  max-width: 100%;
+  font-size: 3rem;
+  overflow-wrap: anywhere;
+}
+.public-inline-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .3rem;
+  color: var(--pe-gold);
+}
+.public-inline-link svg { width: .7em; height: .7em; }
+.public-team-list { border-top: 1px solid var(--pe-border); }
+.public-team-list > a {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  border-bottom: 1px solid var(--pe-border);
+  padding: 1.35rem 0;
+  color: var(--pe-text);
+  transition: color 160ms ease, padding-left 160ms ease;
+}
+.public-team-list > a:hover { padding-left: .4rem; color: var(--pe-gold); }
+.public-team-link-icon {
+  display: grid;
+  width: 2.35rem;
+  height: 2.35rem;
+  place-items: center;
+  border: 1px solid var(--pe-border);
+  border-radius: .45rem;
+  color: var(--pe-gold);
+}
+.public-team-link-icon svg, .public-team-list > a > svg { width: 1rem; height: 1rem; }
+.public-team-list strong { display: block; font-size: 1rem; font-weight: 600; }
+.public-team-list small { display: block; margin-top: .3rem; color: var(--pe-text-secondary); font-size: .8rem; }
 
 .docs-layout { display: grid; grid-template-columns: 15rem minmax(0,1fr); gap: clamp(3rem, 8vw, 8rem); padding-block: 5rem 7rem; }
 .docs-sidebar { position: sticky; top: 7rem; align-self: start; }
@@ -563,6 +599,7 @@ body {
   .public-page-hero > div > p, .public-section-heading p { font-size: 1rem; }
   .public-feature-split > div:first-child h2, .public-note-band h2, .public-final-cta h2,
   .public-status-band h2 { font-size: 2.5rem; }
+  .public-note-band .public-contact-email { font-size: 1.5rem; line-height: 1.25; }
   .docs-article h1 { font-size: 3rem; }
   .phoneerp-trust-line { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
   .phoneerp-trust-line span:last-child { grid-column: 1 / -1; }
