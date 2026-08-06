@@ -29,7 +29,7 @@ const docs: Record<string, Doc> = {
   telegram: { title: 'Telegram integration', summary: 'Connect a separate Telegram bot to each PhoneERP business.', sections: [
     { title: 'Create the business bot', paragraphs: ['The owner creates a bot with BotFather, copies the bot token once, and opens PhoneERP Settings, Integrations, Telegram. PhoneERP validates the token, registers a unique webhook and stores the credential encrypted on the backend.'], bullets: ['Create the bot with @BotFather', 'Copy the token into the owner-only connection form', 'Confirm the bot username shown by PhoneERP', 'Send a test order to the bot', 'Disconnect or rotate the bot if the token is exposed'] },
     { title: 'Tenant routing', paragraphs: ['Each webhook URL contains a random PhoneERP connection identifier and uses a separate secret header. The backend resolves the shop from the stored connection; it never trusts a shop ID supplied by Telegram or the browser.'] },
-    { title: 'Deployment requirements', paragraphs: ['Run migration 026_multi_business_telegram.sql, configure TELEGRAM_WEBHOOK_BASE_URL with the public Render backend origin, and keep the integration encryption key stable across deployments. The legacy environment bot remains available for backward compatibility.'] },
+    { title: 'Deployment requirements', paragraphs: ['Run migration 026_multi_business_telegram.sql, configure TELEGRAM_WEBHOOK_BASE_URL with the public Render backend origin, and keep the integration encryption key stable across deployments. Generate it once with the command below, save the resulting value only in Render as INTEGRATION_CREDENTIAL_ENCRYPTION_KEY, and never commit it.'], bullets: ["Generate a key: openssl rand -base64 32 | tr '+/' '-_'", 'Keep the same key across every redeploy', 'Back it up in an approved password or secrets manager', 'Do not rotate it until a credential re-encryption workflow exists', 'The legacy environment bot remains available for backward compatibility'] },
   ] },
   'business-configuration': { title: 'Business configuration', summary: 'Adapt extraction without creating a separate ERP for every industry.', sections: [
     { title: 'Configuration fields', paragraphs: ['Each shop can define its business type, terminology, required fields, workflow stages, extraction context and settings.'], bullets: ['Grocery and wholesale units', 'Restaurant portions and dietary notes', 'Bakery variants and schedules', 'General trade aliases and dimensions'] },
@@ -60,5 +60,9 @@ export default async function DocsPage({ params }: { params: Promise<{ slug?: st
   const slug = parts.join('/');
   const doc = docs[slug];
   if (!doc) notFound();
-  return <DocsShell slug={slug} title={doc.title} summary={doc.summary}>{doc.sections.map((section) => <section key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}{section.bullets && <ul>{section.bullets.map((item) => <li key={item}>{item}</li>)}</ul>}</section>)}</DocsShell>;
+  const sectionLinks = doc.sections.map((section) => ({
+    id: section.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+    title: section.title,
+  }));
+  return <DocsShell slug={slug} title={doc.title} summary={doc.summary} sections={sectionLinks}>{doc.sections.map((section, index) => <section id={sectionLinks[index].id} key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}{section.bullets && <ul>{section.bullets.map((item) => <li key={item}>{item}</li>)}</ul>}</section>)}</DocsShell>;
 }
