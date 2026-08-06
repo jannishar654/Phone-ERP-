@@ -3,7 +3,7 @@ import PublicPageShell from '@/components/public/PublicPageShell';
 import { publicSite } from '@/lib/public-site';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy | PhoneERP',
+  title: 'Privacy Policy',
   description: 'How PhoneERP collects, uses, protects, retains and deletes personal and business data.',
 };
 

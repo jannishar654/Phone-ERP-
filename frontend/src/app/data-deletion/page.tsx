@@ -4,7 +4,7 @@ import PublicPageShell from '@/components/public/PublicPageShell';
 import { publicSite } from '@/lib/public-site';
 
 export const metadata: Metadata = {
-  title: 'Data Deletion Instructions | PhoneERP',
+  title: 'Data Deletion Instructions',
   description: 'How businesses and customers can request disconnection and deletion of eligible PhoneERP data.',
 };
 

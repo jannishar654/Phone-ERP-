@@ -90,6 +90,7 @@ class IntentRouter:
     @staticmethod
     def classify_intent_deterministically(
         text: str,
+        business_context: Optional[Dict[str, Any]] = None,
     ) -> Optional[IntentClassification]:
         """Resolve strong English, Hindi, and Hinglish signals without an AI call."""
         normalized = re.sub(r"\s+", " ", str(text or "").strip().lower())
@@ -170,13 +171,24 @@ class IntentRouter:
                 intent=ConversationIntent.BUSINESS_SUPPORT, confidence=0.94
             )
 
+        context = business_context or {}
+        business_type = str(context.get("business_type") or "").lower()
+        restaurant_units = ""
+        if business_type == "restaurant":
+            restaurant_units = (
+                r"|plate|plates|portion|portions|serving|servings|bowl|bowls|"
+                r"cup|cups|glass|glasses|thali|thalis|प्लेट|कटोरी|गिलास|थाली"
+            )
+
         quantity_with_unit = re.search(
             r"(?:\b\d+(?:\.\d+)?|\b(?:ek|teen|char|chaar|paanch|chhe|saat|aath|"
-            r"nau|das|bees|pachas|sau|aadha|adhaa|dedh|dhai)\b|"
+            r"nau|das|bees|pachas|sau|do|aadha|adhaa|dedh|dhai)\b|"
             r"(?:एक|दो|तीन|चार|पांच|छह|सात|आठ|नौ|दस|बीस|पचास|सौ|आधा|डेढ़|ढाई))"
             r"\s*(?:kg|kgs|kilo|kilogram|g|gram|grams|litre|liter|litres|liters|l|"
             r"ml|packet|packets|pack|packs|piece|pieces|pcs|box|boxes|bottle|bottles|"
-            r"किलो|किलोग्राम|ग्राम|लीटर|मिलीलीटर|पैकेट|पीस|डिब्बा|बोतल)"
+            r"किलो|किलोग्राम|ग्राम|लीटर|मिलीलीटर|पैकेट|पीस|डिब्बा|बोतल"
+            + restaurant_units
+            + r")"
             r"(?=\s|$|[,.!?।])",
             normalized,
         )
@@ -196,8 +208,31 @@ class IntentRouter:
                 normalized[quantity_with_unit.end() :],
             )
         )
+        has_catalog_item = False
+        if business_type == "restaurant":
+            normalized_words = set(
+                re.findall(r"[a-z0-9\u0900-\u097f]+", normalized)
+            )
+            for offering in context.get("offerings") or []:
+                offering_words = set(
+                    re.findall(
+                        r"[a-z0-9\u0900-\u097f]+", str(offering or "").lower()
+                    )
+                )
+                if offering_words and offering_words.issubset(normalized_words):
+                    has_catalog_item = True
+                    break
+
         if quantity_with_unit and (
             has_purchase_intent or has_product_after_quantity
+        ):
+            return IntentClassification(
+                intent=ConversationIntent.NEW_ORDER, confidence=0.97
+            )
+        if business_type == "restaurant" and has_catalog_item and re.search(
+            r"(?:\b\d+(?:\.\d+)?\b|\b(?:ek|do|teen|char|chaar|paanch|das)\b|"
+            r"(?:एक|दो|तीन|चार|पांच|दस))",
+            normalized,
         ):
             return IntentClassification(
                 intent=ConversationIntent.NEW_ORDER, confidence=0.97
@@ -299,7 +334,9 @@ class IntentRouter:
 
         IntentRouter._update_inbound_status(inbound_id, "classifying")
         context = IntentRouter._get_business_context(msg.shop_id, msg.metadata)
-        classification = IntentRouter.classify_intent_deterministically(msg.raw_text)
+        classification = IntentRouter.classify_intent_deterministically(
+            msg.raw_text, business_context=context
+        )
         classifier_warning = None
         try:
             if classification is None:

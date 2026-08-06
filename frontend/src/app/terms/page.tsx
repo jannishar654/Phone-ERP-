@@ -3,7 +3,7 @@ import PublicPageShell from '@/components/public/PublicPageShell';
 import { publicSite } from '@/lib/public-site';
 
 export const metadata: Metadata = {
-  title: 'Terms of Service | PhoneERP',
+  title: 'Terms of Service',
   description: 'Terms governing business use of PhoneERP.',
 };
 

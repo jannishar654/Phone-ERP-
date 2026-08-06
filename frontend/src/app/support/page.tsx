@@ -4,8 +4,8 @@ import PublicPageShell from '@/components/public/PublicPageShell';
 import { publicSite } from '@/lib/public-site';
 
 export const metadata: Metadata = {
-  title: 'Support | PhoneERP',
-  description: 'Contact PhoneERP support, report a security concern or request channel disconnection.',
+  title: 'Support',
+  description: 'Contact PhoneERP support, report a security concern or request WhatsApp disconnection.',
 };
 
 export default function SupportPage() {
@@ -44,11 +44,6 @@ export default function SupportPage() {
             <p className="mt-2">We verify ownership, disable PhoneERP processing, unsubscribe the integration where applicable and confirm the result. This does not delete the business-owned Meta account.</p>
           </div>
         </div>
-      </section>
-
-      <section>
-        <h2>Disconnect Telegram</h2>
-        <p>Owners can disconnect a bot from <strong>Settings &rarr; Telegram</strong>. PhoneERP removes its webhook and encrypted token. The bot remains owned by the business and can also be revoked through BotFather if a token may have been exposed.</p>
       </section>
 
       <section>

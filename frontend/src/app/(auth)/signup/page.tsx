@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authClient } from '@/lib/supabase/client';
 import type { BusinessType } from '@/lib/api_access';
+import PhoneERPLogo from '@/components/brand/PhoneERPLogo';
 
 type PendingRegistration = {
   role: 'owner' | 'staff';
@@ -115,18 +116,16 @@ function SignupContent() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center p-4">
+    <div className="auth-theme min-h-screen flex items-center justify-center p-4">
       <div className="max-w-md w-full p-8 rounded-2xl border border-slate-200 bg-white shadow-lg flex flex-col">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-block text-3xl font-extrabold text-slate-900 mb-2">
-            Phone<span className="text-indigo-600">ERP</span>
-          </Link>
+          <PhoneERPLogo className="mb-3" />
           <h2 className="text-xl font-bold text-slate-900">Create your account</h2>
           <p className="text-xs text-slate-500 mt-1">Join as an owner or staff member</p>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
+          <div role="alert" aria-live="polite" className="auth-error mb-6 p-4 rounded-lg border text-sm font-medium">
             {error}
           </div>
         )}
@@ -201,13 +200,16 @@ function SignupContent() {
                   className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 transition-colors"
                 >
                   <option value="grocery">Grocery Store</option>
-                  <option value="wholesale">Wholesale Business</option>
-                  <option value="restaurant">Restaurant</option>
-                  <option value="pharmacy">Pharmacy</option>
-                  <option value="bakery">Bakery</option>
-                  <option value="hardware">Hardware Store</option>
-                  <option value="general">General Business</option>
+                  <option value="restaurant">Restaurant (Pilot)</option>
+                  <option value="wholesale" disabled>Wholesale Business (Coming soon)</option>
+                  <option value="pharmacy" disabled>Pharmacy (Coming soon)</option>
+                  <option value="bakery" disabled>Bakery (Coming soon)</option>
+                  <option value="hardware" disabled>Hardware Store (Coming soon)</option>
+                  <option value="general" disabled>General Business (Coming soon)</option>
                 </select>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  Grocery is available now. Restaurant onboarding is currently a guided pilot.
+                </p>
               </div>
             </div>
           )}
@@ -247,6 +249,7 @@ function SignupContent() {
             <input
               type="password"
               required
+              minLength={6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
@@ -261,6 +264,7 @@ function SignupContent() {
             <input
               type="password"
               required
+              minLength={6}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
@@ -271,7 +275,7 @@ function SignupContent() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-indigo-600 hover:bg-indigo-705 disabled:bg-indigo-400 text-white rounded-lg py-3 text-sm font-semibold transition-colors shadow-sm cursor-pointer"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-lg py-3 text-sm font-semibold transition-colors shadow-sm cursor-pointer"
           >
             {isLoading ? 'Creating account...' : 'Create Account'}
           </button>
@@ -280,7 +284,7 @@ function SignupContent() {
 
         <div className="mt-6 text-center text-xs text-slate-500 font-medium">
           Already have an account?{' '}
-          <Link href="/login" className="text-indigo-600 hover:text-indigo-900 font-bold">
+          <Link href="/login" className="text-indigo-600 hover:text-indigo-800 font-bold">
             Sign in
           </Link>
         </div>

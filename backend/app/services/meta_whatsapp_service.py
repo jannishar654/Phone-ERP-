@@ -272,8 +272,13 @@ class MetaWhatsAppService:
         return None
 
     @staticmethod
-    def _looks_like_order(text: str) -> bool:
-        classification = IntentRouter.classify_intent_deterministically(text)
+    def _looks_like_order(text: str, shop_id: Optional[str] = None) -> bool:
+        context = None
+        if shop_id:
+            context = IntentRouter._get_business_context(shop_id, {})
+        classification = IntentRouter.classify_intent_deterministically(
+            text, business_context=context
+        )
         return bool(
             classification
             and classification.intent.value == "new_order"
@@ -800,7 +805,7 @@ class MetaWhatsAppService:
                     or channel_state in {"updating_name", "updating_address"}
                 )
                 and not has_active_draft
-                and not self._looks_like_order(raw_text)
+                and not self._looks_like_order(raw_text, connection["shop_id"])
             ):
                 profile_reply = self._handle_profile_message(
                     channel, customer, raw_text
