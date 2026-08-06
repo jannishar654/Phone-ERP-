@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { authClient } from '@/lib/supabase/client';
-import { Inbox, MessageCircle } from 'lucide-react';
+import { BookOpen, Inbox, MessageCircle, Send } from 'lucide-react';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -28,6 +28,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { name: 'Customer Requests', href: '/customer-requests', icon: Inbox },
     { name: 'Catalog', href: '/catalog', icon: CatalogIcon },
     { name: 'WhatsApp', href: '/settings/integrations/whatsapp', icon: MessageCircle },
+    { name: 'Telegram', href: '/settings/integrations/telegram', icon: Send },
+    { name: 'Documentation', href: '/docs', icon: BookOpen },
   ];
 
   return (
@@ -74,7 +76,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                 key={item.name}
                 href={item.href}
                 onClick={onClose}
-                className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all duration-150 ${isActive
+                className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all duration-200 ${isActive
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
                   }`}
@@ -87,15 +89,15 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
           <button
             onClick={handleSignOut}
-            className="flex items-center space-x-3 w-full px-4 py-3 rounded-lg text-sm font-semibold text-red-655 hover:bg-red-50 hover:text-red-700 cursor-pointer transition-all duration-150"
+            className="flex items-center space-x-3 w-full px-4 py-3 rounded-lg text-sm font-semibold text-red-700 hover:bg-red-50 hover:text-red-700 cursor-pointer transition-all duration-200"
           >
-            <svg className="h-5 w-5 text-red-550 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="h-5 w-5 text-red-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
             <span>Sign Out</span>
           </button>
         </nav>
-        <div className="p-4 border-t border-slate-200 text-xs text-slate-450 text-center font-medium">
+        <div className="p-4 border-t border-slate-200 text-xs text-slate-500 text-center font-medium">
           PhoneERP System v1.0.0
         </div>
       </aside>

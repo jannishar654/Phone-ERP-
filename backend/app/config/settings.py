@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     TELEGRAM_DEFAULT_OWNER_ID: Optional[str] = None
     TELEGRAM_DEFAULT_SHOP_ID: Optional[str] = None
     TELEGRAM_DEFAULT_OWNER_EMAIL: Optional[str] = None
+    # Public backend origin used when registering per-business Telegram
+    # webhooks, for example https://phone-erp-1.onrender.com.
+    TELEGRAM_WEBHOOK_BASE_URL: str = ""
 
     # Twilio WhatsApp Integration
     TWILIO_ACCOUNT_SID: str = ""
@@ -78,6 +81,10 @@ class Settings(BaseSettings):
     # credentials at rest and must exist only on the backend.
     META_WHATSAPP_TOKEN_ENCRYPTION_KEY: str = ""
     META_WHATSAPP_TOKEN_KEY_VERSION: int = 1
+    # Preferred shared key for newly connected provider credentials. Existing
+    # deployments safely fall back to the Meta key until this is configured.
+    INTEGRATION_CREDENTIAL_ENCRYPTION_KEY: str = ""
+    INTEGRATION_CREDENTIAL_KEY_VERSION: int = 1
     
     # Public Bill Configuration
     FRONTEND_PUBLIC_BASE_URL: str = "http://localhost:3000"

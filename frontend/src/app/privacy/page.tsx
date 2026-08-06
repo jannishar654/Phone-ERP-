@@ -28,6 +28,7 @@ export default function PrivacyPage() {
         <ul>
           <li><strong>Business account information:</strong> owner name, email, shop profile, team roles and configuration used to create and secure a PhoneERP workspace.</li>
           <li><strong>WhatsApp connection information:</strong> connected number, Meta Business or WhatsApp Business Account identifiers, Phone Number ID, connection health, permissions and encrypted credential references used to operate the integration.</li>
+          <li><strong>Telegram connection information:</strong> connected bot identifier, username, webhook health and encrypted bot-token records used to route the business&apos;s Telegram conversations.</li>
           <li><strong>Customer and conversation information:</strong> customer phone numbers, profile names, messages, voice notes, supported media and conversation state used to understand and respond to requests.</li>
           <li><strong>Order information:</strong> products, quantities, delivery addresses and times, special instructions, invoices, payments where recorded, fulfilment status and customer requests.</li>
           <li><strong>Technical information:</strong> webhook events, provider message IDs, delivery/read/failure status, timestamps, audit records, diagnostics and security logs used for reliability and fraud prevention.</li>
@@ -47,11 +48,12 @@ export default function PrivacyPage() {
         <p>Depending on the enabled features, information may be processed by:</p>
         <ul>
           <li><strong>Meta:</strong> WhatsApp Business Platform messaging, media and webhook delivery.</li>
+          <li><strong>Telegram:</strong> Telegram Bot API messaging, supported media and webhook delivery when a business connects its bot.</li>
           <li><strong>Render:</strong> backend application hosting and operational logs.</li>
           <li><strong>Supabase:</strong> authentication, database and application data storage.</li>
           <li><strong>Vercel:</strong> web application hosting and delivery.</li>
           <li><strong>AI and speech providers:</strong> configured providers such as Google Gemini and Sarvam AI for classification, extraction or transcription.</li>
-          <li><strong>Optional communication providers:</strong> Twilio or Telegram when a business enables those channels.</li>
+          <li><strong>Optional communication providers:</strong> Twilio when a business enables supported telephony or sandbox messaging features.</li>
         </ul>
         <p>These providers process information under their own terms and privacy commitments. PhoneERP shares only the information reasonably needed to provide the configured feature.</p>
       </section>

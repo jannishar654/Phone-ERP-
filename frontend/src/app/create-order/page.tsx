@@ -117,7 +117,7 @@ function CustomDateTimePicker({ value, onChange }: CustomDateTimePickerProps) {
           <select
             value={hourVal}
             onChange={(e) => updateValue(dateVal || new Date(), e.target.value, minuteVal || "00", ampmVal || "AM")}
-            className="bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+            className="bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
           >
             <option value="">Hour</option>
             {hoursOptions.map((h) => (
@@ -128,7 +128,7 @@ function CustomDateTimePicker({ value, onChange }: CustomDateTimePickerProps) {
           <select
             value={minuteVal}
             onChange={(e) => updateValue(dateVal || new Date(), hourVal || "12", e.target.value, ampmVal || "AM")}
-            className="bg-white border border-slate-350 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+            className="bg-white border border-slate-400 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
           >
             <option value="">Min</option>
             {minutesOptions.map((m) => (
@@ -138,7 +138,7 @@ function CustomDateTimePicker({ value, onChange }: CustomDateTimePickerProps) {
           <select
             value={ampmVal}
             onChange={(e) => updateValue(dateVal || new Date(), hourVal || "12", minuteVal || "00", e.target.value)}
-            className="bg-white border border-slate-350 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+            className="bg-white border border-slate-400 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
           >
             <option value="AM">AM</option>
             <option value="PM">PM</option>
@@ -654,7 +654,7 @@ const s = (secs % 60).toString().padStart(2, '0');
       {/* Explicit Error State Panel */}
       {extractionError && !isProcessing && !isQuotaError && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center shadow-sm space-y-6">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-650">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-700">
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
@@ -675,7 +675,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                 setAudioChunks([]);
                 setRecordingSeconds(0);
               }}
-              className="px-5 py-2.5 bg-red-650 hover:bg-red-750 text-white font-bold rounded-lg text-sm transition-colors shadow-sm cursor-pointer"
+              className="px-5 py-2.5 bg-red-700 hover:bg-red-800 text-white font-bold rounded-lg text-sm transition-colors shadow-sm cursor-pointer"
             >
               Retry Recording
             </button>
@@ -685,7 +685,7 @@ const s = (secs % 60).toString().padStart(2, '0');
 
       {/* Quota Error / Manual Fallback Panel */}
       {isQuotaError && !isProcessing && (
-        <div className="rounded-xl border border-amber-250 bg-amber-50 p-8 shadow-sm space-y-6">
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-8 shadow-sm space-y-6">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-705">
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -709,7 +709,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                 onChange={(e) => setManualTranscript(e.target.value)}
                 placeholder="Example: Johnathan Archer, +1 310-555-2150. Deliver 2 units of Plasma Injector Model D to Starbase 1 ASAP."
                 rows={4}
-                className="w-full bg-white border border-slate-350 rounded-lg px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                className="w-full bg-white border border-slate-400 rounded-lg px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
               />
             </div>
 
@@ -852,7 +852,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                             required
                             value={customerName}
                             onChange={(e) => setCustomerName(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
+                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-400 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
                           />
                         </div>
                         <div>
@@ -862,7 +862,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                             required
                             value={customerPhone}
                             onChange={(e) => setCustomerPhone(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
+                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-400 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
                           />
                         </div>
                       </div>
@@ -874,7 +874,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                             required
                             value={deliveryAddress}
                             onChange={(e) => setDeliveryAddress(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
+                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-400 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
                           />
                         </div>
                         <div className="sm:col-span-2">
@@ -889,7 +889,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                           <select
                             value={paymentMethod}
                             onChange={(e) => setPaymentMethod(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
+                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-400 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
                           >
                             <option value="Not Specified">Not Specified</option>
                             <option value="Cash">Cash</option>
@@ -979,7 +979,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                             placeholder="Item Name"
                             value={item.name}
                             onChange={(e) => handleItemChange(idx, 'name', e.target.value)}
-                            className="flex-1 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-1.5 text-sm text-slate-900 focus:outline-none transition-colors"
+                            className="flex-1 bg-slate-50 border border-slate-200 hover:border-slate-400 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-1.5 text-sm text-slate-900 focus:outline-none transition-colors"
                           />
                           <div className="flex gap-2">
                             <input
@@ -989,14 +989,14 @@ const s = (secs % 60).toString().padStart(2, '0');
                               placeholder="Qty"
                               value={item.quantity}
                               onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
-                              className="w-16 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-2 py-1.5 text-sm text-slate-900 focus:outline-none text-center transition-colors"
+                              className="w-16 bg-slate-50 border border-slate-200 hover:border-slate-400 focus:border-indigo-500 focus:bg-white rounded-lg px-2 py-1.5 text-sm text-slate-900 focus:outline-none text-center transition-colors"
                             />
                             <input
                               type="text"
                               placeholder="Unit"
                               value={item.unit || ""}
                               onChange={(e) => handleItemChange(idx, "unit", e.target.value)}
-                              className="w-20 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-2 py-1.5 text-sm text-slate-900 focus:outline-none transition-colors"
+                              className="w-20 bg-slate-50 border border-slate-200 hover:border-slate-400 focus:border-indigo-500 focus:bg-white rounded-lg px-2 py-1.5 text-sm text-slate-900 focus:outline-none transition-colors"
                             />
                             <input
                               type="number"
@@ -1005,13 +1005,13 @@ const s = (secs % 60).toString().padStart(2, '0');
                               placeholder="Price"
                               value={item.price || ''}
                               onChange={(e) => handleItemChange(idx, 'price', e.target.value)}
-                              className="w-24 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:border-indigo-500 focus:bg-white rounded-lg px-2 py-1.5 text-sm text-slate-900 focus:outline-none text-right font-mono transition-colors"
+                              className="w-24 bg-slate-50 border border-slate-200 hover:border-slate-400 focus:border-indigo-500 focus:bg-white rounded-lg px-2 py-1.5 text-sm text-slate-900 focus:outline-none text-right font-mono transition-colors"
                             />
                             <button
                               type="button"
                               onClick={() => removeEditItemRow(idx)}
                               disabled={items.length === 1}
-                              className="text-slate-400 hover:text-red-650 disabled:opacity-35 cursor-pointer font-bold text-lg px-2"
+                              className="text-slate-400 hover:text-red-700 disabled:opacity-35 cursor-pointer font-bold text-lg px-2"
                             >
                               &times;
                             </button>
@@ -1037,7 +1037,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                             return (
                               <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
                                 <td className="py-3 px-4 font-semibold text-slate-800">{item.name || 'Unnamed Item'}</td>
-                                <td className="py-3 px-4 text-center text-slate-650 font-medium whitespace-nowrap">
+                                <td className="py-3 px-4 text-center text-slate-700 font-medium whitespace-nowrap">
                                   <div className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap">
                                     <span className="whitespace-nowrap">{item.quantity} {item.unit || ''}</span>
                                     {isLargeQuantity(item.quantity, item.unit) && (
@@ -1064,7 +1064,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                   <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-2 text-sm font-semibold text-slate-600">
                     <span className="text-slate-500">Calculated Grand Total:</span>
                     <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
-                      <span className="text-base sm:text-lg font-black text-slate-900 font-mono bg-slate-50 border border-slate-150 px-3 py-1 rounded">
+                      <span className="text-base sm:text-lg font-black text-slate-900 font-mono bg-slate-50 border border-slate-200 px-3 py-1 rounded">
                         ₹{orderTotal.toFixed(2)}
                       </span>
                       {items.some(item => item.price === undefined || item.price === null || item.price <= 0) && (
@@ -1089,7 +1089,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                       </svg>
                       Speech Transcript
                     </h3>
-                    <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-150 italic leading-relaxed font-medium">
+                    <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200 italic leading-relaxed font-medium">
                       "{transcript}"
                     </p>
                   </div>
@@ -1142,7 +1142,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                       </button>
                     ) : (
                       <div className="space-y-3">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-750">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800">
                           <span className="text-emerald-600 font-extrabold text-sm">✓</span>
                           <span>Recording Available</span>
                         </div>
@@ -1195,7 +1195,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                   setRecordingState('idle');
                   setAudioUrl(null);
                 }}
-                className="px-4 py-2 border border-slate-255 hover:bg-slate-50 rounded-lg text-xs font-bold text-slate-650 hover:text-slate-900 transition-colors cursor-pointer"
+                className="px-4 py-2 border border-slate-300 hover:bg-slate-50 rounded-lg text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors cursor-pointer"
               >
                 Cancel Order
               </button>
@@ -1205,7 +1205,7 @@ const s = (secs % 60).toString().padStart(2, '0');
                   <button
                     type="button"
                     onClick={() => setIsEditing(true)}
-                    className="px-4 py-2 bg-slate-50 hover:bg-slate-105 border border-slate-255 rounded-lg text-xs font-bold text-slate-700 transition-colors cursor-pointer"
+                    className="px-4 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-bold text-slate-700 transition-colors cursor-pointer"
                   >
                     Edit Details
                   </button>

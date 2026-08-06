@@ -109,6 +109,63 @@ export async function disconnectWhatsApp(): Promise<void> {
   if (!res.ok) throw await integrationError(res, 'Failed to disconnect WhatsApp');
 }
 
+export interface TelegramConnectionStatus {
+  configured: boolean;
+  status: 'not_connected' | 'pending' | 'active' | 'disconnected' | 'error';
+  bot_id?: string | null;
+  bot_username?: string | null;
+  bot_display_name?: string | null;
+  last_webhook_at?: string | null;
+  last_health_check_at?: string | null;
+  last_error?: string | null;
+  connected_at?: string | null;
+}
+
+export async function getTelegramConnectionStatus(): Promise<TelegramConnectionStatus> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/integrations/telegram/status`, {
+    headers,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw await integrationError(res, 'Failed to load Telegram connection');
+  return res.json();
+}
+
+export async function connectTelegram(botToken: string): Promise<TelegramConnectionStatus> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/integrations/telegram/connection`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bot_token: botToken }),
+  });
+  if (!res.ok) throw await integrationError(res, 'Failed to connect Telegram');
+  return res.json();
+}
+
+export async function checkTelegramConnection(): Promise<{
+  healthy: boolean;
+  status: string;
+  bot_username?: string;
+  pending_update_count: number;
+}> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/integrations/telegram/health-check`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw await integrationError(res, 'Telegram connection check failed');
+  return res.json();
+}
+
+export async function disconnectTelegram(): Promise<void> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/integrations/telegram/connection`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!res.ok) throw await integrationError(res, 'Failed to disconnect Telegram');
+}
+
 // Auth API
 export async function getMe(): Promise<any> {
   const headers = await getAuthHeaders();

@@ -40,8 +40,8 @@ export default function TermsPage() {
       </section>
 
       <section>
-        <h2>4. WhatsApp and acceptable use</h2>
-        <p>Businesses must comply with Meta&apos;s WhatsApp Business Messaging Policy, Commerce Policy, template requirements, consent rules and applicable anti-spam and consumer-protection laws. PhoneERP must not be used for spam, purchased contact lists, deceptive messages, unlawful products, harassment or unauthorised marketing. A business remains responsible for its messages, templates, customer relationships and connected WhatsApp Business Account.</p>
+        <h2>4. Communication channels and acceptable use</h2>
+        <p>Businesses must comply with the policies of each enabled provider, including Meta&apos;s WhatsApp policies and Telegram&apos;s Bot Platform terms, plus applicable consent, anti-spam and consumer-protection laws. PhoneERP must not be used for spam, purchased contact lists, deceptive messages, unlawful products, harassment or unauthorised marketing. A business remains responsible for its connected accounts, bots, messages, templates and customer relationships.</p>
       </section>
 
       <section>
@@ -71,7 +71,7 @@ export default function TermsPage() {
 
       <section>
         <h2>10. Termination and disconnection</h2>
-        <p>A business may stop using PhoneERP and request WhatsApp disconnection or account deletion at any time. Termination does not remove accrued payment obligations or records that must be retained by law. Disconnecting PhoneERP does not itself delete a business&apos;s Meta account or transfer ownership of its number.</p>
+        <p>A business may stop using PhoneERP and disconnect a supported channel or request account deletion at any time. Termination does not remove accrued payment obligations or records that must be retained by law. Disconnecting PhoneERP does not delete a business-owned Meta account or Telegram bot.</p>
       </section>
 
       <section>

@@ -102,7 +102,7 @@ function LoginContent() {
         </div>
 
         {error && (
-          <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-red-650 text-sm font-medium">
+          <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
             {error}
           </div>
         )}
@@ -147,7 +147,7 @@ function LoginContent() {
 
         <div className="mt-6 text-center text-xs text-slate-500 font-medium">
           Don&apos;t have an account?{' '}
-          <Link href="/signup" className="text-indigo-600 hover:text-indigo-850 font-bold">
+          <Link href="/signup" className="text-indigo-600 hover:text-indigo-900 font-bold">
             Create an account
           </Link>
         </div>

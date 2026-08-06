@@ -11,10 +11,13 @@ export default function LandingPage() {
           </span>
         </div>
         <div className="flex items-center space-x-4">
+          <Link href="/docs" className="hidden text-sm font-semibold text-slate-600 transition-colors hover:text-slate-950 sm:inline">
+            Documentation
+          </Link>
           <Link href="/login" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">
             Sign in
           </Link>
-          <Link href="/signup" className="text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm shadow-indigo-105">
+          <Link href="/signup" className="text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm shadow-indigo-100">
             Get Started
           </Link>
         </div>
@@ -81,6 +84,7 @@ export default function LandingPage() {
           <Link href="/terms" className="hover:text-indigo-700">Terms</Link>
           <Link href="/data-deletion" className="hover:text-indigo-700">Data deletion</Link>
           <Link href="/support" className="hover:text-indigo-700">Support</Link>
+          <Link href="/docs" className="hover:text-indigo-700">Documentation</Link>
         </nav>
       </footer>
     </div>

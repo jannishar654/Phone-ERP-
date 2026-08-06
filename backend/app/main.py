@@ -64,7 +64,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.routes.telegram import router as telegram_router
 from app.routes.twilio_whatsapp import router as twilio_whatsapp_router
 from app.routes.access import router as access_router
 from app.routes.staff import router as staff_router
@@ -76,10 +75,10 @@ from app.routes.customer_requests import router as customer_requests_router
 from app.routes.owner_notifications import router as owner_notifications_router
 from app.routes.meta_whatsapp import router as meta_whatsapp_router
 from app.routes.whatsapp_integrations import router as whatsapp_integrations_router
+from app.routes.telegram_integrations import router as telegram_integrations_router
 
 # Register routes
 app.include_router(api_router)
-app.include_router(telegram_router)
 app.include_router(twilio_whatsapp_router)
 app.include_router(access_router)
 app.include_router(staff_router)
@@ -91,6 +90,7 @@ app.include_router(customer_requests_router)
 app.include_router(owner_notifications_router)
 app.include_router(meta_whatsapp_router)
 app.include_router(whatsapp_integrations_router)
+app.include_router(telegram_integrations_router)
 
 @app.get("/")
 def read_root():

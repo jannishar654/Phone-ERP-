@@ -57,7 +57,7 @@ def send_delivery_notification(order_id: str, final_order: Optional[dict] = None
             "action_card_id_present": bool(full_order.get("action_card_id")),
             "total_amount_present": bool(full_order.get("total_amount")),
             "has_twilio_env": bool(settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN and settings.TWILIO_WHATSAPP_FROM),
-            "has_telegram_env": bool(settings.TELEGRAM_BOT_TOKEN),
+            "has_legacy_telegram_env": bool(settings.TELEGRAM_BOT_TOKEN),
             "has_frontend_url": bool(settings.FRONTEND_PUBLIC_BASE_URL)
         }
         print(f"DELIVERY_NOTIFICATION_DEBUG {debug_info}", flush=True)
@@ -78,7 +78,12 @@ def send_delivery_notification(order_id: str, final_order: Optional[dict] = None
         # Try to find destination
         channels = []
         if customer_id:
-            channels_res = supabase_client.table("customer_channels").select("*").eq("customer_id", customer_id).execute()
+            channels_query = supabase_client.table("customer_channels").select("*").eq(
+                "customer_id", customer_id
+            )
+            if shop_id_val:
+                channels_query = channels_query.eq("shop_id", shop_id_val)
+            channels_res = channels_query.execute()
             channels = channels_res.data if channels_res.data else []
             
         source = None
@@ -118,7 +123,9 @@ def send_delivery_notification(order_id: str, final_order: Optional[dict] = None
             chat_id = (telegram_channel.get("channel_chat_id") if telegram_channel else None) or telegram_chat_id
             if chat_id:
                 from app.services.telegram_service import telegram_service
-                telegram_service.send_message(chat_id, bill_msg)
+                telegram_service.send_message_for_shop(
+                    str(shop_id_val), str(chat_id), bill_msg
+                )
                 notification_info["notification_sent"] = True
                 notification_info["notification_channel"] = "telegram"
                 print(f"DELIVERY_NOTIFICATION_SENT channel=telegram chat_id={chat_id}", flush=True)

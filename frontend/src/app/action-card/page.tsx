@@ -120,7 +120,7 @@ function CustomDateTimePicker({ value, onChange }: CustomDateTimePickerProps) {
           <select
             value={hourVal}
             onChange={(e) => updateValue(dateVal || new Date(), e.target.value, minuteVal || "00", ampmVal || "AM")}
-            className="bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+            className="bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
           >
             <option value="">Hour</option>
             {hoursOptions.map((h) => (
@@ -131,7 +131,7 @@ function CustomDateTimePicker({ value, onChange }: CustomDateTimePickerProps) {
           <select
             value={minuteVal}
             onChange={(e) => updateValue(dateVal || new Date(), hourVal || "12", e.target.value, ampmVal || "AM")}
-            className="bg-white border border-slate-350 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+            className="bg-white border border-slate-400 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
           >
             <option value="">Min</option>
             {minutesOptions.map((m) => (
@@ -141,7 +141,7 @@ function CustomDateTimePicker({ value, onChange }: CustomDateTimePickerProps) {
           <select
             value={ampmVal}
             onChange={(e) => updateValue(dateVal || new Date(), hourVal || "12", minuteVal || "00", e.target.value)}
-            className="bg-white border border-slate-350 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-750 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
+            className="bg-white border border-slate-400 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
           >
             <option value="AM">AM</option>
             <option value="PM">PM</option>
@@ -495,7 +495,7 @@ function ActionCardContent() {
         {/* Left 3 Cols: Cards List */}
         <div className="lg:col-span-3 space-y-4 lg:max-h-[calc(100vh-200px)] lg:overflow-y-auto pr-3">
           {isLoading ? (
-            <div className="py-12 text-center text-sm text-slate-450">Loading cards...</div>
+            <div className="py-12 text-center text-sm text-slate-500">Loading cards...</div>
           ) : error ? (
             <div className="py-12 text-center text-sm text-red-500 font-medium">{error}</div>
           ) : cards.length === 0 ? (
@@ -506,7 +506,7 @@ function ActionCardContent() {
                 key={card.id}
                 id={`card-${card.id}`}
                 onClick={() => confirmNavigation(() => selectCard(card))}
-                className={`p-3 rounded-xl border transition-all duration-150 cursor-pointer flex flex-col justify-between shadow-3xs ${selectedCard?.id === card.id
+                className={`p-3 rounded-xl border transition-all duration-200 cursor-pointer flex flex-col justify-between shadow-3xs ${selectedCard?.id === card.id
                     ? 'border-indigo-500 bg-indigo-50/40 shadow-xs'
                     : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50 hover:shadow-xs'
                   }`}
@@ -586,7 +586,7 @@ function ActionCardContent() {
                                   setOpenMenuCardId(null);
                                   setDeleteConfirmCard(card);
                                 }}
-                                className="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-650 hover:text-red-700 font-bold transition-colors cursor-pointer flex items-center gap-1.5 border-t border-slate-100"
+                                className="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-700 hover:text-red-700 font-bold transition-colors cursor-pointer flex items-center gap-1.5 border-t border-slate-100"
                               >
                                 <svg className="h-3.5 w-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -621,7 +621,7 @@ function ActionCardContent() {
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Ordered Items</span>
                   <ul className="space-y-0.5">
                     {card.items.map((item, idx) => (
-                      <li key={idx} className="text-xs text-slate-650 flex justify-between font-semibold">
+                      <li key={idx} className="text-xs text-slate-700 flex justify-between font-semibold">
                         <span>{item.quantity}{item.unit ? ` ${item.unit}` : 'x'} {item.name}</span>
                         {item.price !== undefined && item.price !== null && item.price > 0 ? (
                           <span className="text-slate-500 font-mono">₹{(item.price * item.quantity).toFixed(2)}</span>
@@ -643,7 +643,7 @@ function ActionCardContent() {
                     <span className="text-slate-400 text-[10px] uppercase font-bold">When:</span>
                     <span className="text-slate-800 truncate">{formatDeliveryTime(card.delivery_time)}</span>
                     {isDayMissing(card) && (
-                      <span className="text-amber-650 font-black text-xs cursor-help shrink-0" title="Delivery day not specified">⚠</span>
+                      <span className="text-amber-700 font-black text-xs cursor-help shrink-0" title="Delivery day not specified">⚠</span>
                     )}
                   </span>
                 </div>
@@ -672,7 +672,7 @@ function ActionCardContent() {
                 </button>
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <h3 className="font-bold text-slate-900">Edit Order Details</h3>
-                  <span className="text-xs font-mono text-slate-450 font-bold">{selectedCard.id}</span>
+                  <span className="text-xs font-mono text-slate-500 font-bold">{selectedCard.id}</span>
                 </div>
 
                 <div className="space-y-3">
@@ -760,7 +760,7 @@ function ActionCardContent() {
                             type="button"
                             onClick={() => removeEditItemRow(idx)}
                             disabled={editItems.length === 1}
-                            className="text-slate-400 hover:text-red-650 disabled:opacity-35 cursor-pointer font-extrabold text-sm"
+                            className="text-slate-400 hover:text-red-700 disabled:opacity-35 cursor-pointer font-extrabold text-sm"
                           >
                             &times;
                           </button>
@@ -822,7 +822,7 @@ function ActionCardContent() {
                     </div>
                     <div className="flex items-center gap-2 min-w-0">
                       <Phone className="h-4 w-4 text-indigo-500 shrink-0" />
-                      <span className="text-xs text-indigo-655 font-bold truncate">
+                      <span className="text-xs text-indigo-700 font-bold truncate">
                         {selectedCard.customer_phone || 'No phone number'}
                       </span>
                     </div>
@@ -866,7 +866,7 @@ function ActionCardContent() {
                     <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Order Items</h4>
                     <div className="space-y-2">
                       {selectedCard.items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-xs p-2.5 rounded-lg bg-slate-50 border border-slate-150 shadow-3xs hover:bg-slate-50/70 transition-colors">
+                        <div key={idx} className="flex justify-between items-center text-xs p-2.5 rounded-lg bg-slate-50 border border-slate-200 shadow-3xs hover:bg-slate-50/70 transition-colors">
                           <div className="text-slate-800 font-semibold flex items-center min-w-0 pr-2">
                             {(() => {
                               const isQtyMissing = item.quantity === null || item.quantity === undefined || ['none', 'null', 'missing', 'unknown'].includes(String(item.quantity).toLowerCase());
@@ -889,7 +889,7 @@ function ActionCardContent() {
                                 </span>
                               )}
                               {item.resolution_status === 'suggested' && item.canonical_name && (
-                                <div className="mt-1 text-[10px] text-blue-650 font-bold flex flex-wrap items-center gap-1">
+                                <div className="mt-1 text-[10px] text-blue-700 font-bold flex flex-wrap items-center gap-1">
                                   <span className="bg-blue-50 border border-blue-200 px-1 rounded">Suggested: {item.canonical_name}</span>
                                   <span className="text-slate-500 font-normal ml-1">
                                     <button className="underline hover:text-blue-800 font-semibold cursor-pointer" onClick={(e) => { e.preventDefault(); handleResolveSuggestion(idx, 'accepted'); }}>Accept</button> |
@@ -932,7 +932,7 @@ function ActionCardContent() {
                         <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center gap-2 text-sm font-semibold text-slate-600">
                           <span className="text-slate-500 text-xs uppercase tracking-wider font-bold">Calculated Grand Total</span>
                           <div className="flex flex-col items-end">
-                            <span className="text-base sm:text-lg font-black text-slate-900 font-mono bg-slate-50 border border-slate-150 px-3 py-0.5 rounded-lg">
+                            <span className="text-base sm:text-lg font-black text-slate-900 font-mono bg-slate-50 border border-slate-200 px-3 py-0.5 rounded-lg">
                               ₹{orderTotal.toFixed(2)}
                             </span>
                             {hasMissingPrice && (
@@ -1023,7 +1023,7 @@ function ActionCardContent() {
                       <button
                         type="button"
                         onClick={() => setIsAiAnalysisExpanded(!isAiAnalysisExpanded)}
-                        className="w-full flex items-center justify-between text-[10px] font-bold text-slate-450 uppercase tracking-wider py-2 px-3 bg-white border border-slate-200 hover:bg-slate-50/50 hover:border-slate-300 rounded-lg transition-all"
+                        className="w-full flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider py-2 px-3 bg-white border border-slate-200 hover:bg-slate-50/50 hover:border-slate-300 rounded-lg transition-all"
                       >
                         <span>Original Transcript</span>
                         <svg
@@ -1039,10 +1039,10 @@ function ActionCardContent() {
                       </button>
 
                       {isAiAnalysisExpanded && (
-                        <div className="mt-3 p-4 bg-slate-50 border border-slate-150 rounded-lg space-y-4">
+                        <div className="mt-3 p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-4">
                           {/* Original AI Transcript */}
                           <div>
-                            <blockquote className="text-xs text-slate-650 bg-white p-2.5 rounded border border-slate-200 italic leading-relaxed font-medium">
+                            <blockquote className="text-xs text-slate-700 bg-white p-2.5 rounded border border-slate-200 italic leading-relaxed font-medium">
                               "{selectedCard.transcript}"
                             </blockquote>
                           </div>
@@ -1075,7 +1075,7 @@ function ActionCardContent() {
                     <button
                       onClick={() => handleStatusUpdate('rejected')}
                       disabled={selectedCard.status === 'rejected'}
-                      className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-550 disabled:opacity-40 disabled:hover:bg-red-600 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
+                      className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-600 disabled:opacity-40 disabled:hover:bg-red-600 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
                     >
                       Reject
                     </button>
@@ -1102,7 +1102,7 @@ function ActionCardContent() {
             )
           ) : (
             <div className="flex flex-col items-center justify-center text-center h-[350px] text-slate-400">
-              <svg className="h-12 w-12 text-slate-350 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <svg className="h-12 w-12 text-slate-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
               </svg>
               <h3 className="text-sm font-bold text-slate-900">Select an Action Card</h3>
@@ -1117,7 +1117,7 @@ function ActionCardContent() {
       {/* Delete Confirmation Modal */}
       {deleteConfirmCard && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in-50 zoom-in-95 duration-150">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in-50 zoom-in-95 duration-200">
             <div className="flex items-start gap-3">
               <div className="h-10 w-10 rounded-full bg-red-50 flex items-center justify-center text-red-600 shrink-0">
                 <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1172,7 +1172,7 @@ function ActionCardContent() {
       {/* Unsaved Changes Confirmation Dialog */}
       {unsavedChangesConfirm && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-sm w-full p-5 space-y-4 animate-in fade-in-50 zoom-in-95 duration-150">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-sm w-full p-5 space-y-4 animate-in fade-in-50 zoom-in-95 duration-200">
             <div className="space-y-1.5">
               <h3 className="text-sm font-bold text-slate-900">Unsaved Changes</h3>
               <p className="text-xs text-slate-500 font-medium leading-relaxed">
@@ -1208,7 +1208,7 @@ function ActionCardContent() {
 
 export default function ActionCardPage() {
   return (
-    <Suspense fallback={<div className="py-12 text-center text-sm text-slate-450 font-bold">Loading action cards...</div>}>
+    <Suspense fallback={<div className="py-12 text-center text-sm text-slate-500 font-bold">Loading action cards...</div>}>
       <ActionCardContent />
     </Suspense>
   );

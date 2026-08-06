@@ -1,7 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useState } from "react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock3,
+  PackageCheck,
+  RefreshCw,
+  Truck,
+  XCircle,
+} from "lucide-react";
 import { getOrders, updateOrderLifecycleStatus } from "@/lib/api";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 
@@ -11,7 +20,6 @@ interface OrderItem {
   display_name?: string;
   quantity: number;
   unit: string;
-  unit_price: number;
   line_total: number;
 }
 
@@ -21,167 +29,238 @@ interface Order {
   status: string;
   lifecycle_status: string | null;
   created_at: string;
+  delivery_address?: string | null;
+  delivery_time?: string | null;
+  customer_name?: string | null;
   order_items: OrderItem[];
   orderNumber?: number;
+}
+
+type OrderCategory = "packing" | "out_for_delivery" | "delivered" | "cancelled";
+
+const TABS: Array<{ id: OrderCategory; label: string }> = [
+  { id: "packing", label: "Packing" },
+  { id: "out_for_delivery", label: "Out for delivery" },
+  { id: "delivered", label: "Delivered" },
+  { id: "cancelled", label: "Cancelled" },
+];
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Something went wrong.";
+}
+
+function categoryFor(status: string | null): OrderCategory {
+  if (!status || status === "pending_review" || status === "packing") return "packing";
+  if (status === "out_for_delivery" || status === "delivered" || status === "cancelled") {
+    return status;
+  }
+  return "packing";
+}
+
+function statusDetails(status: OrderCategory) {
+  if (status === "delivered") return { label: "Delivered", icon: CheckCircle2 };
+  if (status === "out_for_delivery") return { label: "Out for delivery", icon: Truck };
+  if (status === "cancelled") return { label: "Cancelled", icon: XCircle };
+  return { label: "Packing", icon: PackageCheck };
 }
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<string>("packing");
+  const [activeTab, setActiveTab] = useState<OrderCategory>("packing");
   const [updating, setUpdating] = useState<string | null>(null);
 
-  const { lastUpdated, refreshError, manualRefresh, silentRefresh } = useAutoRefresh(async (isSilent) => {
-    try {
-      if (!isSilent && orders.length === 0) setLoading(true);
-      const data = await getOrders();
-      setOrders(data || []);
-    } catch (err: any) {
-      if (!isSilent && orders.length === 0) setError(err.message);
-      else throw err;
-    } finally {
-      if (!isSilent) setLoading(false);
-    }
-  }, 10000);
+  const { lastUpdated, refreshError, manualRefresh, silentRefresh } = useAutoRefresh(
+    async (isSilent) => {
+      try {
+        if (!isSilent && orders.length === 0) setLoading(true);
+        const data = await getOrders();
+        setOrders(data || []);
+        setError("");
+      } catch (requestError: unknown) {
+        if (!isSilent && orders.length === 0) setError(errorMessage(requestError));
+        else throw requestError;
+      } finally {
+        if (!isSilent) setLoading(false);
+      }
+    },
+    10000,
+  );
 
-  const handleUpdateStatus = async (orderId: string, newStatus: string) => {
+  const handleUpdateStatus = async (orderId: string, newStatus: OrderCategory) => {
     try {
       setUpdating(orderId);
+      setError("");
       const updated = await updateOrderLifecycleStatus(orderId, newStatus);
-      setOrders(orders.map(o => o.id === orderId ? { ...o, lifecycle_status: updated.lifecycle_status } : o));
-      silentRefresh();
-    } catch (err: any) {
-      alert(`Failed to update: ${err.message}`);
+      setOrders((current) =>
+        current.map((order) =>
+          order.id === orderId
+            ? { ...order, lifecycle_status: updated.lifecycle_status }
+            : order,
+        ),
+      );
+      await silentRefresh();
+    } catch (requestError: unknown) {
+      setError(`Status update failed. ${errorMessage(requestError)}`);
     } finally {
       setUpdating(null);
     }
   };
 
-  if (loading) return <div className="p-8 text-center text-gray-500">Loading orders...</div>;
-
-  const getStatusCategory = (lifecycle: string | null) => {
-    if (!lifecycle || lifecycle === 'pending_review' || lifecycle === 'packing') return 'packing';
-    return lifecycle;
-  };
-
-  const filteredOrders = orders.filter(o => getStatusCategory(o.lifecycle_status) === activeTab);
+  const filteredOrders = orders.filter(
+    (order) => categoryFor(order.lifecycle_status) === activeTab,
+  );
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <header className="bg-white border-b px-4 py-3 sticky top-0 z-10 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-600 transition-colors text-sm font-bold">
-            &larr; Back
+    <div className="w-full text-slate-950">
+      <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <Link
+            href="/dashboard"
+            className="text-sm font-semibold text-slate-500 transition-colors hover:text-slate-950"
+          >
+            &larr; Dashboard
           </Link>
-          <h1 className="text-lg font-semibold text-gray-900">Final Orders / Bills</h1>
+          <h1 className="mt-2 text-2xl font-bold text-slate-950">Orders and fulfilment</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Review active orders and move them through the delivery workflow.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          {refreshError && <span className="text-xs text-red-500 hidden sm:inline" title={refreshError}>Unable to refresh. Showing previously loaded data.</span>}
-          {lastUpdated && !refreshError && <span className="text-xs text-gray-500 hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>}
-          <button onClick={manualRefresh} className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 font-semibold rounded hover:bg-gray-200 transition-colors">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs text-slate-500">
+            {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : "Waiting for first refresh"}
+          </span>
+          <button
+            type="button"
+            onClick={manualRefresh}
+            className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100"
+          >
+            <RefreshCw className="h-4 w-4" />
             Refresh
           </button>
         </div>
       </header>
 
-      <main className="p-4 max-w-lg mx-auto">
-        {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm">{error}</div>}
-
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-          {['packing', 'out_for_delivery', 'delivered', 'cancelled'].map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap ${
-                activeTab === tab 
-                  ? 'bg-indigo-600 text-white' 
-                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              {tab.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-            </button>
-          ))}
+      {(error || refreshError) && (
+        <div role="alert" className="mt-5 flex items-start gap-3 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{error || "Unable to refresh. Previously loaded orders are still shown."}</span>
         </div>
+      )}
 
-        <div className="space-y-4">
-          {filteredOrders.length === 0 ? (
-            <p className="text-gray-500 text-center mt-10">No orders in this status.</p>
-          ) : (
-            filteredOrders.map(order => (
-              <div key={order.id} className="bg-white p-4 rounded-xl shadow-sm border">
-                <div className="flex justify-between items-start mb-3 border-b pb-3">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Order #{order.orderNumber ?? order.id.slice(0, 8)}</h3>
-                    <p className="text-xs text-gray-500">{new Date(order.created_at).toLocaleString()}</p>
+      <div className="mt-6 overflow-x-auto border-b border-slate-200" aria-label="Order status filters">
+        <div className="flex min-w-max gap-7">
+          {TABS.map((tab) => {
+            const count = orders.filter(
+              (order) => categoryFor(order.lifecycle_status) === tab.id,
+            ).length;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex h-11 items-center gap-2 border-b-2 px-1 text-sm font-semibold transition-colors ${
+                  activeTab === tab.id
+                    ? "border-slate-950 text-slate-950"
+                    : "border-transparent text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                {tab.label}
+                <span className="min-w-6 bg-slate-200 px-1.5 py-0.5 text-center text-xs text-slate-700">
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
+          <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Loading orders...
+        </div>
+      ) : filteredOrders.length === 0 ? (
+        <div className="mt-6 flex min-h-64 flex-col items-center justify-center border border-dashed border-slate-300 bg-white px-6 text-center">
+          <PackageCheck className="h-8 w-8 text-slate-400" />
+          <h2 className="mt-3 font-semibold text-slate-900">No {TABS.find((tab) => tab.id === activeTab)?.label.toLowerCase()} orders</h2>
+          <p className="mt-1 max-w-sm text-sm text-slate-500">
+            New updates appear here automatically while this page is open.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {filteredOrders.map((order) => {
+            const category = categoryFor(order.lifecycle_status);
+            const details = statusDetails(category);
+            const StatusIcon = details.icon;
+            const displayId = order.orderNumber ?? order.id.slice(0, 8);
+            return (
+              <article key={order.id} className="border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
+                  <div className="min-w-0">
+                    <h2 className="break-words font-mono text-base font-bold text-slate-950">
+                      Order #{displayId}
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {new Date(order.created_at).toLocaleString("en-IN")}
+                    </p>
                   </div>
-                  <div className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1
-                    ${order.lifecycle_status === 'delivered' ? 'bg-green-100 text-green-700' : 
-                      order.lifecycle_status === 'cancelled' ? 'bg-red-100 text-red-700' :
-                      'bg-indigo-100 text-indigo-700'}`}>
-                    {order.lifecycle_status === 'delivered' ? '✅' : '📦'}
-                    {order.lifecycle_status || order.status}
-                  </div>
+                  <span className="inline-flex shrink-0 items-center gap-1.5 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800">
+                    <StatusIcon className="h-3.5 w-3.5" /> {details.label}
+                  </span>
                 </div>
 
-                <div className="space-y-2 mb-3">
-                  {order.order_items && order.order_items.map(item => (
-                    <div key={item.id} className="flex justify-between text-sm">
-                      <span className="text-gray-700">{item.display_name || item.raw_name} <span className="text-gray-400">x {item.quantity} {item.unit}</span></span>
-                      <span className="font-medium">₹{item.line_total}</span>
+                {(order.customer_name || order.delivery_address || order.delivery_time) && (
+                  <dl className="grid gap-3 border-b border-slate-200 py-4 text-sm sm:grid-cols-2">
+                    {order.customer_name && <div><dt className="text-xs font-semibold uppercase text-slate-400">Customer</dt><dd className="mt-1 text-slate-800">{order.customer_name}</dd></div>}
+                    {order.delivery_address && <div><dt className="text-xs font-semibold uppercase text-slate-400">Delivery</dt><dd className="mt-1 text-slate-800">{order.delivery_address}</dd></div>}
+                    {order.delivery_time && <div className="sm:col-span-2"><dt className="text-xs font-semibold uppercase text-slate-400">Requested time</dt><dd className="mt-1 inline-flex items-center gap-1.5 text-slate-800"><Clock3 className="h-4 w-4 text-slate-400" />{order.delivery_time}</dd></div>}
+                  </dl>
+                )}
+
+                <div className="divide-y divide-slate-100 py-2">
+                  {(order.order_items || []).map((item) => (
+                    <div key={item.id} className="flex items-start justify-between gap-4 py-2.5 text-sm">
+                      <span className="min-w-0 text-slate-800">
+                        {item.display_name || item.raw_name}
+                        <span className="ml-1 text-slate-500">x {item.quantity} {item.unit}</span>
+                      </span>
+                      <span className="shrink-0 font-semibold text-slate-950">₹{item.line_total}</span>
                     </div>
                   ))}
                 </div>
 
-                <div className="flex justify-between items-center border-t pt-3 font-semibold mb-4">
+                <div className="flex items-center justify-between border-t border-slate-200 pt-4 text-base font-bold text-slate-950">
                   <span>Total</span>
                   <span>₹{order.total_amount}</span>
                 </div>
 
-                {/* Actions */}
-                <div className="flex gap-2">
-                  {getStatusCategory(order.lifecycle_status) === 'packing' && (
-                    <>
-                      <button 
-                        onClick={() => handleUpdateStatus(order.id, 'out_for_delivery')}
-                        disabled={updating === order.id}
-                        className="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50"
-                      >
-                        Mark Out for Delivery
-                      </button>
-                      <button 
-                        onClick={() => handleUpdateStatus(order.id, 'cancelled')}
-                        disabled={updating === order.id}
-                        className="px-4 bg-gray-100 text-gray-700 py-2 rounded-lg text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                    </>
-                  )}
-                  {getStatusCategory(order.lifecycle_status) === 'out_for_delivery' && (
-                    <>
-                      <button 
-                        onClick={() => handleUpdateStatus(order.id, 'delivered')}
-                        disabled={updating === order.id}
-                        className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
-                      >
-                        Mark Delivered
-                      </button>
-                      <button 
-                        onClick={() => handleUpdateStatus(order.id, 'cancelled')}
-                        disabled={updating === order.id}
-                        className="px-4 bg-gray-100 text-gray-700 py-2 rounded-lg text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
+                {(category === "packing" || category === "out_for_delivery") && (
+                  <div className="mt-5 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateStatus(order.id, category === "packing" ? "out_for_delivery" : "delivered")}
+                      disabled={updating === order.id}
+                      className="min-h-11 bg-slate-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {updating === order.id ? "Updating..." : category === "packing" ? "Mark out for delivery" : "Mark delivered"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateStatus(order.id, "cancelled")}
+                      disabled={updating === order.id}
+                      className="min-h-11 border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </article>
+            );
+          })}
         </div>
-      </main>
+      )}
     </div>
   );
 }

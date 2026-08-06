@@ -44,7 +44,7 @@ export default function Dashboard() {
 
   const metrics = [
     { name: 'Pending Review (Action Cards)', value: pendingActionCards, color: 'text-amber-600' },
-    { name: 'Packing Orders', value: packingOrders, color: 'text-indigo-650' },
+    { name: 'Packing Orders', value: packingOrders, color: 'text-indigo-700' },
     { name: 'Out for Delivery Orders', value: outForDeliveryOrders, color: 'text-emerald-600' },
     { name: 'Delivered Orders', value: deliveredOrders, color: 'text-cyan-600' },
   ];
@@ -102,7 +102,7 @@ export default function Dashboard() {
           ) : error ? (
             <div className="py-12 text-center text-sm text-red-500 font-medium">{error}</div>
           ) : recentCards.length === 0 ? (
-            <div className="py-12 text-center text-sm text-slate-550">No orders found. Create one to get started!</div>
+            <div className="py-12 text-center text-sm text-slate-600">No orders found. Create one to get started!</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-100 text-left">
@@ -114,14 +114,14 @@ export default function Dashboard() {
                     <th className="py-3 px-4 text-right">Items</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-sm text-slate-650">
+                <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
                   {recentCards.map((card) => (
                     <tr key={card.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-4 px-4">
                         <Link href={`/action-card?id=${card.id}`} className="font-bold text-slate-900 hover:text-indigo-600 transition-colors block">
                           {card.customer_name || 'Anonymous Customer'}
                         </Link>
-                        <div className="text-xs text-slate-450">{card.customer_phone}</div>
+                        <div className="text-xs text-slate-500">{card.customer_phone}</div>
                       </td>
                       <td className="py-4 px-4 max-w-xs truncate">
                         <div className="truncate text-slate-700 font-medium">{card.delivery_address}</div>
@@ -135,7 +135,7 @@ export default function Dashboard() {
                             ? 'bg-indigo-50 text-indigo-705 border-indigo-200'
                             : card.status === 'rejected'
                             ? 'bg-red-50 text-red-700 border-red-200'
-                            : 'bg-amber-50 text-amber-700 border-amber-250'
+                            : 'bg-amber-50 text-amber-700 border-amber-300'
                         }`}>
                           {card.status}
                         </span>
@@ -193,8 +193,8 @@ export default function Dashboard() {
 
           {/* AI Info Panel */}
           <div className="rounded-xl border border-slate-200 bg-indigo-50/45 p-6 shadow-sm">
-            <h4 className="text-sm font-bold uppercase tracking-wider text-indigo-850">Order Extraction Pipeline</h4>
-            <p className="mt-2 text-sm text-slate-650 leading-relaxed font-medium">
+            <h4 className="text-sm font-bold uppercase tracking-wider text-indigo-900">Order Extraction Pipeline</h4>
+            <p className="mt-2 text-sm text-slate-700 leading-relaxed font-medium">
               Customer speech audio uploads transcribe automatically. In-memory data structures map coordinates, pricing lists, and delivery timeframes into Action Cards for validation.
             </p>
           </div>

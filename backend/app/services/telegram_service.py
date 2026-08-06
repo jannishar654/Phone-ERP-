@@ -1,6 +1,7 @@
 import logging
 import requests
 import re
+from contextvars import ContextVar
 from typing import Optional, Dict, Any
 from app.config.settings import settings
 from app.services.supabase import supabase_client
@@ -23,17 +24,56 @@ class TelegramService:
     def __init__(self):
         self.bot_token = settings.TELEGRAM_BOT_TOKEN
         self.api_url = f"https://api.telegram.org/bot{self.bot_token}"
+        self._request_bot_token: ContextVar[Optional[str]] = ContextVar(
+            "telegram_request_bot_token", default=None
+        )
+
+    def _current_bot_token(self) -> str:
+        return self._request_bot_token.get() or settings.TELEGRAM_BOT_TOKEN
     
-    def send_message(self, chat_id: str, text: str):
-        if not self.bot_token:
-            logger.warning("TELEGRAM_BOT_TOKEN not set. Cannot send message.")
-            return
-        url = f"{self.api_url}/sendMessage"
+    def send_message(self, chat_id: str, text: str) -> bool:
+        bot_token = self._current_bot_token()
+        if not bot_token:
+            logger.warning("No Telegram bot credential is available. Cannot send message.")
+            return False
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
         payload = {"chat_id": chat_id, "text": text}
         try:
-            requests.post(url, json=payload, timeout=10)
+            response = requests.post(url, json=payload, timeout=10)
+            response.raise_for_status()
+            return True
         except Exception as e:
-            logger.error(f"Failed to send telegram message: {e}")
+            safe_error = str(e).replace(bot_token, "***TOKEN***")
+            logger.error("Failed to send Telegram message: %s", safe_error)
+            return False
+
+    def send_message_for_shop(self, shop_id: str, chat_id: str, text: str) -> None:
+        """Send through the bot connected to the order's shop."""
+        bot_token: Optional[str] = None
+        try:
+            from app.services.telegram_connection_service import (
+                telegram_connection_service,
+            )
+
+            connection = telegram_connection_service.resolve_shop_connection(shop_id)
+            if connection:
+                bot_token = telegram_connection_service.resolve_token(connection)
+            elif shop_id == settings.TELEGRAM_DEFAULT_SHOP_ID:
+                bot_token = settings.TELEGRAM_BOT_TOKEN or None
+        except Exception as exc:
+            logger.error(
+                "Telegram outbound routing failed shop_id=%s error_type=%s",
+                shop_id,
+                type(exc).__name__,
+            )
+        if not bot_token:
+            raise RuntimeError("NoActiveTelegramConnection")
+        token_context = self._request_bot_token.set(bot_token)
+        try:
+            if not self.send_message(chat_id, text):
+                raise RuntimeError("TelegramMessageSendFailed")
+        finally:
+            self._request_bot_token.reset(token_context)
 
     def _resolve_shop_and_owner(self) -> tuple[Optional[str], Optional[str]]:
         shop_id = settings.TELEGRAM_DEFAULT_SHOP_ID
@@ -50,9 +90,114 @@ class TelegramService:
                 
         return shop_id, owner_id
 
-    def get_or_create_customer(self, telegram_user_id: str, telegram_chat_id: str) -> Optional[Dict[str, Any]]:
+    def _resolve_connection_context(
+        self, connection: Optional[Dict[str, Any]]
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        if not connection:
+            shop_id, owner_id = self._resolve_shop_and_owner()
+            return shop_id, owner_id, settings.TELEGRAM_BOT_TOKEN or None
+        shop_id = connection.get("shop_id")
+        owner_id = None
+        try:
+            result = (
+                supabase_client.table("shops")
+                .select("owner_id")
+                .eq("id", shop_id)
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                owner_id = result.data[0].get("owner_id")
+            if not owner_id:
+                membership = (
+                    supabase_client.table("shop_members")
+                    .select("user_id")
+                    .eq("shop_id", shop_id)
+                    .eq("role", "owner")
+                    .eq("status", "active")
+                    .limit(1)
+                    .execute()
+                )
+                if membership.data:
+                    owner_id = membership.data[0].get("user_id")
+            from app.services.telegram_connection_service import (
+                telegram_connection_service,
+            )
+
+            bot_token = telegram_connection_service.resolve_token(connection)
+        except Exception as exc:
+            logger.error(
+                "Telegram connection context failed connection_id=%s error_type=%s",
+                connection.get("id"),
+                type(exc).__name__,
+            )
+            return shop_id, owner_id, None
+        return shop_id, owner_id, bot_token
+
+    def get_or_create_customer(
+        self,
+        telegram_user_id: str,
+        telegram_chat_id: str,
+        shop_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         if not supabase_client:
             return None
+
+        if shop_id:
+            try:
+                existing = (
+                    supabase_client.table("customer_channels")
+                    .select("*, customers(*)")
+                    .eq("shop_id", shop_id)
+                    .eq("channel", "telegram")
+                    .eq("channel_user_id", telegram_user_id)
+                    .limit(1)
+                    .execute()
+                )
+                if existing.data:
+                    channel = existing.data[0]
+                    customer = dict(channel.get("customers") or {})
+                    customer.update(
+                        {
+                            "telegram_state": channel.get("state") or "awaiting_name",
+                            "profile_completed": bool(channel.get("profile_completed")),
+                            "telegram_user_id": telegram_user_id,
+                            "telegram_chat_id": telegram_chat_id,
+                            "_telegram_channel_id": channel.get("id"),
+                        }
+                    )
+                    return customer
+
+                customer_result = supabase_client.table("customers").insert(
+                    {"shop_id": shop_id, "name": "Unknown"}
+                ).execute()
+                if not customer_result.data:
+                    return None
+                customer = customer_result.data[0]
+                channel_result = supabase_client.table("customer_channels").insert(
+                    {
+                        "shop_id": shop_id,
+                        "customer_id": customer["id"],
+                        "channel": "telegram",
+                        "channel_user_id": telegram_user_id,
+                        "channel_chat_id": telegram_chat_id,
+                        "state": "awaiting_name",
+                        "profile_completed": False,
+                    }
+                ).execute()
+                if not channel_result.data:
+                    return None
+                return {
+                    **customer,
+                    "telegram_state": "awaiting_name",
+                    "profile_completed": False,
+                    "telegram_user_id": telegram_user_id,
+                    "telegram_chat_id": telegram_chat_id,
+                    "_telegram_channel_id": channel_result.data[0]["id"],
+                }
+            except Exception as e:
+                logger.error("Error in scoped Telegram customer lookup: %s", e)
+                return None
             
         try:
             res = supabase_client.table("customers").select("*").eq("telegram_user_id", telegram_user_id).execute()
@@ -79,15 +224,75 @@ class TelegramService:
             logger.error(f"Error in get_or_create_customer: {e}")
         return None
 
-    def update_customer(self, customer_id: str, updates: Dict[str, Any]):
+    def update_customer(
+        self,
+        customer_id: str,
+        updates: Dict[str, Any],
+        channel_id: Optional[str] = None,
+    ):
         if not supabase_client:
             return
         try:
-            supabase_client.table("customers").update(updates).eq("id", customer_id).execute()
+            customer_fields = {
+                key: value
+                for key, value in updates.items()
+                if key not in {"telegram_state", "profile_completed"}
+            }
+            channel_fields = {}
+            if "telegram_state" in updates:
+                channel_fields["state"] = updates["telegram_state"]
+            if "profile_completed" in updates:
+                channel_fields["profile_completed"] = updates["profile_completed"]
+            if customer_fields:
+                supabase_client.table("customers").update(customer_fields).eq(
+                    "id", customer_id
+                ).execute()
+            if channel_id and channel_fields:
+                supabase_client.table("customer_channels").update(channel_fields).eq(
+                    "id", channel_id
+                ).execute()
+            elif not channel_id and channel_fields:
+                legacy_updates = {
+                    "telegram_state": updates.get("telegram_state"),
+                    "profile_completed": updates.get("profile_completed"),
+                }
+                supabase_client.table("customers").update(
+                    {key: value for key, value in legacy_updates.items() if value is not None}
+                ).eq("id", customer_id).execute()
         except Exception as e:
             logger.error(f"Error updating customer: {e}")
 
-    async def process_update(self, payload: Dict[str, Any]):
+    async def process_update(
+        self, payload: Dict[str, Any], connection: Optional[Dict[str, Any]] = None
+    ):
+        shop_id, owner_id, bot_token = self._resolve_connection_context(connection)
+        if not shop_id or not owner_id or not bot_token:
+            logger.warning(
+                "Telegram update is not routable connection_id=%s",
+                (connection or {}).get("id"),
+            )
+            return
+        token_context = self._request_bot_token.set(bot_token)
+        try:
+            provider_namespace = str((connection or {}).get("id") or "legacy")
+            return await self._process_update(
+                payload,
+                shop_id,
+                owner_id,
+                provider_namespace=provider_namespace,
+                scoped_connection=bool(connection),
+            )
+        finally:
+            self._request_bot_token.reset(token_context)
+
+    async def _process_update(
+        self,
+        payload: Dict[str, Any],
+        shop_id: str,
+        owner_id: str,
+        provider_namespace: str = "legacy",
+        scoped_connection: bool = False,
+    ):
         message = payload.get("message")
         if not message:
             return
@@ -98,15 +303,21 @@ class TelegramService:
         # Support both voice and audio
         voice_or_audio = message.get("voice") or message.get("audio")
         
-        shop_id, owner_id = self._resolve_shop_and_owner()
-        if not shop_id or not owner_id:
-            self.send_message(chat_id, "Shop is not configured yet. Please contact the shop owner.")
-            return
-
-        customer = self.get_or_create_customer(user_id, chat_id)
+        customer = self.get_or_create_customer(
+            user_id,
+            chat_id,
+            shop_id=shop_id if scoped_connection else None,
+        )
         if not customer:
             self.send_message(chat_id, "System error initializing profile.")
             return
+
+        def persist_customer(updates: Dict[str, Any]) -> None:
+            self.update_customer(
+                customer["id"],
+                updates,
+                channel_id=customer.get("_telegram_channel_id"),
+            )
 
         if voice_or_audio:
             if not customer.get("profile_completed"):
@@ -121,10 +332,9 @@ class TelegramService:
             
             logger.info(f"Telegram voice/audio file_id present: {file_id}")
             
-            # Fetch token dynamically to support env var updates without restart
-            bot_token = settings.TELEGRAM_BOT_TOKEN
+            bot_token = self._current_bot_token()
             if not bot_token:
-                logger.error("TELEGRAM_BOT_TOKEN is not configured.")
+                logger.error("No Telegram bot credential is available for media download.")
                 self.send_message(chat_id, "Sorry, I could not download the voice message. Please try again or send text.")
                 return
 
@@ -229,6 +439,9 @@ class TelegramService:
                 from app.services.intent_router import IntentRouter
                 metadata = {
                     "source": "telegram",
+                    "telegram_connection_id": (
+                        provider_namespace if scoped_connection else None
+                    ),
                     "telegram_user_id": user_id,
                     "telegram_chat_id": chat_id,
                     "customer_id": customer["id"],
@@ -243,7 +456,11 @@ class TelegramService:
                         chat_id, "I could not identify that message. Please resend it."
                     )
                     return
-                provider_msg_id = f"{chat_id}_{telegram_message_id}"
+                provider_msg_id = (
+                    f"{provider_namespace}:{chat_id}:{telegram_message_id}"
+                    if scoped_connection
+                    else f"{chat_id}_{telegram_message_id}"
+                )
                 from app.schemas.inbound import NormalizedInboundMessage
                 msg_obj = NormalizedInboundMessage(
                     shop_id=shop_id,
@@ -276,7 +493,7 @@ class TelegramService:
             if customer.get("profile_completed"):
                 self.send_message(chat_id, f"Welcome back, {customer.get('name')}. Send your order here.")
             else:
-                self.update_customer(customer["id"], {"telegram_state": "awaiting_name"})
+                persist_customer({"telegram_state": "awaiting_name"})
                 self.send_message(chat_id, "Welcome to PhoneERP. Please tell me your name.")
             return
             
@@ -288,7 +505,7 @@ class TelegramService:
         if text.startswith("/cancel"):
             if state.startswith("editing_") or state.startswith("awaiting_"):
                 new_state = "ready" if customer.get("profile_completed") else "awaiting_name"
-                self.update_customer(customer["id"], {"telegram_state": new_state})
+                persist_customer({"telegram_state": new_state})
                 self.send_message(chat_id, "Cancelled.")
             else:
                 self.send_message(chat_id, "Nothing to cancel.")
@@ -308,17 +525,17 @@ class TelegramService:
             return
             
         if text.startswith("/edit_name"):
-            self.update_customer(customer["id"], {"telegram_state": "editing_name"})
+            persist_customer({"telegram_state": "editing_name"})
             self.send_message(chat_id, "Please reply with your new name.")
             return
             
         if text.startswith("/edit_address"):
-            self.update_customer(customer["id"], {"telegram_state": "editing_address"})
+            persist_customer({"telegram_state": "editing_address"})
             self.send_message(chat_id, "Please reply with your new delivery address.")
             return
 
         if text.startswith("/edit_phone"):
-            self.update_customer(customer["id"], {"telegram_state": "editing_phone"})
+            persist_customer({"telegram_state": "editing_phone"})
             self.send_message(chat_id, "Please reply with your new 10-digit phone number, or type 'skip'.")
             return
 
@@ -328,15 +545,39 @@ class TelegramService:
                     self.send_message(chat_id, "Could not fetch orders right now. Database unavailable.")
                     return
                     
-                resp = supabase_client.table("action_cards").select("id, status, created_at, items").eq("customer_id", customer["id"]).order("created_at", desc=True).limit(5).execute()
+                resp = (
+                    supabase_client.table("action_cards")
+                    .select("id, status, created_at, items")
+                    .eq("shop_id", shop_id)
+                    .eq("customer_id", customer["id"])
+                    .order("created_at", desc=True)
+                    .limit(5)
+                    .execute()
+                )
                 cards = resp.data or []
                 
                 if not cards:
-                    resp = supabase_client.table("action_cards").select("id, status, created_at, items").eq("metadata->>telegram_user_id", str(user_id)).order("created_at", desc=True).limit(5).execute()
+                    resp = (
+                        supabase_client.table("action_cards")
+                        .select("id, status, created_at, items")
+                        .eq("shop_id", shop_id)
+                        .eq("metadata->>telegram_user_id", str(user_id))
+                        .order("created_at", desc=True)
+                        .limit(5)
+                        .execute()
+                    )
                     cards = resp.data or []
                     
                 if not cards:
-                    resp = supabase_client.table("action_cards").select("id, status, created_at, items").eq("metadata->>telegram_chat_id", str(chat_id)).order("created_at", desc=True).limit(5).execute()
+                    resp = (
+                        supabase_client.table("action_cards")
+                        .select("id, status, created_at, items")
+                        .eq("shop_id", shop_id)
+                        .eq("metadata->>telegram_chat_id", str(chat_id))
+                        .order("created_at", desc=True)
+                        .limit(5)
+                        .execute()
+                    )
                     cards = resp.data or []
                     
                 if not cards:
@@ -374,12 +615,12 @@ class TelegramService:
 
         # State machine handling
         if state == "awaiting_name":
-            self.update_customer(customer["id"], {"name": text, "telegram_state": "awaiting_address"})
+            persist_customer({"name": text, "telegram_state": "awaiting_address"})
             self.send_message(chat_id, "Thanks! What is your delivery address?")
             return
             
         if state == "awaiting_address":
-            self.update_customer(customer["id"], {
+            persist_customer({
                 "default_address": text, 
                 "address": text,
                 "telegram_state": "awaiting_phone"
@@ -389,7 +630,7 @@ class TelegramService:
             
         if state == "awaiting_phone":
             if text.lower() == "skip":
-                self.update_customer(customer["id"], {"profile_completed": True, "telegram_state": "ready"})
+                persist_customer({"profile_completed": True, "telegram_state": "ready"})
                 self.send_message(chat_id, "Profile saved. Now send your order.")
                 return
             
@@ -398,17 +639,17 @@ class TelegramService:
                 self.send_message(chat_id, "Invalid phone number. Please send a valid 10-digit Indian number or type 'skip'.")
                 return
                 
-            self.update_customer(customer["id"], {"phone": norm_phone, "profile_completed": True, "telegram_state": "ready"})
+            persist_customer({"phone": norm_phone, "profile_completed": True, "telegram_state": "ready"})
             self.send_message(chat_id, "Profile saved. Now send your order.")
             return
             
         if state == "editing_name":
-            self.update_customer(customer["id"], {"name": text, "telegram_state": "ready"})
+            persist_customer({"name": text, "telegram_state": "ready"})
             self.send_message(chat_id, "Name updated!")
             return
             
         if state == "editing_address":
-            self.update_customer(customer["id"], {
+            persist_customer({
                 "default_address": text,
                 "address": text,
                 "telegram_state": "ready"
@@ -418,7 +659,7 @@ class TelegramService:
 
         if state == "editing_phone":
             if text.lower() == "skip":
-                self.update_customer(customer["id"], {"telegram_state": "ready"})
+                persist_customer({"telegram_state": "ready"})
                 self.send_message(chat_id, "Phone update skipped.")
                 return
                 
@@ -427,7 +668,7 @@ class TelegramService:
                 self.send_message(chat_id, "Invalid phone number. Please send a valid 10-digit Indian number or type 'skip'.")
                 return
                 
-            self.update_customer(customer["id"], {"phone": norm_phone, "telegram_state": "ready"})
+            persist_customer({"phone": norm_phone, "telegram_state": "ready"})
             self.send_message(chat_id, "Phone updated!")
             return
 
@@ -440,6 +681,9 @@ class TelegramService:
             from app.services.intent_router import IntentRouter
             metadata = {
                 "source": "telegram",
+                "telegram_connection_id": (
+                    provider_namespace if scoped_connection else None
+                ),
                 "telegram_user_id": user_id,
                 "telegram_chat_id": chat_id,
                 "customer_id": customer["id"],
@@ -454,7 +698,11 @@ class TelegramService:
                     chat_id, "I could not identify that message. Please resend it."
                 )
                 return
-            provider_msg_id = f"{chat_id}_{telegram_message_id}"
+            provider_msg_id = (
+                f"{provider_namespace}:{chat_id}:{telegram_message_id}"
+                if scoped_connection
+                else f"{chat_id}_{telegram_message_id}"
+            )
             from app.schemas.inbound import NormalizedInboundMessage
             msg_obj = NormalizedInboundMessage(
                 shop_id=shop_id,

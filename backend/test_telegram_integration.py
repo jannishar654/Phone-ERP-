@@ -222,7 +222,7 @@ async def test_telegram_orders_command(mock_supabase, mock_gemini, mock_requests
     mock_supabase.table().select().eq().execute.return_value.data = [{"id": "cust1", "name": "John Doe", "telegram_state": "ready", "profile_completed": True}]
     
     # Mock orders fetch
-    mock_supabase.table().select().eq().order().limit().execute.return_value.data = [
+    mock_supabase.table().select().eq().eq().order().limit().execute.return_value.data = [
         {
             "id": "card_12345",
             "status": "pending",
@@ -255,7 +255,10 @@ async def test_telegram_orders_command_fallback(mock_supabase, mock_gemini, mock
         }
     ]
     
-    mock_supabase.table().select().eq().order().limit().execute.side_effect = [mock_resp_empty, mock_resp_found]
+    mock_supabase.table().select().eq().eq().order().limit().execute.side_effect = [
+        mock_resp_empty,
+        mock_resp_found,
+    ]
     
     await telegram_service.process_update({"message": {"chat": {"id": 123}, "from": {"id": 456}, "text": "/orders"}})
     

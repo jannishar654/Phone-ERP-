@@ -14,7 +14,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   const [role, setRole] = useState<string | null>(null);
   const [isCheckingRole, setIsCheckingRole] = useState(true);
 
-  const publicRoutes = ['/privacy', '/terms', '/data-deletion', '/support'];
+  const publicRoutes = ['/privacy', '/terms', '/data-deletion', '/support', '/docs'];
   const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/signup' || publicRoutes.includes(pathname) || pathname.startsWith('/bill/') || pathname.startsWith('/customer/');
 
   useEffect(() => {
@@ -113,7 +113,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
             
             <button
               onClick={handleSignOut}
-              className="text-slate-550 hover:text-red-600 font-semibold transition-colors cursor-pointer text-sm hidden lg:block"
+              className="text-slate-600 hover:text-red-600 font-semibold transition-colors cursor-pointer text-sm hidden lg:block"
             >
               Sign Out
             </button>

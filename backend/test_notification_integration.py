@@ -112,7 +112,7 @@ def test_delivery_marks_delivered_creates_bill_link(mock_deps):
     assert "token_hash" in inserts[0][2][0]
 
 @patch("app.config.settings.settings.REQUIRE_AUTH", False)
-@patch("app.services.telegram_service.telegram_service.send_message")
+@patch("app.services.telegram_service.telegram_service.send_message_for_shop")
 def test_telegram_origin_sends_message(mock_send, mock_deps):
     original_select = FakeTable.select
     def mock_select(self, *args, **kwargs):
@@ -129,10 +129,11 @@ def test_telegram_origin_sends_message(mock_send, mock_deps):
         
         mock_send.assert_called_once()
         args, _ = mock_send.call_args
-        assert args[0] == "chat-1"
-        assert "Your order has been delivered." in args[1]
-        assert "Total: ₹500" in args[1]
-        assert "Bill: http" in args[1]
+        assert args[0] == "shop-123"
+        assert args[1] == "chat-1"
+        assert "Your order has been delivered." in args[2]
+        assert "Total: ₹500" in args[2]
+        assert "Bill: http" in args[2]
 
 @patch("app.config.settings.settings.REQUIRE_AUTH", False)
 @patch("app.services.twilio_whatsapp_service.twilio_whatsapp_service.send_whatsapp_message", return_value={"sent": True, "sid": "SM123", "status": "sent", "error": None})
@@ -185,7 +186,7 @@ def test_notification_failure_does_not_rollback_whatsapp(mock_send, mock_deps):
     assert resp_json["notification_error"] == "Twilio API Error"
 
 @patch("app.config.settings.settings.REQUIRE_AUTH", False)
-@patch("app.services.telegram_service.telegram_service.send_message", side_effect=Exception("Telegram API Error"))
+@patch("app.services.telegram_service.telegram_service.send_message_for_shop", side_effect=Exception("Telegram API Error"))
 def test_telegram_failure_does_not_rollback(mock_send, mock_deps):
     original_select = FakeTable.select
     def mock_select(self, *args, **kwargs):
@@ -308,7 +309,7 @@ def test_owner_marks_delivered_sends_whatsapp(mock_send, mock_deps):
     assert args[0] == "9876543210"
 
 @patch("app.config.settings.settings.REQUIRE_AUTH", False)
-@patch("app.services.telegram_service.telegram_service.send_message")
+@patch("app.services.telegram_service.telegram_service.send_message_for_shop")
 def test_owner_marks_delivered_sends_telegram(mock_send, mock_deps):
     original_select = FakeTable.select
     def mock_select(self, *args, **kwargs):
