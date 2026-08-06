@@ -353,7 +353,7 @@ export default function CustomerOrdersPage() {
                 </div>
 
                 {isOpen && (
-                  <div id={`order-details-${order.id}`} className="border-t border-slate-100 px-4 sm:px-5 py-4 bg-slate-50/60">
+                  <div id={`order-details-${order.id}`} className="border-t border-slate-100 bg-slate-100 px-4 py-4 sm:px-5">
                     <div className="divide-y divide-slate-200">
                       {order.items.map((item) => (
                         <div key={item.id} className="py-2.5 flex justify-between gap-4 text-sm">
