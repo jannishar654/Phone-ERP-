@@ -59,7 +59,7 @@ function PackingDashboard() {
       setOrders(orders.filter(o => o.id !== orderId));
       silentRefresh();
     } catch (err) {
-      alert('Failed to update order status');
+      setError('Failed to update order status. Please try again.');
     }
   };
 
@@ -72,19 +72,19 @@ function PackingDashboard() {
   if (loading) return <div className="p-8 text-center text-slate-500">Loading...</div>;
 
   return (
-    <div className="max-w-5xl mx-auto p-4 space-y-6">
-      <div className="flex justify-between items-end border-b pb-4">
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900">Packing Dashboard</h1>
           <p className="text-sm text-slate-500 mt-1">Orders ready to be packed.</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
           {refreshError && <span className="text-xs text-red-500 hidden sm:inline" title={refreshError}>Unable to refresh. Showing previously loaded data.</span>}
           {lastUpdated && !refreshError && <span className="text-xs text-slate-500 hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>}
           <button onClick={manualRefresh} className="text-xs font-semibold px-3 py-1.5 bg-slate-100 text-slate-700 rounded hover:bg-slate-200 transition-colors">
             Refresh
           </button>
-          <div className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
+          <div className="border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-800 rounded-md">
             Packer Mode
           </div>
           {logoutVisible && (
@@ -105,9 +105,9 @@ function PackingDashboard() {
       ) : orders.length === 0 ? (
         <div className="text-center py-12 text-slate-500">No orders currently in packing stage.</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
           {orders.map(order => (
-            <div key={order.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+            <div key={order.id} className="bg-white border border-slate-200 rounded-lg p-4 sm:p-5 shadow-sm flex flex-col justify-between min-w-0">
               <div>
                 <div className="flex justify-between items-start mb-3">
                   <h3 className="font-bold text-slate-900">Order #{order.order_number || order.id.slice(0, 8)}</h3>

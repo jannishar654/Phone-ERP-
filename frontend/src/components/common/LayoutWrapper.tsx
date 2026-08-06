@@ -49,7 +49,11 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   };
 
   if (isPublicRoute) {
-    return <div className="min-h-screen w-full">{children}</div>;
+    const publicTheme = pathname.startsWith('/customer/')
+      ? 'workspace-theme customer-portal-theme'
+      : '';
+
+    return <div className={`${publicTheme} min-h-screen w-full`}>{children}</div>;
   }
 
   if (isCheckingRole) {
@@ -60,7 +64,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
 
   if (isStaff) {
     return (
-      <div className="workspace-theme min-h-screen flex flex-col">
+      <div className="workspace-theme staff-portal-theme min-h-screen flex flex-col">
         <header className="h-16 border-b border-slate-200 flex items-center justify-between px-4 sm:px-8 bg-white sticky top-0 z-10 shadow-sm">
           <div className="flex items-center space-x-4">
              <PhoneERPLogo />

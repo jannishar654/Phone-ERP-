@@ -765,12 +765,57 @@ body {
 .workspace-theme .border-blue-100, .workspace-theme .border-blue-200,
 .workspace-theme .border-green-100, .workspace-theme .border-green-200,
 .workspace-theme .border-emerald-100, .workspace-theme .border-emerald-200 { border-color: rgba(200,169,107,.3) !important; }
+.workspace-theme [class*="bg-amber-50"],
+.workspace-theme [class*="bg-amber-100"] { background-color: rgba(200,169,107,.09) !important; }
+.workspace-theme [class*="text-amber-"] { color: #d8bd84 !important; }
+.workspace-theme [class*="border-amber-"] { border-color: rgba(200,169,107,.3) !important; }
+.workspace-theme [class*="bg-red-50"] { background-color: rgba(239,68,68,.09) !important; }
+.workspace-theme [class*="border-red-"] { border-color: rgba(248,113,113,.32) !important; }
 .workspace-theme .shadow-sm, .workspace-theme .shadow-lg { box-shadow: 0 18px 45px rgba(0,0,0,.2) !important; }
 .workspace-theme aside nav a { border-radius: .45rem !important; }
 .workspace-theme aside nav a:hover { background: rgba(255,255,255,.06) !important; }
 .workspace-theme aside nav a.bg-indigo-600:hover { background: #ffffff !important; }
 .workspace-theme aside nav a.bg-indigo-600 svg,
 .workspace-theme aside nav a.bg-indigo-600 span { color: #090a0b !important; }
+
+.customer-portal-theme > div,
+.customer-portal-theme > main {
+  min-height: 100vh;
+  background: transparent !important;
+}
+.customer-portal-theme > div > header {
+  border-color: var(--workspace-border) !important;
+  background: rgba(15,17,20,.96) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.customer-portal-theme .bg-indigo-600,
+.customer-portal-theme .bg-emerald-700 {
+  background-color: #c8a96b !important;
+  color: #090a0b !important;
+}
+.customer-portal-theme .bg-indigo-50,
+.customer-portal-theme .bg-emerald-50 {
+  background-color: rgba(200,169,107,.09) !important;
+}
+.customer-portal-theme article {
+  border-radius: .5rem !important;
+}
+.customer-portal-theme button:focus-visible,
+.staff-portal-theme button:focus-visible {
+  outline: 2px solid #c8a96b;
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .customer-portal-theme main {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+  .staff-portal-theme > main {
+    padding: 1rem !important;
+  }
+}
 
 @media (max-width: 640px) {
   .public-legal-article { padding-bottom: 5rem; }
