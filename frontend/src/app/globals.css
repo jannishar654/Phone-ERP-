@@ -579,8 +579,13 @@ body {
 .docs-article header { padding-bottom: 3rem; border-bottom: 1px solid var(--pe-border); }
 .docs-article h1 { margin-top: .9rem; font-size: 5rem; font-weight: 500; line-height: 1; letter-spacing: 0; }
 .docs-article header > p:last-child { margin-top: 1.2rem; color: var(--pe-text-secondary); font-size: 1.05rem; line-height: 1.7; }
-.docs-content section { scroll-margin-top: 6.5rem; padding-block: 2.3rem; border-bottom: 1px solid var(--pe-border); }
-.docs-content h2 { margin-bottom: 1rem; font-size: 1.3rem; font-weight: 600; }
+.docs-chapter { scroll-margin-top: 6.5rem; padding-block: 4.5rem; border-bottom: 1px solid var(--pe-border); }
+.docs-chapter-heading > p:first-child { color: var(--pe-gold); font-size: .72rem; font-weight: 700; }
+.docs-chapter-heading h2 { margin-top: .7rem; font-size: clamp(2rem, 4vw, 3rem); font-weight: 500; line-height: 1.08; }
+.docs-chapter-heading > p:last-child { max-width: 38rem; margin-top: 1rem; color: var(--pe-text-secondary); font-size: 1rem; line-height: 1.7; }
+.docs-chapter-topics { display: grid; gap: 2.2rem; margin-top: 3rem; }
+.docs-topic { padding-top: 2rem; border-top: 1px solid var(--pe-border); }
+.docs-topic h3 { margin-bottom: 1rem; font-size: 1.2rem; font-weight: 600; }
 .docs-content p, .docs-content li { color: var(--pe-text-secondary); line-height: 1.75; }
 .docs-content p, .docs-content li { overflow-wrap: anywhere; }
 .docs-content p + p { margin-top: .9rem; }

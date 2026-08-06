@@ -152,6 +152,29 @@ export async function extractActionCard(
   return res.json();
 }
 
+export async function extractActionCardPreview(transcript: string): Promise<Partial<ActionCard>> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/extract-action-card-preview`, {
+    method: 'POST',
+    headers: {
+      ...headers,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      transcript,
+      source: 'manual_assist',
+      stt_provider: 'gemini',
+      extraction_provider: 'gemini',
+      pipeline: 'gemini_gemini',
+    }),
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to extract order details.');
+  }
+  return res.json();
+}
+
 export async function getActionCards(): Promise<ActionCard[]> {
   try {
     const headers = await getAuthHeaders();
@@ -210,6 +233,23 @@ export async function createActionCard(cardData: Partial<ActionCard>): Promise<A
     setLocalDB(db);
     return newCard;
   }
+}
+
+export async function createManualActionCard(cardData: Partial<ActionCard>): Promise<ActionCard> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/action-cards`, {
+    method: 'POST',
+    headers: {
+      ...headers,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(cardData),
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail || 'Failed to create the order for review.');
+  }
+  return res.json();
 }
 
 export async function updateActionCard(cardId: string, cardData: Partial<ActionCard>): Promise<ActionCard> {

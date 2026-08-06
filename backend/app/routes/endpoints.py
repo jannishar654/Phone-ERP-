@@ -218,6 +218,46 @@ def _create_card_from_extracted(
         logger.error(f"Failed to create Action Card: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+def _preview_card_from_extracted(
+    extracted: Dict[str, Any],
+    transcript: str,
+    shop_id: Optional[str],
+) -> ActionCardCreate:
+    """Build an editable extraction preview without writing an Action Card."""
+    items = _safe_items_from_extracted(extracted, shop_id)
+    raw_address = extracted.get("delivery_address", "")
+    clean_address, address_meta = GeminiService.normalize_delivery_address(raw_address)
+    extracted_metadata = extracted.get("metadata", {})
+    if not isinstance(extracted_metadata, dict):
+        extracted_metadata = {}
+
+    return ActionCardCreate(
+        shop_id=shop_id,
+        customer_name=extracted.get("customer_name"),
+        customer_phone=extracted.get("customer_phone"),
+        items=items,
+        delivery_address=clean_address,
+        delivery_time=extracted.get("delivery_time"),
+        delivery_time_raw=extracted.get("delivery_time_raw"),
+        delivery_time_normalized=extracted.get("delivery_time_normalized"),
+        delivery_time_confidence=extracted.get("delivery_time_confidence"),
+        delivery_time_warning=extracted.get("delivery_time_warning"),
+        risk_flags=extracted.get("risk_flags", []),
+        missing_fields=extracted.get("missing_fields", []),
+        validation_warnings=extracted.get("validation_warnings", []),
+        payment_method=extracted.get("payment_method"),
+        takeaway_delivery_dine_in=extracted.get("takeaway_delivery_dine_in"),
+        table_number=extracted.get("table_number"),
+        special_instructions=extracted.get("special_instructions"),
+        status="pending",
+        source="manual_assist",
+        message_type=extracted.get("type", "ORDER"),
+        confidence=extracted.get("confidence"),
+        metadata={**extracted_metadata, **address_meta, "preview_only": True},
+        transcript=transcript,
+    )
+
 # Health check endpoint
 @router.get("/health", status_code=status.HTTP_200_OK, response_model=Dict[str, str])
 def health_check():
@@ -406,6 +446,34 @@ async def extract_action_card(payload: ExtractRequest, user_id: Optional[str] = 
         transcript=transcript,
         user_id=user_id,
     )
+
+
+@router.post("/extract-action-card-preview", response_model=ActionCardCreate, status_code=status.HTTP_200_OK)
+async def extract_action_card_preview(
+    payload: ExtractRequest,
+    user_id: Optional[str] = Depends(get_current_user_id),
+) -> ActionCardCreate:
+    """Extract owner-entered notes for form prefilling without persisting data."""
+    try:
+        from app.routes.catalog import get_user_shop_id
+
+        shop_id = get_user_shop_id(user_id) if user_id else None
+        context = business_config_service.build_extraction_context(shop_id) if shop_id else None
+        extracted = await GeminiService.extract_order_details(
+            payload.transcript,
+            business_context=context,
+            stt_provider=payload.stt_provider,
+            extraction_provider=payload.extraction_provider,
+            pipeline=payload.pipeline,
+        )
+        return _preview_card_from_extracted(extracted, payload.transcript, shop_id)
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Order details could not be extracted. Enter them manually and try again.",
+        ) from error
 
 # Get all orders/cards
 @router.get("/action-cards", response_model=List[ActionCard], status_code=status.HTTP_200_OK)

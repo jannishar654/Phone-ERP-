@@ -1,1236 +1,442 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createActionCard, extractActionCard, extractActionCardFromAudio, transcribeAudio, updateActionCard, deleteActionCard } from '@/lib/api';
-import { saveVoiceRecording } from '@/lib/voice-recordings';
-import { Item } from '@/types';
-import { format } from 'date-fns';
-import { Calendar as CalendarIcon, Clock } from 'lucide-react';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  ArrowLeft,
+  ClipboardCheck,
+  Loader2,
+  Mic,
+  Plus,
+  Sparkles,
+  Square,
+  Trash2,
+} from 'lucide-react';
+import {
+  createManualActionCard,
+  extractActionCardPreview,
+  getCatalogItems,
+  transcribeAudio,
+} from '@/lib/api';
+import type { ActionCard, Item } from '@/types';
 
-const isLargeQuantity = (qty: number | null | undefined, unit?: string | null) => {
-  if (qty === null || qty === undefined) return false;
-  const unitLower = (unit || '').toLowerCase().trim();
-  const thresholds: Record<string, number> = {
-    packet: 50,
-    kg: 25,
-    carton: 10,
-    dozen: 20,
-    litre: 20,
-    fallback: 20
-  };
-  const threshold = thresholds[unitLower] || thresholds['fallback'];
-  return qty > threshold;
+type FulfilmentType = 'delivery' | 'takeaway' | 'dine_in';
+
+type CatalogItem = {
+  id: string;
+  display_name: string;
+  canonical_name: string;
+  base_price: number;
+  unit?: string | null;
+  active?: boolean;
+  in_stock?: boolean;
 };
 
-const formatDeliveryTime = (value: string | undefined): string => {
-  if (!value) return 'Immediate';
-  const trimmed = value.trim();
-  if (trimmed.toLowerCase() === 'immediate' || trimmed === '') return 'Immediate';
-
-  // Parse YYYY-MM-DD hh:mm AM/PM or YYYY-MM-DD HH:mm
-  const dateMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{1,2}):(\d{2})(?:\s*(AM|PM|am|pm))?)?/i);
-  if (dateMatch) {
-    const [_, y, m, d, hh, mm, ampm] = dateMatch;
-
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const monthName = months[parseInt(m, 10) - 1] || m;
-    const dayStr = `${d} ${monthName}`;
-
-    if (hh && mm) {
-      const timeStr = ampm ? `${hh}:${mm} ${ampm.toUpperCase()}` : `${hh}:${mm}`;
-      return `${dayStr} • ${timeStr}`;
-    }
-    return dayStr;
-  }
-
-  return trimmed;
+type DraftItem = {
+  name: string;
+  quantity: number;
+  unit: string;
+  price: number;
 };
 
-interface CustomDateTimePickerProps {
-  value: string;
-  onChange: (val: string) => void;
+const emptyItem = (): DraftItem => ({ name: '', quantity: 1, unit: '', price: 0 });
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
-function CustomDateTimePicker({ value, onChange }: CustomDateTimePickerProps) {
-  const dateMatch = value ? value.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i) : null;
-
-  let dateVal: Date | undefined = undefined;
-  let hourVal: string = "";
-  let minuteVal: string = "";
-  let ampmVal: string = "";
-
-  if (dateMatch) {
-    const [_, y, m, d, hh, mm, ampm] = dateMatch;
-    dateVal = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
-    hourVal = hh;
-    minuteVal = mm;
-    ampmVal = ampm?.toUpperCase() || "AM";
-  }
-
-  const hoursOptions = Array.from({ length: 12 }, (_, i) => String(i + 1));
-  const minutesOptions = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
-
-  const updateValue = (d: Date | undefined, h: string, m: string, ap: string) => {
-    if (!d) {
-      onChange("Immediate");
-      return;
-    }
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const hh = h || "12";
-    const mm = m || "00";
-    const ampm = ap || "AM";
-    onChange(`${year}-${month}-${day} ${hh}:${mm} ${ampm}`);
-  };
-
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex gap-2 items-center">
-        {/* Popover Date Selection */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className="flex-1 flex items-center justify-between bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-3 py-2 text-xs font-bold text-slate-700 cursor-pointer transition-all shadow-3xs"
-            >
-              <span className="flex items-center gap-2">
-                <CalendarIcon className="h-4 w-4 text-slate-400" />
-                {dateVal ? format(dateVal, "PPP") : "Select Date"}
-              </span>
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              mode="single"
-              selected={dateVal}
-              onSelect={(d) => updateValue(d, hourVal || "12", minuteVal || "00", ampmVal || "AM")}
-            />
-          </PopoverContent>
-        </Popover>
-
-        {/* Time Select Dropdowns */}
-        <div className="flex gap-1.5 items-center">
-          <select
-            value={hourVal}
-            onChange={(e) => updateValue(dateVal || new Date(), e.target.value, minuteVal || "00", ampmVal || "AM")}
-            className="bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
-          >
-            <option value="">Hour</option>
-            {hoursOptions.map((h) => (
-              <option key={h} value={h}>{h}</option>
-            ))}
-          </select>
-          <span className="text-slate-400 font-bold">:</span>
-          <select
-            value={minuteVal}
-            onChange={(e) => updateValue(dateVal || new Date(), hourVal || "12", e.target.value, ampmVal || "AM")}
-            className="bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
-          >
-            <option value="">Min</option>
-            {minutesOptions.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-          <select
-            value={ampmVal}
-            onChange={(e) => updateValue(dateVal || new Date(), hourVal || "12", minuteVal || "00", e.target.value)}
-            className="bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-2 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all shadow-3xs"
-          >
-            <option value="AM">AM</option>
-            <option value="PM">PM</option>
-          </select>
-        </div>
-      </div>
-
-      {value && value !== 'Immediate' && (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => onChange("")}
-            className="text-[10px] text-slate-500 hover:text-slate-700 font-bold cursor-pointer transition-colors"
-          >
-            ✕ Clear
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default function CreateOrder() {
+export default function CreateOrderPage() {
   const router = useRouter();
-
-  // Audio Recorder States
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'captured'>('idle');
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
-
-  // Workflow States
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingStatus, setProcessingStatus] = useState('');
-  const [isGenerated, setIsGenerated] = useState(false);
-  const [cardId, setCardId] = useState<string | null>(null);
-  const [extractionError, setExtractionError] = useState<string | null>(null);
-  const [isQuotaError, setIsQuotaError] = useState(false);
-  const [manualTranscript, setManualTranscript] = useState('');
-  const [orderSource, setOrderSource] = useState<'audio' | 'text'>('audio');
-  const [pipeline, setPipeline] = useState('gemini_gemini');
-  const [audioSaved, setAudioSaved] = useState(false);
-  const [audioStoragePath, setAudioStoragePath] = useState<string | null>(null);
-  const [isSavingAudio, setIsSavingAudio] = useState(false);
-  // Generated Card Editing States
-  const [isEditing, setIsEditing] = useState(false);
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [catalogError, setCatalogError] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [fulfilment, setFulfilment] = useState<FulfilmentType>('delivery');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [deliveryTime, setDeliveryTime] = useState('');
-  const [items, setItems] = useState<Item[]>([]);
-  const [transcript, setTranscript] = useState('');
-
-  // Risk and Validation States
-  const [riskFlags, setRiskFlags] = useState<string[]>([]);
-  const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<string>('Not Specified');
-  const [missingFields, setMissingFields] = useState<string[]>([]);
-  const [confidence, setConfidence] = useState<number | null>(null);
-  const [confidenceScore, setConfidenceScore] = useState<number | null>(null);
-  const [confidenceLabel, setConfidenceLabel] = useState<string | null>(null);
-  const [confidenceReasons, setConfidenceReasons] = useState<string[]>([]);
-  const [sttProvider, setSttProvider] = useState<string | null>(null);
-  const [extractionProvider, setExtractionProvider] = useState<string | null>(null);
-
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [tableNumber, setTableNumber] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('');
+  const [specialInstructions, setSpecialInstructions] = useState('');
+  const [items, setItems] = useState<DraftItem[]>([emptyItem()]);
+  const [assistNotes, setAssistNotes] = useState('');
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [assistMessage, setAssistMessage] = useState('');
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
+    let cancelled = false;
+    getCatalogItems()
+      .then((data) => {
+        if (!cancelled) setCatalog(data.filter((item: CatalogItem) => item.active !== false));
+      })
+      .catch((error) => {
+        if (!cancelled) setCatalogError(errorMessage(error, 'Catalog could not be loaded. You can still enter items manually.'));
+      });
+
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      cancelled = true;
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
 
-  useEffect(() => {
-    if (recordingState === 'captured' && audioChunks.length > 0) {
-      const totalSize = audioChunks.reduce((acc, chunk) => acc + chunk.size, 0);
-      if (totalSize > 0) {
-        handleGenerateActionCard();
-      }
-    }
-  }, [audioChunks, recordingState]);
+  const updateItem = (index: number, patch: Partial<DraftItem>) => {
+    setItems((current) => current.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, ...patch } : item
+    )));
+  };
 
-  // MediaRecorder Start
+  const applyCatalogMatch = (index: number, name: string) => {
+    const normalized = name.trim().toLowerCase();
+    const match = catalog.find((item) => (
+      item.display_name.toLowerCase() === normalized || item.canonical_name.toLowerCase() === normalized
+    ));
+    updateItem(index, match ? {
+      name: match.display_name,
+      unit: match.unit || '',
+      price: Number(match.base_price || 0),
+    } : { name });
+  };
+
+  const applyPreview = (preview: Partial<ActionCard>) => {
+    if (preview.customer_name && preview.customer_name.toLowerCase() !== 'unknown') {
+      setCustomerName(preview.customer_name);
+    }
+    if (preview.customer_phone) setCustomerPhone(preview.customer_phone);
+    if (preview.delivery_address) setDeliveryAddress(preview.delivery_address);
+    if (preview.delivery_time_normalized || preview.delivery_time) {
+      setDeliveryTime(preview.delivery_time_normalized || preview.delivery_time || '');
+    }
+    if (preview.payment_method) setPaymentMethod(preview.payment_method);
+    if (preview.takeaway_delivery_dine_in) {
+      const value = preview.takeaway_delivery_dine_in.toLowerCase().replace(/\s+/g, '_');
+      if (value === 'delivery' || value === 'takeaway' || value === 'dine_in') setFulfilment(value);
+    }
+    if (preview.table_number) setTableNumber(preview.table_number);
+    if (preview.special_instructions) setSpecialInstructions(preview.special_instructions);
+    if (preview.items?.length) {
+      setItems(preview.items.map((item: Item) => ({
+        name: item.name || '',
+        quantity: Number(item.quantity || 1),
+        unit: item.unit || '',
+        price: Number(item.price || 0),
+      })));
+    }
+  };
+
+  const extractNotes = async (notes = assistNotes) => {
+    if (!notes.trim()) {
+      setAssistMessage('Enter call notes or record a voice note first.');
+      return;
+    }
+    setIsExtracting(true);
+    setAssistMessage('');
+    try {
+      const preview = await extractActionCardPreview(notes.trim());
+      applyPreview(preview);
+      setAssistMessage('Draft filled. Review every field before creating the Action Card.');
+    } catch (error) {
+      setAssistMessage(errorMessage(error, 'AI assist is unavailable. Enter the details manually.'));
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const stopMediaStream = () => {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+  };
+
   const startRecording = async () => {
+    setAssistMessage('');
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setAssistMessage('Voice capture is not supported in this browser. Enter the order notes manually.');
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const preferredMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/mp4')
-          ? 'audio/mp4'
-          : '';
-
-      const recorder = preferredMimeType
-        ? new MediaRecorder(stream, { mimeType: preferredMimeType })
-        : new MediaRecorder(stream);
-      const chunks: Blob[] = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunks.push(e.data);
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        setIsRecording(false);
+        stopMediaStream();
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        if (!blob.size) {
+          setAssistMessage('No audio was captured. Enter the order notes manually.');
+          return;
+        }
+        setIsExtracting(true);
+        try {
+          const extension = recorder.mimeType.includes('ogg') ? 'ogg' : 'webm';
+          const file = new File([blob], `owner-order.${extension}`, { type: blob.type });
+          const transcription = await transcribeAudio(file);
+          setAssistNotes(transcription.transcript);
+          const preview = await extractActionCardPreview(transcription.transcript);
+          applyPreview(preview);
+          setAssistMessage('Voice note transcribed and the draft was filled. Review it before saving.');
+        } catch (error) {
+          setAssistMessage(errorMessage(error, 'Voice assist is unavailable. Enter the details manually.'));
+        } finally {
+          setIsExtracting(false);
         }
       };
-
-      recorder.onstop = () => {
-        const actualMimeType = recorder.mimeType || chunks[0]?.type || 'audio/mp4';
-        const audioBlob = new Blob(chunks, { type: actualMimeType });
-        const url = URL.createObjectURL(audioBlob);
-        setAudioUrl(url);
-        setAudioChunks(chunks);
-        stream.getTracks().forEach(track => track.stop());
-      };
-
       recorder.start();
-      setMediaRecorder(recorder);
-      setRecordingState('recording');
-      setRecordingSeconds(0);
-      setAudioUrl(null);
-      setAudioChunks([]);
-
-      timerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
-      }, 1000);
-    } catch (err) {
-      alert("Error: Microphone access is required to capture audio.");
-      console.error(err);
+      setIsRecording(true);
+    } catch {
+      stopMediaStream();
+      setAssistMessage('Microphone access was not available. You can enter or paste the order details manually.');
     }
   };
 
-  // MediaRecorder Stop
   const stopRecording = () => {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop();
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      setRecordingState('captured');
-    }
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
   };
 
-  const discardRecording = () => {
-    setAudioUrl(null);
-    setAudioChunks([]);
-    setRecordingState('idle');
-    setAudioSaved(false);
-    setAudioStoragePath(null);
+  const validate = () => {
+    if (!customerName.trim()) return 'Customer name is required.';
+    const validItems = items.filter((item) => item.name.trim() && item.quantity > 0);
+    if (!validItems.length) return 'Add at least one item with a valid quantity.';
+    if (fulfilment === 'delivery' && !deliveryAddress.trim()) return 'Delivery address is required for delivery orders.';
+    if (fulfilment === 'dine_in' && !tableNumber.trim()) return 'Table number is required for dine-in orders.';
+    return '';
   };
 
-  const handleGenerateActionCard = async () => {
-    if (audioChunks.length === 0) {
-      alert('Please record an order before generating an Action Card.');
-      return;
-    }
-    const totalSize = audioChunks.reduce((acc, chunk) => acc + chunk.size, 0);
-    if (totalSize === 0) {
-      alert('Recording is empty. Please speak into your microphone and try again.');
+  const submitOrder = async (event: FormEvent) => {
+    event.preventDefault();
+    const validationError = validate();
+    if (validationError) {
+      setFormError(validationError);
       return;
     }
 
-    setIsProcessing(true);
-    const isDirectAudioPipeline = pipeline === 'gemini_audio_extraction';
-    setProcessingStatus(isDirectAudioPipeline ? 'Running Gemini direct audio extraction...' : 'Transcribing speech logs...');
-
+    setIsSubmitting(true);
+    setFormError('');
     try {
-      const mimeType = mediaRecorder?.mimeType || audioChunks[0]?.type || 'audio/mp4';
-      const extension = mimeType.includes('webm') ? 'webm' : 'm4a';
-      const audioBlob = new Blob(audioChunks, { type: mimeType });
-      const audioFile = new File([audioBlob], `grocery-order.${extension}`, {
-        type: mimeType,
+      const card = await createManualActionCard({
+        customer_name: customerName.trim(),
+        customer_phone: customerPhone.trim(),
+        items: items
+          .filter((item) => item.name.trim() && item.quantity > 0)
+          .map((item) => ({ ...item, name: item.name.trim() })),
+        delivery_address: fulfilment === 'delivery' ? deliveryAddress.trim() : '',
+        delivery_time: deliveryTime.trim(),
+        payment_method: paymentMethod || undefined,
+        takeaway_delivery_dine_in: fulfilment,
+        table_number: fulfilment === 'dine_in' ? tableNumber.trim() : undefined,
+        special_instructions: specialInstructions.trim(),
+        status: 'pending',
+        source: 'manual',
+        message_type: 'ORDER',
+        transcript: assistNotes.trim() || 'Manual order entered by owner',
+        metadata: { entry_mode: 'owner_manual', requires_owner_review: true },
       });
-
-      if (isDirectAudioPipeline) {
-        if (cardId) {
-          try {
-            await deleteActionCard(cardId);
-          } catch (err) {
-            console.error("Failed to delete previous action card:", err);
-          }
-        }
-
-        const card = await extractActionCardFromAudio(audioFile, pipeline);
-        setTranscript(card.transcript || '');
-        setCardId(card.id);
-        setOrderSource('audio');
-        setAudioSaved(false);
-        setAudioStoragePath(null);
-
-        setCustomerName(card.customer_name || '');
-        setCustomerPhone(card.customer_phone || '');
-        setDeliveryAddress(card.delivery_address || '');
-        setDeliveryTime(card.delivery_time || '');
-        setItems(card.items || []);
-        setRiskFlags(card.risk_flags || []);
-        setValidationWarnings(card.validation_warnings || []);
-        setPaymentMethod(card.payment_method || 'Not Specified');
-        setIsGenerated(true);
-        setIsEditing(false);
-        setExtractionError(null);
-        setIsQuotaError(false);
-        return;
-      }
-
-      const sttProvider = pipeline.startsWith('sarvam') ? 'sarvam' : 'gemini';
-      const extractProvider = pipeline.endsWith('ollama') ? 'ollama' : 'gemini';
-
-      setProcessingStatus('Transcribing recording...');
-      const transcription = await transcribeAudio(audioFile, sttProvider);
-      setTranscript(transcription.transcript);
-
-      setProcessingStatus('Extracting order details...');
-
-      // Clean up previous generated card in this session if any, to avoid orphaned records
-      if (cardId) {
-        try {
-          await deleteActionCard(cardId);
-        } catch (err) {
-          console.error("Failed to delete previous action card:", err);
-        }
-      }
-
-      setProcessingStatus('Generating Action Card...');
-
-      const card = await extractActionCard(transcription.transcript, 'audio', extractProvider, sttProvider, pipeline, true);
-      setCardId(card.id);
-      setOrderSource('audio');
-      setAudioSaved(false);
-      setAudioStoragePath(null);
-
-      setCustomerName(card.customer_name || '');
-      setCustomerPhone(card.customer_phone || '');
-      setDeliveryAddress(card.delivery_address || '');
-      setDeliveryTime(card.delivery_time || '');
-      setItems(card.items || []);
-      setRiskFlags(card.risk_flags || []);
-      setValidationWarnings(card.validation_warnings || []);
-      setPaymentMethod(card.payment_method || 'Not Specified');
-      setMissingFields(card.missing_fields || []);
-      setConfidence(card.confidence !== undefined ? card.confidence : null);
-      setConfidenceScore(card.confidence_score !== undefined ? card.confidence_score : null);
-      setConfidenceLabel(card.confidence_label || null);
-      setConfidenceReasons(card.confidence_reasons || []);
-      setSttProvider(card.stt_provider || null);
-      setExtractionProvider(card.extraction_provider || null);
-      setIsGenerated(true);
-      setIsEditing(false);
-      setExtractionError(null);
-      setIsQuotaError(false);
+      router.push(`/action-card?id=${encodeURIComponent(card.id)}`);
     } catch (error) {
-      console.error(error);
-      const errMsg = error instanceof Error ? error.message : String(error);
-      const isQuota = errMsg.includes('429') ||
-                      errMsg.toUpperCase().includes('RESOURCE_EXHAUSTED') ||
-                      errMsg.toUpperCase().includes('QUOTA') ||
-                      errMsg.toUpperCase().includes('RATE_LIMIT') ||
-                      errMsg.includes('temporarily unavailable');
-
-      if (isQuota) {
-        setIsQuotaError(true);
-        setExtractionError(null);
-      } else {
-        setExtractionError('Could not extract order. Please retry recording.');
-      }
-      setIsGenerated(false);
+      setFormError(errorMessage(error, 'The order could not be created. Your entries are still on this page.'));
     } finally {
-      setIsProcessing(false);
+      setIsSubmitting(false);
     }
   };
 
-  const handleGenerateActionCardFromText = async () => {
-    if (!manualTranscript.trim()) {
-      alert('Please enter the order details/transcript.');
-      return;
-    }
-
-    setIsProcessing(true);
-    setProcessingStatus('Running structured entity extraction...');
-
-    try {
-      // Clean up previous generated card in this session if any
-      if (cardId) {
-        try {
-          await deleteActionCard(cardId);
-        } catch (err) {
-          console.error("Failed to delete previous action card:", err);
-        }
-      }
-
-      const textPipeline = pipeline === 'gemini_audio_extraction' ? 'gemini_gemini' : pipeline;
-      const extractProvider = textPipeline.endsWith('ollama') ? 'ollama' : 'gemini';
-      const sttProvider = textPipeline.startsWith('sarvam') ? 'sarvam' : 'gemini';
-      const card = await extractActionCard(manualTranscript, 'text', extractProvider, sttProvider, textPipeline, true);
-      setCardId(card.id);
-      setOrderSource('text');
-
-      setCustomerName(card.customer_name || '');
-      setCustomerPhone(card.customer_phone || '');
-      setDeliveryAddress(card.delivery_address || '');
-      setDeliveryTime(card.delivery_time || '');
-      setItems(card.items || []);
-      setRiskFlags(card.risk_flags || []);
-      setValidationWarnings(card.validation_warnings || []);
-      setPaymentMethod(card.payment_method || 'Not Specified');
-      setMissingFields(card.missing_fields || []);
-      setConfidence(card.confidence !== undefined ? card.confidence : null);
-      setConfidenceScore(card.confidence_score !== undefined ? card.confidence_score : null);
-      setConfidenceLabel(card.confidence_label || null);
-      setConfidenceReasons(card.confidence_reasons || []);
-      setSttProvider(null);
-      setExtractionProvider(card.extraction_provider || null);
-      setTranscript(manualTranscript);
-      setIsGenerated(true);
-      setIsEditing(false);
-      setExtractionError(null);
-      setIsQuotaError(false);
-    } catch (error) {
-      console.error(error);
-      const errMsg = error instanceof Error ? error.message : String(error);
-      const isQuota = errMsg.includes('429') ||
-                      errMsg.toUpperCase().includes('RESOURCE_EXHAUSTED') ||
-                      errMsg.toUpperCase().includes('QUOTA') ||
-                      errMsg.toUpperCase().includes('RATE_LIMIT') ||
-                      errMsg.includes('temporarily unavailable');
-
-      if (isQuota) {
-        setExtractionError('Voice processing is temporarily unavailable due to API quota limits. Please enter the order manually.');
-        setIsQuotaError(true);
-      } else {
-        setExtractionError('Could not extract order details. Please verify your text and try again.');
-      }
-      setIsGenerated(false);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // Inline Item Changes
-  const handleItemChange = (index: number, field: keyof Item, value: any) => {
-    const updated = [...items];
-    if (field === 'quantity') {
-      (updated[index] as any)[field] = Math.max(0.01, parseFloat(value) || 1);
-    } else if (field === 'price') {
-      (updated[index] as any)[field] = Math.max(0, parseFloat(value) || 0);
-    } else {
-      (updated[index] as any)[field] = value;
-    }
-    setItems(updated);
-  };
-
-  const addEditItemRow = () => {
-    setItems([...items, { name: '', quantity: 1, price: 0 }]);
-  };
-
-  const removeEditItemRow = (index: number) => {
-    if (items.length > 1) {
-      setItems(items.filter((_, idx) => idx !== index));
-    }
-  };
-
-  // Calculate order sum total
-  const orderTotal = items.reduce((sum, item) => sum + (item.quantity * (item.price || 0)), 0);
-
-  const [validationError, setValidationError] = useState<string | null>(null);
-
-  // Dynamic validation check for rendering warnings
-  const getValidationWarning = () => {
-    const name = customerName.trim();
-    if (!name || name.toLowerCase() === 'unknown') {
-      return "Customer name is missing.";
-    }
-    const address = deliveryAddress.trim();
-    if (!address) {
-      return "Delivery address is missing.";
-    }
-    const validItems = items.filter(i => i.name.trim() !== '');
-    if (validItems.length === 0) {
-      return "At least one item is required in the order.";
-    }
-    for (const item of validItems) {
-      if (item.quantity <= 0) {
-        return `Quantity for "${item.name}" must be greater than 0.`;
-      }
-      if (item.price !== undefined && item.price !== null && item.price < 0) {
-        return `Price for "${item.name}" cannot be negative.`;
-      }
-    }
-    return null;
-  };
-
-  // Submit to Database/LocalStorage
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const warning = getValidationWarning();
-    if (warning) {
-      setValidationError(warning);
-      return;
-    }
-
-    setValidationError(null);
-    setIsProcessing(true);
-    setProcessingStatus('Saving order card...');
-
-    const validItems = items.filter(i => i.name.trim() !== '');
-
-    const payload = {
-      customer_name: customerName,
-      customer_phone: customerPhone,
-      delivery_address: deliveryAddress,
-      delivery_time: deliveryTime,
-      items: validItems,
-      status: 'pending',
-      source: orderSource,
-      transcript: transcript,
-      payment_method: paymentMethod,
-      risk_flags: riskFlags,
-      validation_warnings: validationWarnings,
-      missing_fields: missingFields
-    };
-
-    try {
-      if (cardId) {
-        await updateActionCard(cardId, payload);
-      } else {
-        await createActionCard(payload);
-      }
-      router.push('/action-card');
-      router.refresh();
-    } catch (err) {
-      alert("Failed to submit order. Falling back to local storage.");
-      setIsProcessing(false);
-    }
-  };
-
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60).toString().padStart(2, '0');
-const s = (secs % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
+  const total = items.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.price)), 0);
 
   return (
-    <div className={`${isGenerated ? 'space-y-4' : 'space-y-6'} max-w-5xl mx-auto`}>
-      {/* Page Header */}
-      <div className="text-center flex flex-col items-center justify-center pb-4">
-        {isGenerated ? (
-          <div>
-            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900">Review & Confirm Order</h1>
-          </div>
-        ) : (
-          <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Voice-to-Order Simulator</h1>
-            <p className="mt-2 text-sm sm:text-base text-slate-500 max-w-2xl">
-              Simulate the complete phone order workflow: record audio, trigger mock AI parsing, verify details, and register.
-            </p>
-          </div>
-        )}
-      </div>
+    <main className="min-h-full px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+      <div className="mx-auto max-w-6xl">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-slate-900"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back
+        </button>
 
-      {/* Voice Recording Control Panel */}
-      {!isGenerated && !isProcessing && !extractionError && !isQuotaError && (
-        <div className="rounded-xl border border-slate-200 bg-white p-8 space-y-6 shadow-sm text-center">
-          <h2 className="text-lg font-bold text-slate-900">Capture Phone Call Order</h2>
-          <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-            Record customer voice logs live. Click start, dictate the order, stop, and process the results.
+        <div className="mb-7 border-b border-slate-200 pb-6">
+          <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Owner-assisted intake</p>
+          <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">New order</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+            Capture phone, walk-in, and offline orders. The order stays pending until it is reviewed and approved.
           </p>
+        </div>
 
-          <div className="flex flex-col items-center justify-center space-y-4">
-            <div className="w-full max-w-xs text-left mb-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">AI Pipeline</label>
-              <select
-                value={pipeline}
-                onChange={(e) => setPipeline(e.target.value)}
-                disabled={recordingState === 'recording' || isProcessing}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
-              >
-                <option value="gemini_gemini">Gemini STT + Gemini Extraction</option>
-                <option value="gemini_audio_extraction">Gemini Direct Audio Extraction</option>
-                <option value="sarvam_gemini">Sarvam STT + Gemini Extraction</option>
-                <option value="sarvam_ollama">Sarvam STT + Ollama Extraction (Qwen 2.5)</option>
-              </select>
-            </div>
-
-            {recordingState === 'recording' && (
-              <div className="flex items-center space-x-2 bg-red-50 text-red-700 px-4 py-2 rounded-lg border border-red-200">
-                <span className="h-2 w-2 rounded-full bg-red-600 animate-pulse"></span>
-                <span className="text-xs font-bold uppercase tracking-wider">RECORDING ({formatTime(recordingSeconds)})</span>
+        <form onSubmit={submitOrder} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <div className="mb-5 flex items-start gap-3">
+                <Sparkles className="mt-0.5 h-5 w-5 text-amber-700" />
+                <div>
+                  <h2 className="font-bold text-slate-900">Optional AI assist</h2>
+                  <p className="mt-1 text-sm text-slate-500">Paste call notes or record a short voice note to prefill the form. No order is saved during preview.</p>
+                </div>
               </div>
-            )}
-
-            <div className="flex items-center gap-3 pt-2">
-              {recordingState !== 'recording' ? (
-                <button
-                  type="button"
-                  onClick={startRecording}
-                  className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-sm transition-colors cursor-pointer shadow-sm"
-                >
-                  Start Recording
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={stopRecording}
-                  className="px-5 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-sm transition-colors cursor-pointer shadow-sm"
-                >
-                  Stop Recording
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Explicit Error State Panel */}
-      {extractionError && !isProcessing && !isQuotaError && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center shadow-sm space-y-6">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-lg font-bold text-red-950">Could not extract order</h3>
-            <p className="text-xs text-red-700 font-medium">
-              We couldn't process the audio or extract order details. Please check if your audio is clear and try again.
-            </p>
-          </div>
-          <div>
-            <button
-              type="button"
-              onClick={() => {
-                setExtractionError(null);
-                setRecordingState('idle');
-                setAudioUrl(null);
-                setAudioChunks([]);
-                setRecordingSeconds(0);
-              }}
-              className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-sm transition-colors shadow-sm cursor-pointer"
-            >
-              Retry Recording
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Quota Error / Manual Fallback Panel */}
-      {isQuotaError && !isProcessing && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-8 shadow-sm space-y-6">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-
-          <div className="space-y-2 text-center">
-            <h3 className="text-lg font-bold text-amber-950">Voice Processing Unavailable</h3>
-            <p className="text-sm text-amber-800 font-semibold max-w-md mx-auto">
-              Voice processing is temporarily unavailable due to API quota limits. Please enter the order manually.
-            </p>
-          </div>
-
-          <div className="max-w-xl mx-auto space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
-                Order Transcript / Details
-              </label>
               <textarea
-                value={manualTranscript}
-                onChange={(e) => setManualTranscript(e.target.value)}
-                placeholder="Example: Johnathan Archer, +1 310-555-2150. Deliver 2 units of Plasma Injector Model D to Starbase 1 ASAP."
+                value={assistNotes}
+                onChange={(event) => setAssistNotes(event.target.value)}
                 rows={4}
-                className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 outline-none focus:border-amber-600"
+                placeholder="Example: 2 chicken biryani medium spicy, delivery tomorrow 8 PM to Batla House, customer Danish"
               />
-            </div>
-
-            <div className="flex justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsQuotaError(false);
-                  setExtractionError(null);
-                  setRecordingState('idle');
-                  setAudioUrl(null);
-                  setAudioChunks([]);
-                  setRecordingSeconds(0);
-                }}
-                className="px-5 py-2.5 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-lg text-sm transition-colors cursor-pointer"
-              >
-                Back to Voice
-              </button>
-
-              <button
-                type="button"
-                onClick={handleGenerateActionCardFromText}
-                disabled={!manualTranscript.trim()}
-                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 disabled:cursor-not-allowed text-white font-bold rounded-lg text-sm transition-colors shadow-sm cursor-pointer"
-              >
-                Generate Action Card
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Simulated Processing Loader */}
-      {isProcessing && (
-        <div className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-sm space-y-4">
-          <div className="h-8 w-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <h3 className="text-lg font-bold text-slate-900">Transcribing and generating Action Card...</h3>
-          <p className="text-xs text-slate-500 font-semibold">{processingStatus}</p>
-        </div>
-      )}
-
-      {/* Action Card Verification Panel */}
-      {isGenerated && !isProcessing && (
-        <div className="space-y-4">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Global validation error */}
-            {validationError && (
-              <div className="text-base text-red-700 font-semibold flex items-center justify-start text-left gap-2 py-0">
-                <span className="text-red-500 text-lg shrink-0">⚠</span>
-                <span>
-                  <span className="font-bold">{validationError}</span>{' '}
-                  <span className="text-red-600/90 font-medium">Please edit the order before submission.</span>
-                </span>
-              </div>
-            )}
-
-            {/* Dynamic form warning */}
-            {getValidationWarning() && (
-              <div className="text-base text-amber-700 font-semibold flex items-center justify-start text-left gap-2 py-0">
-                <span className="text-amber-500 text-lg shrink-0">⚠</span>
-                <span>
-                  <span className="font-bold">{getValidationWarning()}</span>{' '}
-                  <span className="text-amber-600 font-medium">Please edit the order before submission.</span>
-                </span>
-              </div>
-            )}
-
-
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-              {/* Left Column - Forms & Items (Span 2) */}
-              <div className="lg:col-span-2 space-y-6">
-                
-                {/* Confidence Panel */}
-                {confidenceScore !== null && confidenceLabel !== null && (
-                  <div className={`rounded-xl border p-5 shadow-xs ${
-                    confidenceLabel === 'High' ? 'bg-emerald-50 border-emerald-200' :
-                    confidenceLabel === 'Medium' ? 'bg-amber-50 border-amber-200' :
-                    'bg-red-50 border-red-200'
-                  }`}>
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className={`text-sm font-extrabold px-2.5 py-1 rounded-md border ${
-                        confidenceLabel === 'High' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                        confidenceLabel === 'Medium' ? 'bg-amber-100 text-amber-800 border-amber-300' :
-                        'bg-red-100 text-red-800 border-red-300'
-                      }`}>
-                        Review Readiness: {confidenceScore}% {confidenceLabel}
-                      </span>
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Review Status</span>
-                    </div>
-                    {confidenceReasons && confidenceReasons.length > 0 && (
-                      <ul className="text-sm space-y-1 pl-4 list-disc mt-2">
-                        {confidenceReasons.map((reason, idx) => (
-                          <li key={idx} className={
-                            confidenceLabel === 'High' ? 'text-emerald-700 font-medium' :
-                            confidenceLabel === 'Medium' ? 'text-amber-800 font-medium' : 
-                            'text-red-800 font-medium'
-                          }>{reason}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-                
-                {/* Legacy Confidence Fallback */}
-                {confidenceScore === null && confidence !== null && (
-                  <div className="rounded-xl border p-4 shadow-xs bg-slate-50 border-slate-200">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-extrabold px-2.5 py-1 rounded-md border bg-slate-100 text-slate-700 border-slate-300">
-                        Model Confidence: {(confidence * 100).toFixed(0)}%
-                      </span>
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Review Status</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Customer & Delivery Card */}
-                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
-                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                      Customer & Delivery Details
-                    </h3>
-                    {isEditing && (
-                      <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
-                        Editing Mode
-                      </span>
-                    )}
-                  </div>
-
-                  {isEditing ? (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Customer Name</label>
-                          <input
-                            type="text"
-                            required
-                            value={customerName}
-                            onChange={(e) => setCustomerName(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Phone Number</label>
-                          <input
-                            type="text"
-                            required
-                            value={customerPhone}
-                            onChange={(e) => setCustomerPhone(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="sm:col-span-3">
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Delivery Address</label>
-                          <input
-                            type="text"
-                            required
-                            value={deliveryAddress}
-                            onChange={(e) => setDeliveryAddress(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
-                          />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Delivery Window</label>
-                          <CustomDateTimePicker
-                            value={deliveryTime}
-                            onChange={(val) => setDeliveryTime(val)}
-                          />
-                        </div>
-                        <div className="sm:col-span-1">
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Payment Method</label>
-                          <select
-                            value={paymentMethod}
-                            onChange={(e) => setPaymentMethod(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-2 text-sm text-slate-900 transition-colors focus:outline-none"
-                          >
-                            <option value="Not Specified">Not Specified</option>
-                            <option value="Cash">Cash</option>
-                            <option value="Online">Online</option>
-                            <option value="Credit (Udhaar)">Credit (Udhaar)</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                        <div className="space-y-0.5">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Customer</span>
-                          <div className="text-sm font-bold text-slate-900 truncate">{customerName || 'N/A'}</div>
-                        </div>
-                        <div className="space-y-0.5">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Phone Contact</span>
-                          <div className="text-xs text-slate-700 font-semibold flex items-center gap-1.5 truncate">
-                            <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                            </svg>
-                            <span className="truncate">{customerPhone || 'N/A'}</span>
-                          </div>
-                        </div>
-                        <div className="space-y-0.5">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Payment Method</span>
-                          <div className={`text-xs font-bold ${
-                            paymentMethod === 'Credit (Udhaar)' ? 'text-red-600' :
-                            paymentMethod === 'Cash' || paymentMethod === 'Online' ? 'text-emerald-600' :
-                            'text-slate-700'
-                          }`}>
-                            {paymentMethod || 'Not Specified'}
-                          </div>
-                        </div>
-                        <div className="space-y-0.5 col-span-1">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Delivery Destination</span>
-                          <div className="text-xs text-slate-700 font-semibold flex items-start gap-1.5">
-                            <svg className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                            <span className="line-clamp-2 leading-tight">{deliveryAddress || 'N/A'}</span>
-                          </div>
-                        </div>
-                        <div className="space-y-0.5">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Scheduled Time</span>
-                          <div className="text-xs text-slate-700 font-semibold flex items-center gap-1.5">
-                            <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span className="line-clamp-2 leading-tight">{formatDeliveryTime(deliveryTime)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Line Items Card */}
-                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
-                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 002-2h-2" />
-                      </svg>
-                      Extracted Order Items
-                    </h3>
-                    {isEditing && (
-                      <button
-                        type="button"
-                        onClick={addEditItemRow}
-                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer flex items-center gap-1"
-                      >
-                        <span>+ Add Row</span>
-                      </button>
-                    )}
-                  </div>
-
-                  {isEditing ? (
-                    <div className="space-y-3">
-                      {items.map((item, idx) => (
-                        <div key={idx} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pb-2 sm:pb-0 border-b sm:border-b-0 border-slate-100 last:border-b-0">
-                          <input
-                            type="text"
-                            required
-                            placeholder="Item Name"
-                            value={item.name}
-                            onChange={(e) => handleItemChange(idx, 'name', e.target.value)}
-                            className="flex-1 bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:bg-white rounded-lg px-3 py-1.5 text-sm text-slate-900 focus:outline-none transition-colors"
-                          />
-                          <div className="flex gap-2">
-                            <input
-                              type="number"
-                              min="0.01"
-                              step="0.01"
-                              placeholder="Qty"
-                              value={item.quantity}
-                              onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
-                              className="w-16 bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:bg-white rounded-lg px-2 py-1.5 text-sm text-slate-900 focus:outline-none text-center transition-colors"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Unit"
-                              value={item.unit || ""}
-                              onChange={(e) => handleItemChange(idx, "unit", e.target.value)}
-                              className="w-20 bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:bg-white rounded-lg px-2 py-1.5 text-sm text-slate-900 focus:outline-none transition-colors"
-                            />
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              placeholder="Price"
-                              value={item.price || ''}
-                              onChange={(e) => handleItemChange(idx, 'price', e.target.value)}
-                              className="w-24 bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:bg-white rounded-lg px-2 py-1.5 text-sm text-slate-900 focus:outline-none text-right font-mono transition-colors"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeEditItemRow(idx)}
-                              disabled={items.length === 1}
-                              className="text-slate-400 hover:text-red-600 disabled:opacity-35 cursor-pointer font-bold text-lg px-2"
-                            >
-                              &times;
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="overflow-hidden border border-slate-100 rounded-lg">
-                      <table className="min-w-full divide-y divide-slate-100 text-left text-xs sm:text-sm">
-                        <thead className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                          <tr>
-                            <th className="py-2.5 px-4">Item Name</th>
-                            <th className="py-2.5 px-4 text-center w-36 whitespace-nowrap">Qty / Unit</th>
-                            <th className="py-2.5 px-4 text-right w-28">Est. Price</th>
-                            <th className="py-2.5 px-4 text-right w-28">Total Price</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 bg-white">
-                          {items.map((item, idx) => {
-                            const hasPrice = item.price !== undefined && item.price !== null && item.price > 0;
-                            const itemTotal = hasPrice ? item.quantity * (item.price || 0) : 0;
-                            return (
-                              <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                                <td className="py-3 px-4 font-semibold text-slate-800">{item.name || 'Unnamed Item'}</td>
-                                <td className="py-3 px-4 text-center text-slate-600 font-medium whitespace-nowrap">
-                                  <div className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap">
-                                    <span className="whitespace-nowrap">{item.quantity} {item.unit || ''}</span>
-                                    {isLargeQuantity(item.quantity, item.unit) && (
-                                      <span className="inline-flex items-center rounded bg-red-50 px-1.5 py-0.5 text-[9px] font-bold text-red-700 border border-red-200 uppercase tracking-wide shrink-0 whitespace-nowrap">
-                                        Large Qty
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="py-3 px-4 text-right font-mono font-medium text-slate-600">
-                                  {hasPrice ? `₹${(item.price || 0).toFixed(2)}` : <span className="text-[11px] text-slate-400 italic font-sans">Pending</span>}
-                                </td>
-                                <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
-                                  {hasPrice ? `₹${itemTotal.toFixed(2)}` : <span className="text-[11px] text-slate-400 italic font-sans">-</span>}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-2 text-sm font-semibold text-slate-600">
-                    <span className="text-slate-500">Calculated Grand Total:</span>
-                    <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
-                      <span className="text-base sm:text-lg font-black text-slate-900 font-mono bg-slate-50 border border-slate-200 px-3 py-1 rounded">
-                        ₹{orderTotal.toFixed(2)}
-                      </span>
-                      {items.some(item => item.price === undefined || item.price === null || item.price <= 0) && (
-                        <span className="text-amber-600 font-bold text-xs italic bg-amber-50 px-2 py-1 rounded border border-amber-200">
-                          + Pending Price Verification
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Column - Status, Signals & Transcript (Span 1) */}
-              <div className="space-y-6">
-
-                {/* Transcript Card */}
-                {transcript && (
-                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs space-y-3">
-                    <h3 className="text-sm font-bold text-slate-900 pb-2 border-b border-slate-100 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                      </svg>
-                      Speech Transcript
-                    </h3>
-                    <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200 italic leading-relaxed font-medium">
-                      "{transcript}"
-                    </p>
-                  </div>
-                )}
-
-                {/* Audio Actions Evaluation Panel */}
-                {orderSource === 'audio' && (
-                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs space-y-3">
-                    <h3 className="text-sm font-bold text-slate-900 pb-2 border-b border-slate-100 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      Evaluation & QA
-                    </h3>
-                    {!audioSaved ? (
-                      <button
-                        type="button"
-                        disabled={isSavingAudio}
-                        onClick={async () => {
-                          if (!cardId) return;
-                          setIsSavingAudio(true);
-                          try {
-                            const mimeType = mediaRecorder?.mimeType || audioChunks[0]?.type || 'audio/mp4';
-                            const extension = mimeType.includes('webm') ? 'webm' : 'm4a';
-                            const audioBlob = new Blob(audioChunks, { type: mimeType });
-
-                            const res = await saveVoiceRecording(
-                              audioBlob,
-                              extension,
-                              recordingSeconds,
-                              cardId,
-                              true,
-                              pipeline,
-                              transcript
-                            );
-                            if (res.success && res.storagePath) {
-                              setAudioSaved(true);
-                              setAudioStoragePath(res.storagePath);
-                              alert('Audio saved successfully for evaluation!');
-                            } else {
-                              alert(`Failed to save audio: ${res.error}`);
-                            }
-                          } finally {
-                            setIsSavingAudio(false);
-                          }
-                        }}
-                        className="w-full px-3 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        {isSavingAudio ? 'Saving...' : '💾 Save Audio for AI Eval'}
-                      </button>
-                    ) : (
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700">
-                          <span className="text-emerald-600 font-extrabold text-sm">✓</span>
-                          <span>Recording Available</span>
-                        </div>
-                        <button
-                          type="button"
-                          disabled={isSavingAudio}
-                          onClick={async () => {
-                            setIsSavingAudio(true);
-                            try {
-                              const { deleteVoiceRecording } = await import('@/lib/voice-recordings');
-                              const res = await deleteVoiceRecording(audioStoragePath!);
-                              if (res.success) {
-                                setAudioSaved(false);
-                                setAudioStoragePath(null);
-                                alert('Recording deleted.');
-                              } else {
-                                alert(`Failed to delete recording: ${res.error}`);
-                              }
-                            } finally {
-                              setIsSavingAudio(false);
-                            }
-                          }}
-                          className="w-full px-3 py-2 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 rounded-lg text-xs font-bold transition-colors cursor-pointer text-center"
-                        >
-                          Delete Recording
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-
-
-            {/* Actions Footer Bar */}
-            <div className="pt-4 border-t border-slate-200 flex justify-between items-center gap-3">
-              <button
-                type="button"
-                onClick={async () => {
-                  if (cardId) {
-                    try {
-                      await deleteActionCard(cardId);
-                    } catch (err) {
-                      console.error("Failed to delete cancelled card:", err);
-                    }
-                    setCardId(null);
-                  }
-                  setIsGenerated(false);
-                  setRecordingState('idle');
-                  setAudioUrl(null);
-                }}
-                className="px-4 py-2 border border-slate-300 hover:bg-slate-50 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
-              >
-                Cancel Order
-              </button>
-
-              <div className="flex items-center gap-2">
-                {!isEditing ? (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditing(true)}
-                    className="px-4 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-bold text-slate-700 transition-colors cursor-pointer"
-                  >
-                    Edit Details
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditing(false)}
-                    className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    Finish Editing
-                  </button>
-                )}
-
+              <div className="mt-3 flex flex-wrap gap-2">
                 <button
-                  type="submit"
-                  disabled={!!getValidationWarning()}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer"
+                  type="button"
+                  onClick={() => extractNotes()}
+                  disabled={isExtracting || isRecording}
+                  className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Submit Order
+                  {isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  Fill from notes
+                </button>
+                <button
+                  type="button"
+                  onClick={isRecording ? stopRecording : startRecording}
+                  disabled={isExtracting}
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isRecording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  {isRecording ? 'Stop recording' : 'Record voice note'}
                 </button>
               </div>
+              {assistMessage && <p className="mt-3 text-sm text-slate-500" role="status">{assistMessage}</p>}
+            </section>
+
+            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <h2 className="mb-5 font-bold text-slate-900">Customer and fulfilment</h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="text-sm font-semibold text-slate-700">
+                  Customer name <span className="text-red-500">*</span>
+                  <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2.5" placeholder="Customer name" />
+                </label>
+                <label className="text-sm font-semibold text-slate-700">
+                  Phone number
+                  <input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2.5" inputMode="tel" placeholder="Optional for walk-in orders" />
+                </label>
+              </div>
+
+              <fieldset className="mt-5">
+                <legend className="mb-2 text-sm font-semibold text-slate-700">Fulfilment</legend>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['delivery', 'takeaway', 'dine_in'] as FulfilmentType[]).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setFulfilment(option)}
+                      className={`min-h-11 rounded-md border px-2 text-sm font-semibold ${fulfilment === option ? 'border-amber-600 bg-amber-50 text-amber-800' : 'border-slate-300 text-slate-600'}`}
+                    >
+                      {option === 'dine_in' ? 'Dine in' : option.charAt(0).toUpperCase() + option.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                {fulfilment === 'delivery' && (
+                  <label className="text-sm font-semibold text-slate-700 sm:col-span-2">
+                    Delivery address <span className="text-red-500">*</span>
+                    <input value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2.5" placeholder="Full delivery address" />
+                  </label>
+                )}
+                {fulfilment === 'dine_in' && (
+                  <label className="text-sm font-semibold text-slate-700">
+                    Table number <span className="text-red-500">*</span>
+                    <input value={tableNumber} onChange={(event) => setTableNumber(event.target.value)} className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2.5" placeholder="Table 4" />
+                  </label>
+                )}
+                <label className="text-sm font-semibold text-slate-700">
+                  Required time
+                  <input value={deliveryTime} onChange={(event) => setDeliveryTime(event.target.value)} className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2.5" placeholder="Tomorrow, 8:00 PM" />
+                </label>
+                <label className="text-sm font-semibold text-slate-700">
+                  Payment method
+                  <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2.5">
+                    <option value="">Not specified</option>
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI</option>
+                    <option value="card">Card</option>
+                    <option value="paid_online">Paid online</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-bold text-slate-900">Order items</h2>
+                  <p className="mt-1 text-sm text-slate-500">Select catalog items when available so units and prices remain consistent.</p>
+                </div>
+                <button type="button" onClick={() => setItems((current) => [...current, emptyItem()])} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700">
+                  <Plus className="h-4 w-4" /> Add item
+                </button>
+              </div>
+              {catalogError && <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{catalogError}</p>}
+              <datalist id="catalog-items">
+                {catalog.map((item) => <option value={item.display_name} key={item.id}>{item.unit || 'unit'} · ₹{item.base_price}</option>)}
+              </datalist>
+              <div className="space-y-3">
+                {items.map((item, index) => (
+                  <div className="grid gap-3 rounded-md border border-slate-200 p-3 sm:grid-cols-[minmax(0,1fr)_90px_100px_110px_40px]" key={index}>
+                    <label className="text-xs font-semibold text-slate-500">Item
+                      <input list="catalog-items" value={item.name} onChange={(event) => updateItem(index, { name: event.target.value })} onBlur={(event) => applyCatalogMatch(index, event.target.value)} className="mt-1.5 w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm" placeholder="Product or dish" />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-500">Quantity
+                      <input type="number" min="0.01" step="0.01" value={item.quantity} onChange={(event) => updateItem(index, { quantity: Number(event.target.value) })} className="mt-1.5 w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm" />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-500">Unit
+                      <input value={item.unit} onChange={(event) => updateItem(index, { unit: event.target.value })} className="mt-1.5 w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm" placeholder="kg, plate" />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-500">Unit price
+                      <input type="number" min="0" step="0.01" value={item.price} onChange={(event) => updateItem(index, { price: Number(event.target.value) })} className="mt-1.5 w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm" />
+                    </label>
+                    <button type="button" onClick={() => setItems((current) => current.length === 1 ? [emptyItem()] : current.filter((_, itemIndex) => itemIndex !== index))} className="mt-5 inline-flex h-10 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600" aria-label={`Remove item ${index + 1}`}>
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <label className="mt-5 block text-sm font-semibold text-slate-700">
+                Special instructions
+                <textarea value={specialInstructions} onChange={(event) => setSpecialInstructions(event.target.value)} rows={3} className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2.5" placeholder="Dietary notes, substitutions, packing instructions, or customer requests" />
+              </label>
+            </section>
+          </div>
+
+          <aside className="xl:sticky xl:top-6 xl:self-start">
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-3 border-b border-slate-200 pb-4">
+                <ClipboardCheck className="h-5 w-5 text-amber-700" />
+                <div>
+                  <h2 className="font-bold text-slate-900">Review summary</h2>
+                  <p className="text-xs text-slate-500">Creates a pending Action Card</p>
+                </div>
+              </div>
+              <dl className="space-y-3 py-4 text-sm">
+                <div className="flex justify-between gap-3"><dt className="text-slate-500">Customer</dt><dd className="text-right font-semibold text-slate-800">{customerName || 'Not entered'}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-slate-500">Fulfilment</dt><dd className="font-semibold capitalize text-slate-800">{fulfilment.replace('_', ' ')}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-slate-500">Items</dt><dd className="font-semibold text-slate-800">{items.filter((item) => item.name.trim()).length}</dd></div>
+                <div className="flex justify-between gap-3 border-t border-slate-200 pt-3"><dt className="font-semibold text-slate-700">Estimated total</dt><dd className="text-lg font-bold text-slate-900">₹{total.toFixed(2)}</dd></div>
+              </dl>
+              <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                Review catalog matches, quantity, unit, price, address, and time before submission.
+              </p>
+              {formError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{formError}</p>}
+              <button type="submit" disabled={isSubmitting} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
+                Create Action Card
+              </button>
             </div>
-          </form>
-        </div>
-      )}
-    </div>
+          </aside>
+        </form>
+      </div>
+    </main>
   );
 }

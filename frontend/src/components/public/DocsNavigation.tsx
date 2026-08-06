@@ -3,25 +3,27 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
-const docsNavigation = [
-  ['', 'Overview'],
-  ['getting-started', 'Getting started'],
-  ['catalog', 'Catalog setup'],
-  ['channels', 'Order channels'],
-  ['whatsapp', 'WhatsApp'],
-  ['telegram', 'Telegram'],
-  ['business-configuration', 'Business configuration'],
-  ['order-lifecycle', 'Order lifecycle'],
-  ['customer-portal', 'Customer portal'],
-  ['roles-and-permissions', 'Roles and permissions'],
-  ['troubleshooting', 'Troubleshooting'],
-] as const;
+type ChapterLink = { id: string; path: string; title: string };
 
-type SectionLink = { id: string; title: string };
-
-export default function DocsNavigation({ slug, sections }: { slug: string; sections: SectionLink[] }) {
-  const [activeSection, setActiveSection] = useState(sections[0]?.id ?? '');
+export default function DocsNavigation({ chapters }: { chapters: ChapterLink[] }) {
+  const [activeChapter, setActiveChapter] = useState(chapters[0]?.id ?? '');
   const activePageRef = useRef<HTMLAnchorElement>(null);
+
+  useEffect(() => {
+    const openHashChapter = () => {
+      const chapterId = window.location.hash.slice(1);
+      if (!chapters.some((chapter) => chapter.id === chapterId)) return;
+
+      setActiveChapter(chapterId);
+      window.requestAnimationFrame(() => {
+        document.getElementById(chapterId)?.scrollIntoView({ block: 'start' });
+      });
+    };
+
+    openHashChapter();
+    window.addEventListener('hashchange', openHashChapter);
+    return () => window.removeEventListener('hashchange', openHashChapter);
+  }, [chapters]);
 
   useEffect(() => {
     const activePage = activePageRef.current;
@@ -32,11 +34,11 @@ export default function DocsNavigation({ slug, sections }: { slug: string; secti
       left: activePage.offsetLeft - (navigation.clientWidth - activePage.offsetWidth) / 2,
       behavior: 'smooth',
     });
-  }, [slug]);
+  }, [activeChapter]);
 
   useEffect(() => {
-    const targets = sections
-      .map((section) => document.getElementById(section.id))
+    const targets = chapters
+      .map((chapter) => document.getElementById(chapter.id))
       .filter((element): element is HTMLElement => Boolean(element));
 
     if (!targets.length || !('IntersectionObserver' in window)) return;
@@ -46,47 +48,30 @@ export default function DocsNavigation({ slug, sections }: { slug: string; secti
         const visible = entries
           .filter((entry) => entry.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible[0]) setActiveSection(visible[0].target.id);
+        if (visible[0]) setActiveChapter(visible[0].target.id);
       },
-      { rootMargin: '-20% 0px -65% 0px', threshold: 0 },
+      { rootMargin: '-18% 0px -70% 0px', threshold: 0 },
     );
 
     targets.forEach((target) => observer.observe(target));
     return () => observer.disconnect();
-  }, [sections]);
+  }, [chapters]);
 
   return (
-    <>
-      <nav className="docs-page-navigation" aria-label="Documentation navigation">
-        {docsNavigation.map(([path, label]) => {
-          const isActive = slug === path;
-          return (
-            <Link
-              key={path}
-              ref={isActive ? activePageRef : undefined}
-              href={path ? `/docs/${path}` : '/docs'}
-              className={isActive ? 'is-active' : ''}
-            >
-              {label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {sections.length > 1 && (
-        <nav className="docs-section-navigation" aria-label="On this page">
-          <p>On this page</p>
-          {sections.map((section) => (
-            <Link
-              key={section.id}
-              href={`#${section.id}`}
-              className={activeSection === section.id ? 'is-active' : ''}
-            >
-              {section.title}
-            </Link>
-          ))}
-        </nav>
-      )}
-    </>
+    <nav className="docs-page-navigation" aria-label="Documentation chapters">
+      {chapters.map((chapter) => {
+        const isActive = activeChapter === chapter.id;
+        return (
+          <Link
+            key={chapter.id}
+            ref={isActive ? activePageRef : undefined}
+            href={`/docs#${chapter.id}`}
+            className={isActive ? 'is-active' : ''}
+          >
+            {chapter.title}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }

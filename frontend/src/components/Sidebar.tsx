@@ -23,7 +23,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: DashboardIcon },
-    { name: 'Create Order', href: '/create-order', icon: CreateIcon },
+    { name: 'New Order', href: '/create-order', icon: CreateIcon },
     { name: 'Orders List', href: '/orders', icon: ListIcon },
     { name: 'Action Cards', href: '/action-card', icon: CardsIcon },
     { name: 'Customer Requests', href: '/customer-requests', icon: Inbox },

@@ -193,7 +193,7 @@ export default function Dashboard() {
             <div>
               <h3 className="text-lg font-bold text-slate-900 mb-2">Quick Actions</h3>
               <p className="text-sm text-slate-600 mb-6 leading-relaxed">
-                Add an order manually or review raw speech transcriptions inside Action Cards.
+                Capture phone, walk-in, and offline orders in the same review workflow as connected channels.
               </p>
             </div>
             <div className="space-y-3">
@@ -201,7 +201,7 @@ export default function Dashboard() {
                 href="/create-order"
                 className="flex items-center justify-between w-full px-4 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm transition-all shadow-sm"
               >
-                <span>Manual Create Order</span>
+                <span>Create new order</span>
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>

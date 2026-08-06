@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import DocsShell from '@/components/public/DocsShell';
 
 type Doc = { title: string; summary: string; sections: Array<{ title: string; paragraphs: string[]; bullets?: string[] }> };
@@ -10,7 +10,9 @@ const docs: Record<string, Doc> = {
   ] },
   'getting-started': { title: 'Getting started', summary: 'A practical sequence for setting up a PhoneERP workspace.', sections: [
     { title: 'Owner setup', paragraphs: ['Create an owner account, select the business type and confirm the shop workspace. Existing shops without a configuration retain grocery defaults.'], bullets: ['Create or confirm the shop', 'Review business configuration', 'Add catalog items and aliases', 'Invite packing or delivery staff', 'Connect a messaging channel'] },
-    { title: 'First order test', paragraphs: ['Send a realistic customer message, confirm that an action card appears, edit any incorrect field, approve it, and move the resulting order through packing and delivery.'] },
+    { title: 'Two professional order paths', paragraphs: ['Automatic orders arrive through a connected channel such as WhatsApp or Telegram. Phone, walk-in and offline orders are entered by the owner from New Order. Both paths create a pending Action Card and use the same review, approval, packing, delivery, tracking and billing workflow.'], bullets: ['Automatic: customer message or voice note to pending Action Card', 'Owner-assisted: New Order form to pending Action Card', 'No channel-specific fulfilment system', 'Owner approval remains the control point'] },
+    { title: 'Create an owner-assisted order', paragraphs: ['Open New Order, enter the customer and fulfilment details, then add products from the business catalog. For a faster draft, paste call notes or record a short voice note and use AI assist to prefill the form. Nothing is saved until the owner reviews the fields and selects Create Action Card.'] },
+    { title: 'First order test', paragraphs: ['Test both paths. Send one realistic customer message, then create one phone or walk-in order from New Order. Confirm that each Action Card can be corrected before approval and that both resulting orders progress through packing and delivery.'] },
   ] },
   catalog: { title: 'Catalog setup', summary: 'Teach PhoneERP the products, prices, units and names customers actually use.', sections: [
     { title: 'Add sellable items', paragraphs: ['Create each product with its customer-facing name, price, supported unit and active status. Accurate catalog data lets PhoneERP calculate totals and gives the owner a reliable review surface.'], bullets: ['Use the exact selling unit, such as kg, plate, piece or litre', 'Keep prices current', 'Deactivate unavailable items instead of deleting history', 'Review restaurant portions and variants before a pilot'] },
@@ -58,11 +60,42 @@ const docs: Record<string, Doc> = {
 export default async function DocsPage({ params }: { params: Promise<{ slug?: string[] }> }) {
   const { slug: parts = [] } = await params;
   const slug = parts.join('/');
-  const doc = docs[slug];
-  if (!doc) notFound();
-  const sectionLinks = doc.sections.map((section) => ({
-    id: section.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
-    title: section.title,
+  if (slug && !docs[slug]) notFound();
+
+  const chapterId = (path: string) => `docs-${path || 'overview'}`;
+  if (slug) redirect(`/docs#${chapterId(slug)}`);
+
+  const entries = Object.entries(docs);
+  const chapters = entries.map(([path, doc]) => ({
+    id: chapterId(path),
+    path,
+    title: path ? doc.title : 'Overview',
   }));
-  return <DocsShell slug={slug} title={doc.title} summary={doc.summary} sections={sectionLinks}>{doc.sections.map((section, index) => <section id={sectionLinks[index].id} key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}{section.bullets && <ul>{section.bullets.map((item) => <li key={item}>{item}</li>)}</ul>}</section>)}</DocsShell>;
+
+  return (
+    <DocsShell
+      title="Documentation"
+      summary="Follow PhoneERP from first workspace setup through integrations, fulfilment and troubleshooting."
+      chapters={chapters}
+    >
+      {entries.map(([path, doc], chapterIndex) => (
+        <section className="docs-chapter" id={chapterId(path)} key={path || 'overview'}>
+          <div className="docs-chapter-heading">
+            <p>{String(chapterIndex + 1).padStart(2, '0')}</p>
+            <h2>{path ? doc.title : 'Overview'}</h2>
+            <p>{doc.summary}</p>
+          </div>
+          <div className="docs-chapter-topics">
+            {doc.sections.map((section) => (
+              <section className="docs-topic" key={section.title}>
+                <h3>{section.title}</h3>
+                {section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                {section.bullets && <ul>{section.bullets.map((item) => <li key={item}>{item}</li>)}</ul>}
+              </section>
+            ))}
+          </div>
+        </section>
+      ))}
+    </DocsShell>
+  );
 }
