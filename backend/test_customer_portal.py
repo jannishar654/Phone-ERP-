@@ -1198,3 +1198,48 @@ def test_customer_assistant_explains_total_from_database(portal_context):
     assert response.status_code == 200
     assert "₹6920.00" in response.json()["reply"]
     assert "Packing" in response.json()["reply"]
+
+
+def test_customer_assistant_tracks_latest_order_without_order_number(portal_context):
+    db = FakeDb(
+        {
+            ("orders", "select"): [[{
+                "id": "order-1",
+                "total_amount": 6920,
+                "lifecycle_status": "out_for_delivery",
+                "created_at": "2026-07-16T10:00:00+00:00",
+            }]],
+            ("action_cards", "select"): [[]],
+        }
+    )
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.post(
+            "/customer/assistant",
+            json={"message": "Where is my order?"},
+        )
+
+    assert response.status_code == 200
+    assert "Out For Delivery" in response.json()["reply"]
+    assert response.json()["order_id"] == "order-1"
+
+
+def test_customer_assistant_tracks_pending_draft(portal_context):
+    db = FakeDb(
+        {
+            ("orders", "select"): [[]],
+            ("action_cards", "select"): [[{
+                "id": "card-1",
+                "status": "pending",
+                "created_at": "2026-07-16T10:00:00+00:00",
+            }]],
+        }
+    )
+    with patch("app.routes.customer.supabase_client", db):
+        response = client.post(
+            "/customer/assistant",
+            json={"message": "Mera order kaha hai?"},
+        )
+
+    assert response.status_code == 200
+    assert "owner review" in response.json()["reply"]
+    assert response.json()["action"] == "view_order"

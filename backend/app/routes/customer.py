@@ -93,14 +93,43 @@ def _customer_and_shop(context: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[st
 def _latest_customer_order(context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     result = (
         supabase_client.table("orders")
-        .select("id, order_number, total_amount, lifecycle_status, created_at")
+        .select("id, total_amount, lifecycle_status, created_at")
         .eq("shop_id", context["shop_id"])
         .eq("customer_id", context["customer_id"])
         .order("created_at", desc=True)
         .limit(1)
         .execute()
     )
-    return result.data[0] if result.data else None
+    if result.data:
+        return {**result.data[0], "record_type": "order"}
+    return None
+
+
+def _latest_customer_activity(context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    order = _latest_customer_order(context)
+    card_result = (
+        supabase_client.table("action_cards")
+        .select("id, status, created_at")
+        .eq("shop_id", context["shop_id"])
+        .eq("customer_id", context["customer_id"])
+        .in_("status", ["pending", "approved"])
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    card = (
+        {**card_result.data[0], "record_type": "action_card"}
+        if card_result.data
+        else None
+    )
+    if not order:
+        return card
+    if not card:
+        return order
+    return max(
+        (order, card),
+        key=lambda row: str(row.get("created_at") or ""),
+    )
 
 
 def _create_pending_order_request(
@@ -692,17 +721,29 @@ async def customer_assistant(
 
     intent = classification.intent
     if intent == ConversationIntent.ORDER_TRACKING:
-        order = _latest_customer_order(context)
-        if not order:
+        activity = _latest_customer_activity(context)
+        if not activity:
             return CustomerAssistantResponse(
                 reply="Aapke account mein abhi koi order nahi mila.",
                 intent=intent.value,
             )
-        status = str(order.get("lifecycle_status") or "received").replace("_", " ").title()
+        if activity["record_type"] == "action_card":
+            card_status = str(activity.get("status") or "pending").lower()
+            reply = (
+                "Aapka latest order owner review ke liye wait kar raha hai."
+                if card_status == "pending"
+                else "Aapka latest order approve ho gaya hai aur packing ke liye ready hai."
+            )
+            return CustomerAssistantResponse(
+                reply=reply,
+                intent=intent.value,
+                action="view_order",
+            )
+        status = str(activity.get("lifecycle_status") or "received").replace("_", " ").title()
         return CustomerAssistantResponse(
             reply=f"Aapka latest order abhi {status} stage mein hai.",
             intent=intent.value,
-            order_id=str(order["id"]),
+            order_id=str(activity["id"]),
             action="view_order",
         )
 

@@ -490,6 +490,7 @@ export default function CustomerOrdersPage() {
               <Bot className="h-5 w-5 text-indigo-600" aria-hidden="true" />
               <h2 className="font-bold">Order assistant</h2>
             </div>
+            <p className="mt-1 text-sm text-slate-500">Ask about your latest order, total, bill, or repeat order.</p>
             {assistantReply && <p className="mt-3 p-3 bg-indigo-50 border border-indigo-100 text-sm text-slate-700 rounded-md whitespace-pre-wrap">{assistantReply}</p>}
             <form onSubmit={askAssistant} className="mt-3 flex gap-2">
               <label htmlFor="assistant-message" className="sr-only">Ask about your order</label>
@@ -505,6 +506,7 @@ export default function CustomerOrdersPage() {
               <MessageSquareText className="h-5 w-5 text-emerald-700" aria-hidden="true" />
               <h2 className="font-bold">Report a problem</h2>
             </div>
+            <p className="mt-1 text-sm text-slate-500">Tell the business about a late delivery, missing item, wrong item, or another order issue. Your message goes to the owner’s Customer Requests page.</p>
             <form onSubmit={sendSupport} className="mt-3 flex gap-2">
               <label htmlFor="support-message" className="sr-only">Problem details</label>
               <input id="support-message" value={supportText} onChange={(e) => setSupportText(e.target.value)} placeholder="Describe the issue" className="min-w-0 flex-1 h-11 px-3 border border-slate-300 rounded-md text-sm" />
