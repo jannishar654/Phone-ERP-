@@ -130,7 +130,7 @@ export default function CreateOrderPage() {
 
   const extractNotes = async (notes = assistNotes) => {
     if (!notes.trim()) {
-      setAssistMessage('Enter call notes or record a voice note first.');
+      setAssistMessage('Type the customer order or use Speak order first.');
       return;
     }
     setIsExtracting(true);
@@ -138,9 +138,9 @@ export default function CreateOrderPage() {
     try {
       const preview = await extractActionCardPreview(notes.trim());
       applyPreview(preview);
-      setAssistMessage('Draft filled. Review every field before creating the Action Card.');
+      setAssistMessage('Order details added. Please check the customer, items, address, time, and price before saving.');
     } catch (error) {
-      setAssistMessage(errorMessage(error, 'AI assist is unavailable. Enter the details manually.'));
+      setAssistMessage(errorMessage(error, 'Automatic filling is unavailable right now. Please enter the order details manually.'));
     } finally {
       setIsExtracting(false);
     }
@@ -154,7 +154,7 @@ export default function CreateOrderPage() {
   const startRecording = async () => {
     setAssistMessage('');
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setAssistMessage('Voice capture is not supported in this browser. Enter the order notes manually.');
+      setAssistMessage('Voice recording is not supported in this browser. Please type or paste what the customer said.');
       return;
     }
 
@@ -172,7 +172,7 @@ export default function CreateOrderPage() {
         stopMediaStream();
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
         if (!blob.size) {
-          setAssistMessage('No audio was captured. Enter the order notes manually.');
+          setAssistMessage('No voice was recorded. Please try again or type the order details.');
           return;
         }
         setIsExtracting(true);
@@ -183,9 +183,9 @@ export default function CreateOrderPage() {
           setAssistNotes(transcription.transcript);
           const preview = await extractActionCardPreview(transcription.transcript);
           applyPreview(preview);
-          setAssistMessage('Voice note transcribed and the draft was filled. Review it before saving.');
+          setAssistMessage('Voice order added to the form. Please check every detail before saving.');
         } catch (error) {
-          setAssistMessage(errorMessage(error, 'Voice assist is unavailable. Enter the details manually.'));
+          setAssistMessage(errorMessage(error, 'Voice processing is unavailable right now. Please type the order details manually.'));
         } finally {
           setIsExtracting(false);
         }
@@ -194,7 +194,7 @@ export default function CreateOrderPage() {
       setIsRecording(true);
     } catch {
       stopMediaStream();
-      setAssistMessage('Microphone access was not available. You can enter or paste the order details manually.');
+      setAssistMessage('Microphone permission is off. Allow microphone access in your browser and try again, or type the order details below.');
     }
   };
 
@@ -275,8 +275,8 @@ export default function CreateOrderPage() {
               <div className="mb-5 flex items-start gap-3">
                 <Sparkles className="mt-0.5 h-5 w-5 text-amber-700" />
                 <div>
-                  <h2 className="font-bold text-slate-900">Optional AI assist</h2>
-                  <p className="mt-1 text-sm text-slate-500">Paste call notes or record a short voice note to prefill the form. No order is saved during preview.</p>
+                  <h2 className="font-bold text-slate-900">Quick order entry</h2>
+                  <p className="mt-1 text-sm text-slate-500">Type, paste, or speak what the customer ordered. PhoneERP fills the form, and nothing is saved until you check it.</p>
                 </div>
               </div>
               <textarea
@@ -284,7 +284,7 @@ export default function CreateOrderPage() {
                 onChange={(event) => setAssistNotes(event.target.value)}
                 rows={4}
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 outline-none focus:border-amber-600"
-                placeholder="Example: 2 chicken biryani medium spicy, delivery tomorrow 8 PM to Batla House, customer Danish"
+                placeholder="Example: Danish ko kal 8 PM Batla House par 2 chicken biryani medium spicy bhejni hai"
               />
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
@@ -294,7 +294,7 @@ export default function CreateOrderPage() {
                   className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  Fill from notes
+                  Fill order details
                 </button>
                 <button
                   type="button"
@@ -303,7 +303,7 @@ export default function CreateOrderPage() {
                   className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isRecording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                  {isRecording ? 'Stop recording' : 'Record voice note'}
+                  {isRecording ? 'Stop recording' : 'Speak order'}
                 </button>
               </div>
               {assistMessage && <p className="mt-3 text-sm text-slate-500" role="status">{assistMessage}</p>}
@@ -416,7 +416,7 @@ export default function CreateOrderPage() {
                 <ClipboardCheck className="h-5 w-5 text-amber-700" />
                 <div>
                   <h2 className="font-bold text-slate-900">Review summary</h2>
-                  <p className="text-xs text-slate-500">Creates a pending Action Card</p>
+                  <p className="text-xs text-slate-500">Saved for owner review</p>
                 </div>
               </div>
               <dl className="space-y-3 py-4 text-sm">
@@ -431,7 +431,7 @@ export default function CreateOrderPage() {
               {formError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{formError}</p>}
               <button type="submit" disabled={isSubmitting} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
-                Create Action Card
+                Save order for review
               </button>
             </div>
           </aside>
