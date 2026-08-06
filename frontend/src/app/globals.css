@@ -474,6 +474,18 @@ body {
   color: var(--pe-gold);
 }
 .public-inline-link svg { width: .7em; height: .7em; }
+.public-repository-link {
+  display: inline-flex;
+  align-items: center;
+  gap: .65rem;
+  width: fit-content;
+  margin-top: 1.3rem;
+  color: var(--pe-text);
+  font-size: .9rem;
+  font-weight: 600;
+}
+.public-repository-link:hover { color: var(--pe-gold); }
+.public-repository-link svg { width: 1rem; height: 1rem; flex: 0 0 auto; }
 .public-team-list { border-top: 1px solid var(--pe-border); }
 .public-team-list > a {
   display: grid;
