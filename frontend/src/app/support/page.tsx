@@ -4,7 +4,7 @@ import PublicPageShell from '@/components/public/PublicPageShell';
 import { publicSite } from '@/lib/public-site';
 
 export const metadata: Metadata = {
-  title: 'Support | PhoneERP',
+  title: 'Support',
   description: 'Contact PhoneERP support, report a security concern or request WhatsApp disconnection.',
 };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { getOrders, updateOrderLifecycleStatus } from "@/lib/api";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
@@ -37,8 +37,10 @@ export default function OrdersPage() {
       if (!isSilent && orders.length === 0) setLoading(true);
       const data = await getOrders();
       setOrders(data || []);
-    } catch (err: any) {
-      if (!isSilent && orders.length === 0) setError(err.message);
+    } catch (err: unknown) {
+      if (!isSilent && orders.length === 0) {
+        setError(err instanceof Error ? err.message : 'Failed to load orders.');
+      }
       else throw err;
     } finally {
       if (!isSilent) setLoading(false);
@@ -49,10 +51,12 @@ export default function OrdersPage() {
     try {
       setUpdating(orderId);
       const updated = await updateOrderLifecycleStatus(orderId, newStatus);
-      setOrders(orders.map(o => o.id === orderId ? { ...o, lifecycle_status: updated.lifecycle_status } : o));
+      setOrders((currentOrders) => currentOrders.map((order) => (
+        order.id === orderId ? { ...order, lifecycle_status: updated.lifecycle_status } : order
+      )));
       silentRefresh();
-    } catch (err: any) {
-      alert(`Failed to update: ${err.message}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to update the order.');
     } finally {
       setUpdating(null);
     }
@@ -68,15 +72,15 @@ export default function OrdersPage() {
   const filteredOrders = orders.filter(o => getStatusCategory(o.lifecycle_status) === activeTab);
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <header className="bg-white border-b px-4 py-3 sticky top-0 z-10 flex justify-between items-center">
-        <div className="flex items-center gap-3">
+    <div className="mx-auto w-full max-w-5xl pb-16">
+      <header className="mb-5 flex flex-col gap-4 border-b border-slate-200 bg-white/80 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:rounded-lg sm:border">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <Link href="/dashboard" className="p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-600 transition-colors text-sm font-bold">
             &larr; Back
           </Link>
-          <h1 className="text-lg font-semibold text-gray-900">Final Orders / Bills</h1>
+          <h1 className="truncate text-lg font-semibold text-gray-900">Final Orders / Bills</h1>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3 self-end sm:self-auto">
           {refreshError && <span className="text-xs text-red-500 hidden sm:inline" title={refreshError}>Unable to refresh. Showing previously loaded data.</span>}
           {lastUpdated && !refreshError && <span className="text-xs text-gray-500 hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>}
           <button onClick={manualRefresh} className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 font-semibold rounded hover:bg-gray-200 transition-colors">
@@ -85,15 +89,15 @@ export default function OrdersPage() {
         </div>
       </header>
 
-      <main className="p-4 max-w-lg mx-auto">
+      <main className="px-0 sm:px-2">
         {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm">{error}</div>}
 
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
+        <div className="mb-6 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           {['packing', 'out_for_delivery', 'delivered', 'cancelled'].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap ${
+              className={`min-w-0 px-3 py-2.5 rounded-lg text-sm font-semibold sm:px-4 ${
                 activeTab === tab 
                   ? 'bg-indigo-600 text-white' 
                   : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
@@ -109,13 +113,13 @@ export default function OrdersPage() {
             <p className="text-gray-500 text-center mt-10">No orders in this status.</p>
           ) : (
             filteredOrders.map(order => (
-              <div key={order.id} className="bg-white p-4 rounded-xl shadow-sm border">
-                <div className="flex justify-between items-start mb-3 border-b pb-3">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Order #{order.orderNumber ?? order.id.slice(0, 8)}</h3>
+              <article key={order.id} className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <div className="mb-3 flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div className="min-w-0">
+                    <h3 className="truncate font-semibold text-gray-900">Order #{order.orderNumber ?? order.id.slice(0, 8)}</h3>
                     <p className="text-xs text-gray-500">{new Date(order.created_at).toLocaleString()}</p>
                   </div>
-                  <div className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1
+                  <div className={`flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs font-medium
                     ${order.lifecycle_status === 'delivered' ? 'bg-green-100 text-green-700' : 
                       order.lifecycle_status === 'cancelled' ? 'bg-red-100 text-red-700' :
                       'bg-indigo-100 text-indigo-700'}`}>
@@ -126,9 +130,9 @@ export default function OrdersPage() {
 
                 <div className="space-y-2 mb-3">
                   {order.order_items && order.order_items.map(item => (
-                    <div key={item.id} className="flex justify-between text-sm">
-                      <span className="text-gray-700">{item.display_name || item.raw_name} <span className="text-gray-400">x {item.quantity} {item.unit}</span></span>
-                      <span className="font-medium">₹{item.line_total}</span>
+                    <div key={item.id} className="flex min-w-0 justify-between gap-4 text-sm">
+                      <span className="min-w-0 break-words text-gray-700">{item.display_name || item.raw_name} <span className="text-gray-400">x {item.quantity} {item.unit}</span></span>
+                      <span className="shrink-0 font-medium">₹{item.line_total}</span>
                     </div>
                   ))}
                 </div>
@@ -139,7 +143,7 @@ export default function OrdersPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                   {getStatusCategory(order.lifecycle_status) === 'packing' && (
                     <>
                       <button 
@@ -177,7 +181,7 @@ export default function OrdersPage() {
                     </>
                   )}
                 </div>
-              </div>
+              </article>
             ))
           )}
         </div>
