@@ -104,12 +104,12 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
             <span className="text-sm text-slate-700 font-semibold lg:font-medium inline sm:hidden">PhoneERP</span>
           </div>
           
-          <div className="flex items-center space-x-4 sm:space-x-6 text-xs text-slate-500">
+          <div className="flex min-w-0 items-center space-x-3 sm:space-x-6 text-xs text-slate-500">
             {role === 'owner' && <OwnerNotificationCenter />}
             {user && (
-              <div className="flex items-center space-x-2">
+              <div className="flex min-w-0 items-center space-x-2">
                 <span className="h-2 w-2 rounded-full bg-indigo-600"></span>
-                <span className="text-slate-800 text-sm font-medium">Hello, {user.name}</span>
+                <span className="hidden max-w-40 truncate text-sm font-medium text-slate-800 sm:inline">Hello, {user.name}</span>
               </div>
             )}
             
