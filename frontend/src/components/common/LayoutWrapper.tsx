@@ -119,7 +119,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
             
             <button
               onClick={handleSignOut}
-              className="text-slate-550 hover:text-red-600 font-semibold transition-colors cursor-pointer text-sm hidden lg:block"
+              className="text-slate-500 hover:text-red-600 font-semibold transition-colors cursor-pointer text-sm hidden lg:block"
             >
               Sign Out
             </button>

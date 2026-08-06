@@ -97,11 +97,11 @@ function LoginContent() {
         <div className="text-center mb-8">
           <PhoneERPLogo className="mb-3" />
           <h2 className="text-xl font-bold text-slate-900">Sign in to your account</h2>
-          <p className="text-xs text-slate-500 mt-1">Access dashboard or staff portals</p>
+          <p className="text-xs text-slate-500 mt-1">Grocery workspace, restaurant pilot and staff access</p>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-red-650 text-sm font-medium">
+          <div role="alert" aria-live="polite" className="auth-error mb-6 p-4 rounded-lg border text-sm font-medium">
             {error}
           </div>
         )}
@@ -128,6 +128,7 @@ function LoginContent() {
             <input
               type="password"
               required
+              minLength={6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
@@ -138,7 +139,7 @@ function LoginContent() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-indigo-600 hover:bg-indigo-705 disabled:bg-indigo-400 text-white rounded-lg py-3 text-sm font-semibold transition-colors shadow-sm cursor-pointer"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-lg py-3 text-sm font-semibold transition-colors shadow-sm cursor-pointer"
           >
             {isLoading ? 'Signing in...' : 'Sign In'}
           </button>
@@ -146,7 +147,7 @@ function LoginContent() {
 
         <div className="mt-6 text-center text-xs text-slate-500 font-medium">
           Don&apos;t have an account?{' '}
-          <Link href="/signup" className="text-indigo-600 hover:text-indigo-850 font-bold">
+          <Link href="/signup" className="text-indigo-600 hover:text-indigo-800 font-bold">
             Create an account
           </Link>
         </div>
