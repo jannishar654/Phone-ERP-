@@ -178,7 +178,7 @@ CORS_ORIGIN_REGEX=https://.*\.vercel\.app
 Managed and developed by:
 
 * Mohammad Jannishar
-* Mohd Danish
+* Md Danish
 * Mohd Nasir
 
 ---
